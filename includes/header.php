@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth_helper.php';
 checkLogin();
+$assetBase = strpos($_SERVER['REQUEST_URI'], '/ustadz/') !== false ? '../' : '';
 ?>
 <!DOCTYPE html>
 <html lang="id" x-data="{ sidebarOpen: false, aboutOpen: false, canInstall: false }"
@@ -12,16 +13,15 @@ checkLogin();
     <title>
         <?php echo $pageTitle ?? 'Dashboard'; ?> - Presensi Tahsin
     </title>
-    <link rel="manifest" href="manifest.json">
+    <link rel="manifest" href="<?php echo $assetBase; ?>manifest.json">
     <meta name="theme-color" content="#2563eb">
-    <link rel="apple-touch-icon" href="icon-512.png">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="apple-touch-icon" href="<?php echo $assetBase; ?>icon-512.png">
+    <link rel="stylesheet" href="<?php echo $assetBase; ?>assets/css/app.css">
+    <script defer src="<?php echo $assetBase; ?>assets/js/alpine.min.js"></script>
     <script>
         // Use a dynamic base path for assets based on whether we are in a subdirectory
-        const isSubdir = window.location.pathname.includes('/ustadz/');
-        const swPath = isSubdir ? '../sw.js' : 'sw.js';
-        const manifestPath = isSubdir ? '../manifest.json' : 'manifest.json';
+        const swPath = '<?php echo $assetBase; ?>sw.js';
+        const manifestPath = '<?php echo $assetBase; ?>manifest.json';
 
         // Update manifest link dynamically if needed (already set in HTML but good to be sure)
         document.querySelector('link[rel="manifest"]').setAttribute('href', manifestPath);
@@ -62,10 +62,8 @@ checkLogin();
         }
     </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
 
         [x-cloak] {

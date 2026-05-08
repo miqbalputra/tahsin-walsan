@@ -90,8 +90,8 @@ if (isset($_SESSION['user_id'])) {
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2563eb">
     <link rel="apple-touch-icon" href="icon-512.png">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="stylesheet" href="assets/css/app.css">
+    <script defer src="assets/js/alpine.min.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -121,10 +121,8 @@ if (isset($_SESSION['user_id'])) {
         }
     </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
-
         body {
-            font-family: 'Outfit', sans-serif;
+            font-family: Outfit, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             background: radial-gradient(circle at top right, #3b82f6 0%, transparent 40%),
                 radial-gradient(circle at bottom left, #6366f1 0%, transparent 40%),
                 #f8fafc;

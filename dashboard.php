@@ -45,7 +45,7 @@ foreach ($trendData as $t) {
 }
 ?>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="assets/js/chart.umd.min.js"></script>
 
 <!-- Header Content -->
 <div class="mb-10">

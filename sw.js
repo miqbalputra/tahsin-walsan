@@ -1,13 +1,12 @@
-const CACHE_NAME = 'tahsin-presensi-v2';
+const CACHE_NAME = 'tahsin-presensi-v3';
 
 // Hanya cache aset STATIS — JANGAN cache file PHP
 const STATIC_ASSETS = [
     'manifest.json',
     'icon-512.png',
-    'https://cdn.tailwindcss.com',
-    'https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js',
-    'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap',
-    'https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap'
+    'assets/css/app.css',
+    'assets/js/alpine.min.js',
+    'assets/js/chart.umd.min.js'
 ];
 
 // Install: cache aset statis saja

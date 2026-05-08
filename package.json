@@ -1,0 +1,17 @@
+{
+  "name": "presensi-tahsin-bapak",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./assets/src/app.css -o ./assets/css/app.css --minify",
+    "build:vendor": "node ./scripts/copy-vendor-assets.js",
+    "build": "npm run build:css && npm run build:vendor"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  },
+  "dependencies": {
+    "alpinejs": "^3.14.9",
+    "chart.js": "^4.4.7"
+  }
+}

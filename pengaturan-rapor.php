@@ -181,5 +181,8 @@ if (!$template) {
 
 <style>
     /* Font untuk editor agar nyaman dilihat */
-    @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&display=swap');
-    </textarea><?php require_once 'includes/footer.php'; ?>
+    textarea[name="template_content"] {
+        font-family: "Fira Code", Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+</style>
+<?php require_once 'includes/footer.php'; ?>

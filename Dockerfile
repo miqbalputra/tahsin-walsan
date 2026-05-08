@@ -10,13 +10,15 @@ RUN apt-get update \
         unzip \
     && docker-php-ext-install -j"$(nproc)" \
         intl \
+        opcache \
         pdo_mysql \
         mysqli \
         zip \
-    && a2enmod headers rewrite \
+    && a2enmod deflate expires headers rewrite \
     && rm -rf /var/lib/apt/lists/*
 
 COPY docker/apache.conf /etc/apache2/conf-available/presensi-tahsin.conf
+COPY docker/php-production.ini /usr/local/etc/php/conf.d/zz-production.ini
 RUN a2enconf presensi-tahsin
 
 COPY . /var/www/html

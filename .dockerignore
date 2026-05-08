@@ -8,4 +8,5 @@
 Mustawa_*.xlsx
 temp_excel/node_modules
 temp_excel/*.xlsx
+node_modules
 docker-compose*.yml

@@ -78,10 +78,8 @@ $filter_kelas = $kelas_filter ?: "Semua Kelas";
         <?php echo $filter_halaqoh; ?>
     </title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             color: #334155;
             margin: 0;
             padding: 40px;
