@@ -1,0 +1,297 @@
+{
+    "name": "Reminder Harian Presensi Tahsin (Senin-Sabtu 10:00 WIB)",
+    "nodes": [
+        {
+            "parameters": {
+                "rule": {
+                    "interval": [
+                        {
+                            "field": "cronExpression",
+                            "expression": "0 3 * * 1-6"
+                        }
+                    ]
+                }
+            },
+            "id": "sched-daily-01",
+            "name": "Schedule (Senin-Sabtu 10 WIB)",
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "typeVersion": 1.1,
+            "position": [
+                460,
+                300
+            ],
+            "notes": "Cron: 0 3 * * 1-6 = Jam 03:00 UTC = 10:00 WIB, Senin-Sabtu"
+        },
+        {
+            "parameters": {
+                "url": "=https://[DOMAIN_APLIKASI_ANDA]/api/daily-reminder.php?key=tahsin_secure_key_123",
+                "options": {}
+            },
+            "id": "http-check-01",
+            "name": "Cek Presensi Minggu Terakhir",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                680,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "number": [
+                        {
+                            "value1": "={{ $json.count }}",
+                            "operation": "larger"
+                        }
+                    ]
+                }
+            },
+            "id": "if-check-01",
+            "name": "Ada Ustadz Belum Lengkap?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                900,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const input = $input.first().json;\nconst items = input.data;\nconst tanggalFormatted = input.tanggal_tahsin_formatted;\n\nreturn items.map(item => ({\n    json: {\n        ...item,\n        tanggal_tahsin_formatted: tanggalFormatted\n    }\n}));"
+            },
+            "id": "code-split-01",
+            "name": "Split Data Ustadz",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1120,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "amount": 6,
+                "unit": "seconds"
+            },
+            "id": "wait-01",
+            "name": "Delay 2 Detik",
+            "type": "n8n-nodes-base.wait",
+            "typeVersion": 1.1,
+            "position": [
+                1340,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://api.fonnte.com/send",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Authorization",
+                            "value": "[TOKEN_FONNTE_ANDA]"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "target",
+                            "value": "={{ $json.ustadz_phone }}"
+                        },
+                        {
+                            "name": "message",
+                            "value": "=Assalamualaikum Ustadz *{{ $json.ustadz_name }}*,\n\nMohon bantuannya untuk melengkapi presensi & capaian Tahsin kelompok *{{ $json.nama_halaqoh }}* untuk sesi:\n\n📅 *{{ $json.tanggal_tahsin_formatted }}*\n📋 Status: {{ $json.keterangan }}\n👥 Total peserta: {{ $json.total_anggota }} orang\n\nSilakan isi melalui aplikasi:\nhttps://[DOMAIN_APLIKASI_ANDA]/login.php\n\nJazakumullah khairan katsiran.\n\n_-- Admin Griya Qur'an_"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "wa-send-01",
+            "name": "Kirim WhatsApp (Fonnte)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                1560,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://api.fonnte.com/send",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Authorization",
+                            "value": "[TOKEN_FONNTE_ANDA]"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "target",
+                            "value": "[NOMOR_ADMIN_62xxx]"
+                        },
+                        {
+                            "name": "message",
+                            "value": "=📊 *Laporan Reminder Presensi*\nTanggal: {{ $json.date_today }}\nSesi Tahsin: {{ $json.tanggal_tahsin_formatted }}\n\n✅ Semua presensi sudah lengkap!\nTidak ada Ustadz yang perlu diingatkan."
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "wa-admin-ok-01",
+            "name": "Lapor Admin (Semua Lengkap)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                1120,
+                450
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const inputData = $('Cek Presensi Minggu Terakhir').first().json;\nconst items = inputData.data;\nconst tanggal = inputData.tanggal_tahsin_formatted;\nconst dateToday = inputData.date_today;\nconst day = inputData.day;\n\nlet report = `📊 *Laporan Reminder Presensi*\\n`;\nreport += `Hari ini: ${day}, ${dateToday}\\n`;\nreport += `Sesi Tahsin: ${tanggal}\\n\\n`;\nreport += `⚠️ Total Ustadz diingatkan: *${items.length}*\\n\\n`;\n\nitems.forEach((item, i) => {\n    const icon = item.sudah_diisi == 0 ? '🔴' : '🟡';\n    report += `${icon} ${i+1}. *${item.ustadz_name}* (${item.nama_halaqoh})\\n`;\n    report += `   ${item.keterangan}\\n`;\n});\n\nreport += `\\n_Pesan otomatis dari sistem n8n_`;\n\nreturn [{ json: { report, dateToday, day, count: items.length } }];"
+            },
+            "id": "code-report-01",
+            "name": "Buat Laporan Admin",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1560,
+                400
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://api.fonnte.com/send",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Authorization",
+                            "value": "[TOKEN_FONNTE_ANDA]"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "target",
+                            "value": "[NOMOR_ADMIN_62xxx]"
+                        },
+                        {
+                            "name": "message",
+                            "value": "={{ $json.report }}"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "wa-admin-report-01",
+            "name": "Kirim Laporan ke Admin",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                1780,
+                400
+            ]
+        }
+    ],
+    "connections": {
+        "Schedule (Senin-Sabtu 10 WIB)": {
+            "main": [
+                [
+                    {
+                        "node": "Cek Presensi Minggu Terakhir",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Cek Presensi Minggu Terakhir": {
+            "main": [
+                [
+                    {
+                        "node": "Ada Ustadz Belum Lengkap?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Ada Ustadz Belum Lengkap?": {
+            "main": [
+                [
+                    {
+                        "node": "Split Data Ustadz",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Lapor Admin (Semua Lengkap)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Split Data Ustadz": {
+            "main": [
+                [
+                    {
+                        "node": "Delay 2 Detik",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Delay 2 Detik": {
+            "main": [
+                [
+                    {
+                        "node": "Kirim WhatsApp (Fonnte)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Kirim WhatsApp (Fonnte)": {
+            "main": [
+                [
+                    {
+                        "node": "Buat Laporan Admin",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Buat Laporan Admin": {
+            "main": [
+                [
+                    {
+                        "node": "Kirim Laporan ke Admin",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}

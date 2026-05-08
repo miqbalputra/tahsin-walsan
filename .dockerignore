@@ -1,0 +1,11 @@
+.git
+.sessions
+.env
+.env.*
+!.env.example
+*.zip
+*.sql
+Mustawa_*.xlsx
+temp_excel/node_modules
+temp_excel/*.xlsx
+docker-compose*.yml

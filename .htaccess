@@ -1,0 +1,28 @@
+# Security Headers
+<IfModule mod_headers.c>
+    Header set X-XSS-Protection "1; mode=block"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-Content-Type-Options "nosniff"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    # HSTS: Paksa browser selalu gunakan HTTPS (berlaku 1 tahun)
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+</IfModule>
+
+# Disable Directory Listing
+Options -Indexes
+
+# Set Directory Index
+DirectoryIndex index.php login.php
+
+# Protect config files
+<Files "config/database.php">
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+# Protect SQL files
+<Files "*.sql">
+    Order Allow,Deny
+    Deny from all
+</Files>

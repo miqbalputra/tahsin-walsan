@@ -1,0 +1,12 @@
+.sessions/
+.env
+.env.*
+!.env.example
+*.zip
+db_tahsinbpk.sql
+import_database*.sql
+import_mustawa*.sql
+Mustawa_*.xlsx
+temp_excel/node_modules/
+temp_excel/*.xlsx
+*.log

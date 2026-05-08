@@ -1,0 +1,167 @@
+{
+    "name": "WhatsApp Notifikasi Pengingat Presensi Tahsin",
+    "nodes": [
+        {
+            "parameters": {
+                "rule": {
+                    "interval": [
+                        {
+                            "field": "cronExpression",
+                            "expression": "0 10,13,16 * * 0"
+                        }
+                    ]
+                }
+            },
+            "id": "e2f1b2d3-9a4c-4e5a-8b1a-0f9e8d7c6b5a",
+            "name": "Schedule Trigger",
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "typeVersion": 1.1,
+            "position": [
+                460,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "url": "=https://[DOMAIN_APLIKASI_ANDA]/api/notifications-pending.php?key=tahsin_secure_key_123",
+                "options": {}
+            },
+            "id": "a1b2c3d4-e5f6-4a1b-9c2d-3e4f5a6b7c8d",
+            "name": "Check Pending Attendance",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                680,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "number": [
+                        {
+                            "value1": "={{ $json.count }}",
+                            "operation": "larger"
+                        }
+                    ]
+                }
+            },
+            "id": "b2c3d4e5-f6a1-4b2c-9d3e-4f5a6b7c8d9e",
+            "name": "Ada Ustadz Lupa?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                900,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "batchSize": 1,
+                "options": {}
+            },
+            "id": "c3d4e5f6-a1b2-4c3d-9e4f-5a6b7c8d9e0f",
+            "name": "Split In Batches",
+            "type": "n8n-nodes-base.splitInBatches",
+            "typeVersion": 1,
+            "position": [
+                1120,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://api.fonnte.com/send",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Authorization",
+                            "value": "[TOKEN_FONNTE_ANDA]"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "target",
+                            "value": "={{ $json.ustadz_phone }}"
+                        },
+                        {
+                            "name": "message",
+                            "value": "=Assalamualaikum Ustadz {{ $json.ustadz_name }},\n\nMohon bantuannya untuk mengisi presensi & capaian Tahsin Kelompok *{{ $json.nama_halaqoh }}* hari ini.\n\nJazakumullah khairan katsiran.\n\n-- Admin Griya Qur'an"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "d4e5f6a1-b2c3-4d4e-9f5a-6b7c8d9e0f1a",
+            "name": "Kirim WhatsApp (Fonnte)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                1340,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Schedule Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Check Pending Attendance",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Check Pending Attendance": {
+            "main": [
+                [
+                    {
+                        "node": "Ada Ustadz Lupa?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Ada Ustadz Lupa?": {
+            "main": [
+                [
+                    {
+                        "node": "Split In Batches",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Split In Batches": {
+            "main": [
+                [
+                    {
+                        "node": "Kirim WhatsApp (Fonnte)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Kirim WhatsApp (Fonnte)": {
+            "main": [
+                [
+                    {
+                        "node": "Split In Batches",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}
