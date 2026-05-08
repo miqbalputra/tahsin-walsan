@@ -9,8 +9,7 @@ checkRole(['admin', 'pj_tahfidz']);
 
 $halaqoh_id = $_GET['id'] ?? null;
 if (!$halaqoh_id) {
-    header("Location: halaqoh.php");
-    exit();
+    redirectTo('halaqoh.php');
 }
 
 // Fetch halaqoh details
@@ -19,8 +18,7 @@ $stmt->execute([$halaqoh_id]);
 $h = $stmt->fetch();
 
 if (!$h) {
-    header("Location: halaqoh.php");
-    exit();
+    redirectTo('halaqoh.php');
 }
 
 $message = '';

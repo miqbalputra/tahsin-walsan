@@ -2,5 +2,6 @@
 /**
  * Redirect to Login Page
  */
-header("Location: login.php");
-exit();
+require_once __DIR__ . '/includes/auth_helper.php';
+
+redirectTo('login.php');

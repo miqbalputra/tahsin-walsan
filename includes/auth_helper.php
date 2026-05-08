@@ -1,4 +1,8 @@
 <?php
+if (ob_get_level() === 0) {
+    ob_start();
+}
+
 // Set session lifetime to 30 days (2592000 seconds)
 $session_lifetime = 30 * 24 * 60 * 60;
 
@@ -80,6 +84,38 @@ function regenerateSession($persistent = false)
     session_regenerate_id(true);
 }
 
+function appBasePath()
+{
+    $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? ''));
+
+    if ($scriptDir === '/' || $scriptDir === '.') {
+        return '';
+    }
+
+    if (str_ends_with($scriptDir, '/ustadz')) {
+        $scriptDir = substr($scriptDir, 0, -7);
+    }
+
+    return rtrim($scriptDir, '/');
+}
+
+function appUrl($path = '')
+{
+    return appBasePath() . '/' . ltrim($path, '/');
+}
+
+function redirectTo($path)
+{
+    header('Location: ' . appUrl($path));
+    exit();
+}
+
+function roleHomePath($role = null)
+{
+    $role = $role ?? ($_SESSION['role'] ?? '');
+    return $role === 'ustadz' ? 'ustadz/dashboard.php' : 'dashboard.php';
+}
+
 /**
  * Check if the user is logged in
  * If not, redirect to login page
@@ -87,8 +123,7 @@ function regenerateSession($persistent = false)
 function checkLogin()
 {
     if (!isset($_SESSION['user_id'])) {
-        header("Location: login.php");
-        exit();
+        redirectTo('login.php');
     }
 }
 
@@ -113,13 +148,7 @@ function checkRole($allowed_roles)
 {
     checkLogin();
     if (!in_array($_SESSION['role'], $allowed_roles)) {
-        // Redirect to their respective home if not authorized
-        if ($_SESSION['role'] === 'ustadz') {
-            header("Location: ustadz/dashboard.php");
-        } else {
-            header("Location: dashboard.php");
-        }
-        exit();
+        redirectTo(roleHomePath());
     }
 }
 

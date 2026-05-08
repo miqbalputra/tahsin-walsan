@@ -18,8 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Basic Extension Validation
         $ext = pathinfo($filename, PATHINFO_EXTENSION);
         if (strtolower($ext) !== 'csv') {
-            header("Location: peserta.php?err=Hanya file CSV yang diizinkan!");
-            exit();
+            redirectTo('peserta.php?err=Hanya file CSV yang diizinkan!');
         }
 
         $handle = fopen($file, "r");
@@ -72,15 +71,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $success_count++;
             }
             $pdo->commit();
-            header("Location: peserta.php?msg=Import berhasil! $success_count data diproses.");
-            exit();
+            redirectTo("peserta.php?msg=Import berhasil! $success_count data diproses.");
         } catch (Exception $e) {
             $pdo->rollBack();
-            header("Location: peserta.php?err=Gagal import: " . urlencode($e->getMessage()));
-            exit();
+            redirectTo('peserta.php?err=Gagal import: ' . urlencode($e->getMessage()));
         }
     }
 } else {
-    header("Location: peserta.php");
-    exit();
+    redirectTo('peserta.php');
 }

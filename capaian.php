@@ -10,8 +10,7 @@ $user_id = $_SESSION['user_id'];
 
 // Authorization check
 if (!in_array($role, ['admin', 'pj_tahfidz', 'ustadz'])) {
-    header("Location: dashboard.php");
-    exit();
+    redirectTo('dashboard.php');
 }
 
 $message = $_GET['msg'] ?? '';

@@ -1,17 +1,18 @@
 <?php
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
+require_once 'includes/report_helper.php';
 
 // Must be at the very top
 checkRole(['admin', 'pj_tahfidz', 'kepsek']);
 
-// Filters - GET parameters
-$start_date = $_GET['start_date'] ?? date('Y-m-01');
-$end_date = $_GET['end_date'] ?? date('Y-m-d');
-$halaqoh_id = $_GET['halaqoh_id'] ?? '';
-$wali_santri_id = $_GET['wali_santri_id'] ?? '';
-$kelas_filter = $_GET['kelas'] ?? '';
-$search = $_GET['search'] ?? '';
+$filters = getReportFilters();
+$start_date = $filters['start_date'];
+$end_date = $filters['end_date'];
+$halaqoh_id = $filters['halaqoh_id'];
+$wali_santri_id = $filters['wali_santri_id'];
+$kelas_filter = $filters['kelas'];
+$search = $filters['search'];
 
 $message = $_GET['msg'] ?? '';
 $error = $_GET['err'] ?? '';
@@ -29,43 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// 1. Build the Main Query
-$sql = "SELECT p.*, w.nama_bapak, w.no_hp, h.nama_halaqoh 
-        FROM presensi p 
-        JOIN wali_santri w ON p.wali_santri_id = w.id 
-        JOIN halaqoh h ON p.halaqoh_id = h.id 
-        WHERE p.tanggal BETWEEN :start AND :end";
-
-$params = [':start' => $start_date, ':end' => $end_date];
-
-if (!empty($halaqoh_id)) {
-    $sql .= " AND p.halaqoh_id = :h_id";
-    $params[':h_id'] = $halaqoh_id;
-}
-
-if (!empty($wali_santri_id)) {
-    $sql .= " AND p.wali_santri_id = :w_id";
-    $params[':w_id'] = $wali_santri_id;
-}
-
-if (!empty($kelas_filter)) {
-    $sql .= " AND w.id IN (SELECT wali_santri_id FROM santri_detail WHERE kelas = :kls)";
-    $params[':kls'] = $kelas_filter;
-}
-
-if (!empty($search)) {
-    // Avoid duplicate named parameters if driver is picky
-    $sql .= " AND (w.nama_bapak LIKE :q1 OR w.id IN (SELECT wali_santri_id FROM santri_detail WHERE nama_anak LIKE :q2))";
-    $params[':q1'] = "%$search%";
-    $params[':q2'] = "%$search%";
-}
-
-$sql .= " ORDER BY p.tanggal DESC, h.nama_halaqoh, w.nama_bapak";
-
 try {
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $results = $stmt->fetchAll();
+    $results = fetchPresensiReport($pdo, $filters, $_SESSION['role'] ?? '', $_SESSION['user_id'] ?? null, ['include_phone' => true]);
 
     // 2. Fetch Filter Options
     $halaqohs = $pdo->query("SELECT id, nama_halaqoh FROM halaqoh ORDER BY nama_halaqoh")->fetchAll();

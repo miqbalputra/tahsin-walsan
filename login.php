@@ -42,12 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 addLog($pdo, 'LOGIN', "User {$_SESSION['username']} berhasil masuk.");
 
-                if ($user['role'] === 'ustadz') {
-                    header("Location: ustadz/dashboard.php");
-                } else {
-                    header("Location: dashboard.php");
-                }
-                exit();
+                redirectTo(roleHomePath($user['role']));
             } else {
                 // Login gagal: catat percobaan
                 recordFailedLogin($pdo, $username, $client_ip);
@@ -71,12 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Redirect if already logged in
 if (isset($_SESSION['user_id'])) {
-    if ($_SESSION['role'] === 'ustadz') {
-        header("Location: ustadz/dashboard.php");
-    } else {
-        header("Location: dashboard.php");
-    }
-    exit();
+    redirectTo(roleHomePath());
 }
 ?>
 <!DOCTYPE html>

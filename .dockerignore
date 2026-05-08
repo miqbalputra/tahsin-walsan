@@ -5,6 +5,7 @@
 !.env.example
 *.zip
 *.sql
+!migrations/*.sql
 Mustawa_*.xlsx
 temp_excel/node_modules
 temp_excel/*.xlsx

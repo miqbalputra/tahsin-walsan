@@ -16,8 +16,7 @@ $stmt->execute([$halaqoh_id, $ustadz_id]);
 $halaqoh = $stmt->fetch();
 
 if (!$halaqoh) {
-    header("Location: input-presensi.php");
-    exit();
+    redirectTo('ustadz/input-presensi.php');
 }
 
 $message = '';

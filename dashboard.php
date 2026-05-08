@@ -7,8 +7,7 @@ require_once 'includes/auth_helper.php';
 
 // Proteksi: Jika Ustadz tersasar ke sini, kembalikan ke dashboard ustadz
 if ($_SESSION['role'] === 'ustadz') {
-    header("Location: ustadz/dashboard.php");
-    exit();
+    redirectTo('ustadz/dashboard.php');
 }
 
 // 1. Simple Stats
