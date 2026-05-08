@@ -7,9 +7,9 @@
 require_once '../config/database.php';
 
 // Simple API Key security. Set N8N_API_KEY in Coolify for production.
-$apiKey = getenv('N8N_API_KEY') ?: "tahsin_secure_key_123";
-$headers = getallheaders();
-$providedKey = $headers['X-API-KEY'] ?? ($_GET['key'] ?? '');
+$apiKey = trim(getenv('N8N_API_KEY') ?: "tahsin_secure_key_123");
+$headers = array_change_key_case(getallheaders(), CASE_LOWER);
+$providedKey = trim($headers['x-api-key'] ?? ($_GET['key'] ?? ''));
 
 if ($providedKey !== $apiKey) {
     header('Content-Type: application/json');
