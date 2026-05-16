@@ -73,6 +73,11 @@ function combineRangeValue($start, $end, $delimiter = '-')
     return $delimiter === 's/d' ? "$start s/d $end" : "$start-$end";
 }
 
+function jsAttr($value)
+{
+    return htmlspecialchars(json_encode($value), ENT_QUOTES, 'UTF-8');
+}
+
 $tanggal = $_GET['tanggal'] ?? date('Y-m-d');
 
 // Fetch existing attendance for this date and halaqoh to pre-fill
@@ -353,12 +358,12 @@ $holiday = $stmtHoliday->fetch();
             [$nama_surat_dari, $nama_surat_sampai] = splitRangeValue($prev['nama_surat'] ?? '', 's/d');
             ?>
             <div x-data="{ 
-                status: '<?php echo $prev['status'] ?? ''; ?>', 
-                materi: '<?php echo $prev['jenis_materi'] ?? 'Al Quran'; ?>',
-                halamanDari: <?php echo json_encode($halaman_dari); ?>,
-                halamanSampai: <?php echo json_encode($halaman_sampai); ?>,
-                suratDari: <?php echo json_encode($nama_surat_dari); ?>,
-                suratSampai: <?php echo json_encode($nama_surat_sampai); ?>,
+                status: <?php echo jsAttr($prev['status'] ?? ''); ?>, 
+                materi: <?php echo jsAttr($prev['jenis_materi'] ?? 'Al Quran'); ?>,
+                halamanDari: <?php echo jsAttr($halaman_dari); ?>,
+                halamanSampai: <?php echo jsAttr($halaman_sampai); ?>,
+                suratDari: <?php echo jsAttr($nama_surat_dari); ?>,
+                suratSampai: <?php echo jsAttr($nama_surat_sampai); ?>,
                 isSaving: false,
                 isSaved: <?php echo isset($prev['id']) ? 'true' : 'false'; ?>,
                 isValid() {
