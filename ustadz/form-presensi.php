@@ -22,6 +22,57 @@ if (!$halaqoh) {
 $message = '';
 $error = '';
 
+$quranSurahNames = [
+    'Al-Fatihah', 'Al-Baqarah', "Ali 'Imran", 'An-Nisa', "Al-Ma'idah", "Al-An'am", "Al-A'raf", 'Al-Anfal', 'At-Taubah', 'Yunus',
+    'Hud', 'Yusuf', "Ar-Ra'd", 'Ibrahim', 'Al-Hijr', 'An-Nahl', 'Al-Isra', 'Al-Kahf', 'Maryam', 'Taha',
+    'Al-Anbiya', 'Al-Hajj', "Al-Mu'minun", 'An-Nur', 'Al-Furqan', "Ash-Shu'ara", 'An-Naml', 'Al-Qasas', 'Al-Ankabut', 'Ar-Rum',
+    'Luqman', 'As-Sajdah', 'Al-Ahzab', 'Saba', 'Fatir', 'Yasin', 'As-Saffat', 'Sad', 'Az-Zumar', 'Ghafir',
+    'Fussilat', 'Ash-Shura', 'Az-Zukhruf', 'Ad-Dukhan', 'Al-Jathiyah', 'Al-Ahqaf', 'Muhammad', 'Al-Fath', 'Al-Hujurat', 'Qaf',
+    'Adh-Dhariyat', 'At-Tur', 'An-Najm', 'Al-Qamar', 'Ar-Rahman', "Al-Waqi'ah", 'Al-Hadid', 'Al-Mujadilah', 'Al-Hashr', 'Al-Mumtahanah',
+    'As-Saff', "Al-Jumu'ah", 'Al-Munafiqun', 'At-Taghabun', 'At-Talaq', 'At-Tahrim', 'Al-Mulk', 'Al-Qalam', 'Al-Haqqah', "Al-Ma'arij",
+    'Nuh', 'Al-Jinn', 'Al-Muzzammil', 'Al-Muddaththir', 'Al-Qiyamah', 'Al-Insan', 'Al-Mursalat', 'An-Naba', "An-Nazi'at", "'Abasa",
+    'At-Takwir', 'Al-Infitar', 'Al-Mutaffifin', 'Al-Inshiqaq', 'Al-Buruj', 'At-Tariq', "Al-A'la", 'Al-Ghashiyah', 'Al-Fajr', 'Al-Balad',
+    'Ash-Shams', 'Al-Lail', 'Ad-Duha', 'Ash-Sharh', 'At-Tin', 'Al-Alaq', 'Al-Qadr', 'Al-Bayyinah', 'Az-Zalzalah', 'Al-Adiyat',
+    "Al-Qari'ah", 'At-Takathur', 'Al-Asr', 'Al-Humazah', 'Al-Fil', 'Quraysh', "Al-Ma'un", 'Al-Kawthar', 'Al-Kafirun', 'An-Nasr',
+    'Al-Masad', 'Al-Ikhlas', 'Al-Falaq', 'An-Nas'
+];
+
+function splitRangeValue($value, $delimiter = '-')
+{
+    $value = trim((string) $value);
+    if ($value === '') {
+        return ['', ''];
+    }
+
+    if ($delimiter === 's/d' && strpos($value, ' s/d ') !== false) {
+        $parts = explode(' s/d ', $value, 2);
+        return [trim($parts[0]), trim($parts[1])];
+    }
+
+    if ($delimiter === '-' && strpos($value, '-') !== false) {
+        $parts = explode('-', $value, 2);
+        return [trim($parts[0]), trim($parts[1])];
+    }
+
+    return [$value, $value];
+}
+
+function combineRangeValue($start, $end, $delimiter = '-')
+{
+    $start = trim((string) $start);
+    $end = trim((string) $end);
+
+    if ($start === '') {
+        return '';
+    }
+
+    if ($end === '' || $end === $start) {
+        return $start;
+    }
+
+    return $delimiter === 's/d' ? "$start s/d $end" : "$start-$end";
+}
+
 $tanggal = $_GET['tanggal'] ?? date('Y-m-d');
 
 // Fetch existing attendance for this date and halaqoh to pre-fill
@@ -68,8 +119,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($status === 'H') {
                 $jenis_materi = $data['jenis_materi'] ?? null;
                 $jilid = ($jenis_materi === 'Iqro') ? ($data['jilid'] ?? null) : null;
-                $nama_surat = ($jenis_materi === 'Al Quran') ? ($data['nama_surat'] ?? null) : null;
-                $halaman = $data['halaman'] ?? null;
+                $nama_surat = ($jenis_materi === 'Al Quran') ? combineRangeValue($data['nama_surat_dari'] ?? '', $data['nama_surat_sampai'] ?? '', 's/d') : null;
+                $halaman = combineRangeValue($data['halaman_dari'] ?? '', $data['halaman_sampai'] ?? '', '-');
                 $hasil_talaqqi = $data['hasil_talaqqi'] ?? null;
 
                 // Validasi
@@ -79,8 +130,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($jenis_materi === 'Iqro' && empty($jilid)) {
                     throw new Exception("Jilid Iqro wajib dipilih.");
                 }
+                if ($jenis_materi === 'Iqro' && (empty($data['halaman_dari']) || empty($data['halaman_sampai']))) {
+                    throw new Exception("Halaman Iqro dari dan sampai wajib dipilih.");
+                }
                 if ($jenis_materi === 'Al Quran' && empty($nama_surat)) {
                     throw new Exception("Nama Surat wajib diisi.");
+                }
+                if ($jenis_materi === 'Al Quran' && (empty($data['nama_surat_dari']) || empty($data['nama_surat_sampai']) || empty($data['halaman_dari']) || empty($data['halaman_sampai']))) {
+                    throw new Exception("Nama surat dan ayat Al Quran dari-sampai wajib dipilih.");
                 }
             } elseif ($status === 'S' || $status === 'I') {
                 if (empty($alasan)) {
@@ -292,27 +349,32 @@ $holiday = $stmtHoliday->fetch();
             if (strpos($wa_phone, '0') === 0) {
                 $wa_phone = '62' . substr($wa_phone, 1);
             }
+            [$halaman_dari, $halaman_sampai] = splitRangeValue($prev['halaman'] ?? '', '-');
+            [$nama_surat_dari, $nama_surat_sampai] = splitRangeValue($prev['nama_surat'] ?? '', 's/d');
             ?>
             <div x-data="{ 
                 status: '<?php echo $prev['status'] ?? ''; ?>', 
                 materi: '<?php echo $prev['jenis_materi'] ?? 'Al Quran'; ?>',
+                halamanDari: <?php echo json_encode($halaman_dari); ?>,
+                halamanSampai: <?php echo json_encode($halaman_sampai); ?>,
+                suratDari: <?php echo json_encode($nama_surat_dari); ?>,
+                suratSampai: <?php echo json_encode($nama_surat_sampai); ?>,
                 isSaving: false,
                 isSaved: <?php echo isset($prev['id']) ? 'true' : 'false'; ?>,
                 isValid() {
                     if (!this.status) return false;
                     if (this.status === 'H') {
                         const card = this.$el;
-                        const halaman = card.querySelector('[name*=\'halaman\']')?.value.trim();
                         const hasil = card.querySelector('[name*=\'hasil_talaqqi\']:checked');
                         
                         let detailOk = true;
                         if (this.materi === 'Iqro') {
-                            detailOk = !!card.querySelector('[name*=\'jilid\']')?.value;
+                            detailOk = !!card.querySelector('[name*=\'jilid\']')?.value && !!this.halamanDari && !!this.halamanSampai;
                         } else if (this.materi === 'Al Quran') {
-                            detailOk = !!card.querySelector('[name*=\'nama_surat\']')?.value.trim();
+                            detailOk = !!this.suratDari && !!this.suratSampai && !!this.halamanDari && !!this.halamanSampai;
                         }
                         
-                        return !!halaman && !!hasil && detailOk;
+                        return !!hasil && detailOk;
                     }
                     if (this.status === 'S' || this.status === 'I') {
                         const alasan = this.$el.querySelector('[name*=\'alasan\']')?.value.trim();
@@ -377,11 +439,13 @@ $holiday = $stmtHoliday->fetch();
                     const jilid = card.querySelector('[name*=\'jilid\']')?.value;
                     if(jilid) formData.append('jilid', jilid);
                     
-                    const surat = card.querySelector('[name*=\'nama_surat\']')?.value;
-                    if(surat) formData.append('nama_surat', surat);
-                    
-                    const halaman = card.querySelector('[name*=\'halaman\']')?.value;
-                    if(halaman) formData.append('halaman', halaman);
+                    if(this.materi === 'Al Quran') {
+                        if(this.suratDari) formData.append('nama_surat_dari', this.suratDari);
+                        if(this.suratSampai) formData.append('nama_surat_sampai', this.suratSampai);
+                    }
+
+                    if(this.halamanDari) formData.append('halaman_dari', this.halamanDari);
+                    if(this.halamanSampai) formData.append('halaman_sampai', this.halamanSampai);
                     
                     const hasil = card.querySelector('[name*=\'hasil_talaqqi\']:checked')?.value;
                     if(hasil) formData.append('hasil_talaqqi', hasil);
@@ -529,6 +593,7 @@ $holiday = $stmtHoliday->fetch();
                                 <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Jenis
                                     Materi <span class="text-red-500">*</span></label>
                                 <select name="presensi[<?php echo $m['id']; ?>][jenis_materi]" x-model="materi"
+                                    @change="halamanDari = ''; halamanSampai = ''; suratDari = ''; suratSampai = ''"
                                     :required="status === 'H'"
                                     class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                                     <option value="Iqro" <?php echo ($prev['jenis_materi'] ?? '') === 'Iqro' ? 'selected' : ''; ?>>Iqro</option>
@@ -537,43 +602,100 @@ $holiday = $stmtHoliday->fetch();
                             </div>
 
                             <template x-if="materi === 'Iqro'">
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Jilid <span class="text-red-500">*</span></label>
-                                    <select name="presensi[<?php echo $m['id']; ?>][jilid]"
-                                        :required="status === 'H' && materi === 'Iqro'"
-                                        class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
-                                        <option value="">Pilih Jilid</option>
-                                        <?php for ($j = 1; $j <= 6; $j++): ?>
-                                            <option value="<?php echo $j; ?>" <?php echo ($prev['jilid'] ?? '') == $j ? 'selected' : ''; ?>>Jilid
-                                                <?php echo $j; ?>
-                                            </option>
-                                        <?php endfor; ?>
-                                    </select>
+                                <div class="contents">
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Jilid <span class="text-red-500">*</span></label>
+                                        <select name="presensi[<?php echo $m['id']; ?>][jilid]"
+                                            :required="status === 'H' && materi === 'Iqro'"
+                                            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="">Pilih Jilid</option>
+                                            <?php for ($j = 1; $j <= 6; $j++): ?>
+                                                <option value="<?php echo $j; ?>" <?php echo ($prev['jilid'] ?? '') == $j ? 'selected' : ''; ?>>Jilid
+                                                    <?php echo $j; ?>
+                                                </option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Halaman Dari <span class="text-red-500">*</span></label>
+                                        <select name="presensi[<?php echo $m['id']; ?>][halaman_dari]" x-model="halamanDari"
+                                            :required="status === 'H' && materi === 'Iqro'"
+                                            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="">Pilih</option>
+                                            <?php for ($h = 1; $h <= 36; $h++): ?>
+                                                <option value="<?php echo $h; ?>"><?php echo $h; ?></option>
+                                            <?php endfor; ?>
+                                            <option value="EBTA">EBTA</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Halaman Sampai <span class="text-red-500">*</span></label>
+                                        <select name="presensi[<?php echo $m['id']; ?>][halaman_sampai]" x-model="halamanSampai"
+                                            :required="status === 'H' && materi === 'Iqro'"
+                                            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="">Pilih</option>
+                                            <?php for ($h = 1; $h <= 36; $h++): ?>
+                                                <option value="<?php echo $h; ?>"><?php echo $h; ?></option>
+                                            <?php endfor; ?>
+                                            <option value="EBTA">EBTA</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </template>
 
                             <template x-if="materi === 'Al Quran'">
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nama
-                                        Surat <span class="text-red-500">*</span></label>
-                                    <input type="text" name="presensi[<?php echo $m['id']; ?>][nama_surat]"
-                                        :required="status === 'H' && materi === 'Al Quran'"
-                                        placeholder="Contoh: Al-Baqarah"
-                                        value="<?php echo htmlspecialchars($prev['nama_surat'] ?? ''); ?>"
-                                        class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                <div class="contents">
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nama Surat Dari <span class="text-red-500">*</span></label>
+                                        <select name="presensi[<?php echo $m['id']; ?>][nama_surat_dari]" x-model="suratDari"
+                                            :required="status === 'H' && materi === 'Al Quran'"
+                                            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="">Pilih Surat</option>
+                                            <?php foreach ($quranSurahNames as $surah): ?>
+                                                <option value="<?php echo htmlspecialchars($surah); ?>"><?php echo htmlspecialchars($surah); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Dari Ayat <span class="text-red-500">*</span></label>
+                                        <select name="presensi[<?php echo $m['id']; ?>][halaman_dari]" x-model="halamanDari"
+                                            :required="status === 'H' && materi === 'Al Quran'"
+                                            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="">Pilih Ayat</option>
+                                            <?php for ($a = 1; $a <= 285; $a++): ?>
+                                                <option value="<?php echo $a; ?>"><?php echo $a; ?></option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nama Surat Sampai <span class="text-red-500">*</span></label>
+                                        <select name="presensi[<?php echo $m['id']; ?>][nama_surat_sampai]" x-model="suratSampai"
+                                            :required="status === 'H' && materi === 'Al Quran'"
+                                            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="">Pilih Surat</option>
+                                            <?php foreach ($quranSurahNames as $surah): ?>
+                                                <option value="<?php echo htmlspecialchars($surah); ?>"><?php echo htmlspecialchars($surah); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Sampai Ayat <span class="text-red-500">*</span></label>
+                                        <select name="presensi[<?php echo $m['id']; ?>][halaman_sampai]" x-model="halamanSampai"
+                                            :required="status === 'H' && materi === 'Al Quran'"
+                                            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="">Pilih Ayat</option>
+                                            <?php for ($a = 1; $a <= 285; $a++): ?>
+                                                <option value="<?php echo $a; ?>"><?php echo $a; ?></option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </div>
                                 </div>
                             </template>
-
-                            <div>
-                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">
-                                    <span x-text="materi === 'Al Quran' ? 'Ayat Berapa - Berapa' : 'Halaman'"></span> <span class="text-red-500">*</span>
-                                </label>
-                                <input type="text" name="presensi[<?php echo $m['id']; ?>][halaman]"
-                                    :required="status === 'H'"
-                                    :placeholder="materi === 'Al Quran' ? 'Pilih Ayat: 1-10' : 'Halaman'"
-                                    value="<?php echo htmlspecialchars($prev['halaman'] ?? ''); ?>"
-                                    class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
-                            </div>
 
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Hasil

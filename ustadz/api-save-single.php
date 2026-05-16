@@ -3,6 +3,22 @@ require_once '../config/database.php';
 require_once '../includes/auth_helper.php';
 session_start();
 
+function combineRangeValue($start, $end, $delimiter = '-')
+{
+    $start = trim((string) $start);
+    $end = trim((string) $end);
+
+    if ($start === '') {
+        return '';
+    }
+
+    if ($end === '' || $end === $start) {
+        return $start;
+    }
+
+    return $delimiter === 's/d' ? "$start s/d $end" : "$start-$end";
+}
+
 // Proteksi Keamanan
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'ustadz') {
     header('Content-Type: application/json');
@@ -40,8 +56,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $alasan = $_POST['alasan'] ?? null;
     $jenis_materi = $_POST['jenis_materi'] ?? null;
     $jilid = $_POST['jilid'] ?? null;
-    $nama_surat = $_POST['nama_surat'] ?? null;
-    $halaman = $_POST['halaman'] ?? null;
+    $nama_surat = $jenis_materi === 'Al Quran'
+        ? combineRangeValue($_POST['nama_surat_dari'] ?? '', $_POST['nama_surat_sampai'] ?? '', 's/d')
+        : null;
+    $halaman = combineRangeValue($_POST['halaman_dari'] ?? '', $_POST['halaman_sampai'] ?? '', '-');
     $hasil_talaqqi = $_POST['hasil_talaqqi'] ?? null;
 
     // Validasi Server-side
@@ -59,9 +77,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode(['status' => 'error', 'message' => 'Pilih Jilid Iqro!']);
             exit();
         }
+        if ($jenis_materi === 'Iqro' && (empty($_POST['halaman_dari']) || empty($_POST['halaman_sampai']))) {
+            header('Content-Type: application/json');
+            echo json_encode(['status' => 'error', 'message' => 'Pilih halaman Iqro dari dan sampai!']);
+            exit();
+        }
         if ($jenis_materi === 'Al Quran' && empty($nama_surat)) {
             header('Content-Type: application/json');
             echo json_encode(['status' => 'error', 'message' => 'Isi Nama Surat!']);
+            exit();
+        }
+        if ($jenis_materi === 'Al Quran' && (empty($_POST['nama_surat_dari']) || empty($_POST['nama_surat_sampai']) || empty($_POST['halaman_dari']) || empty($_POST['halaman_sampai']))) {
+            header('Content-Type: application/json');
+            echo json_encode(['status' => 'error', 'message' => 'Pilih nama surat dan ayat Al Quran dari-sampai!']);
             exit();
         }
     } elseif ($status === 'S' || $status === 'I') {
