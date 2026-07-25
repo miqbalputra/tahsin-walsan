@@ -93,7 +93,12 @@ function createBackupZip(PDO $pdo, string $zipPath, array $tables, string $nullT
         $schema .= ($row['Create Table'] ?? '') . ";\n\n";
     }
     $zip->addFromString('schema.sql', $schema);
-    $zip->close();
+    if ($zip->close() !== true) {
+        return ['ok' => false, 'error' => 'ZipArchive::close gagal menulis (cek writable temp dir & ruang disk).'];
+    }
+    if (!is_file($zipPath) || filesize($zipPath) === 0) {
+        return ['ok' => false, 'error' => 'File ZIP kosong setelah ditulis.'];
+    }
 
     return ['ok' => true, 'counts' => $counts];
 }
@@ -259,10 +264,15 @@ if (($_GET['export'] ?? '') === '1') {
         die('Gagal membuat backup: ' . ($result['error'] ?? 'unknown'));
     }
     addLog($pdo, 'EXPORT_BACKUP', json_encode($result['counts']));
+    // Bersihkan output buffer (ob_start dari auth_helper) & matikan kompresi
+    // supaya stream ZIP tidak ter-truncate/korup (penyebab download 0 B).
+    if (function_exists('gzclose')) { @ini_set('zlib.output_compression', '0'); }
+    while (ob_get_level()) { ob_end_clean(); }
     header('Content-Type: application/zip');
     header('Content-Disposition: attachment; filename="backup_' . $stamp . '.zip"');
-    header('Content-Length: ' . filesize($zipPath));
     header('Cache-Control: no-store');
+    header('Pragma: no-cache');
+    header('Content-Transfer-Encoding: binary');
     readfile($zipPath);
     @unlink($zipPath);
     exit;
@@ -282,10 +292,13 @@ if ($dl !== '') {
         exit('File tidak ditemukan / tidak valid.');
     }
     $path = $TEMP_DIR . '/' . $name;
+    if (function_exists('gzclose')) { @ini_set('zlib.output_compression', '0'); }
+    while (ob_get_level()) { ob_end_clean(); }
     header('Content-Type: application/zip');
     header('Content-Disposition: attachment; filename="' . $name . '"');
-    header('Content-Length: ' . filesize($path));
     header('Cache-Control: no-store');
+    header('Pragma: no-cache');
+    header('Content-Transfer-Encoding: binary');
     readfile($path);
     exit;
 }
