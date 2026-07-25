@@ -25,9 +25,9 @@ $pageTitle = 'Backup & Restore';
 // Konfigurasi
 // ---------------------------------------------------------------------------
 $BACKUP_TABLES = ['users', 'wali_santri', 'halaqoh', 'santri_detail', 'halaqoh_members', 'presensi'];
-$TEMP_DIR     = __DIR__ . '/temp_excel';
 $NULL_TOKEN   = "\\N"; // penanda NULL di CSV (konvensi mysqldump)
 $MAX_UPLOAD   = 100 * 1024 * 1024; // 100MB
+$TEMP_DIR     = resolveTempDir(); // direktori temp yang pasti writable (hoisted)
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -36,6 +36,25 @@ function tableColumns(PDO $pdo, string $table): array
 {
     $stmt = $pdo->query("SHOW COLUMNS FROM `$table`");
     return $stmt->fetchAll(PDO::FETCH_COLUMN, 0); // nama kolom (Field)
+}
+
+/**
+ * Pilih direktori temp yang PASTI writable.
+ * Preferensi: temp_excel/ di app root (persisten, bisa didownload ulang),
+ * fallback: sys_get_temp_dir()/tahsin_backup (selalu writable di container,
+ * meski app root read-only seperti pada deploy Coolify).
+ */
+function resolveTempDir(): string
+{
+    $candidates = [
+        __DIR__ . '/temp_excel',
+        rtrim(sys_get_temp_dir(), '/\\') . '/tahsin_backup',
+    ];
+    foreach ($candidates as $c) {
+        if (!is_dir($c)) { @mkdir($c, 0755, true); }
+        if (is_dir($c) && is_writable($c)) { return $c; }
+    }
+    return sys_get_temp_dir();
 }
 
 function safeFilename(string $name): ?string
