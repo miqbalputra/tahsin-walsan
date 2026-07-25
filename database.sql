@@ -20,7 +20,10 @@ CREATE TABLE wali_santri (
     no_hp VARCHAR(20),
     alamat TEXT,
     kategori ENUM('reguler', 'tahsin_luar', 'askar') DEFAULT 'reguler',
+    tempat_tahsin VARCHAR(255),
+    ustadz_luar VARCHAR(100),
     status_aktif TINYINT(1) DEFAULT 1,
+    lanjut_tahsin TINYINT(1) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
