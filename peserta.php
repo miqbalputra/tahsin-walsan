@@ -25,6 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $kategori = $_POST['kategori'] ?? 'reguler';
     $tempat_tahsin = $_POST['tempat_tahsin'] ?? '';
     $ustadz_luar = $_POST['ustadz_luar'] ?? '';
+    $lanjut_tahsin = isset($_POST['lanjut_tahsin']) ? 1 : 0;
     $anak_list = $_POST['anak'] ?? []; // Array of children
 
     if ($action === 'save') {
@@ -32,16 +33,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             if ($id) {
                 // Update Wali
-                $stmt = $pdo->prepare("UPDATE wali_santri SET nama_bapak=?, no_hp=?, alamat=?, kategori=?, tempat_tahsin=?, ustadz_luar=? WHERE id=?");
-                $stmt->execute([$nama_bapak, $no_hp, $alamat, $kategori, $tempat_tahsin, $ustadz_luar, $id]);
+                $stmt = $pdo->prepare("UPDATE wali_santri SET nama_bapak=?, no_hp=?, alamat=?, kategori=?, tempat_tahsin=?, ustadz_luar=?, lanjut_tahsin=? WHERE id=?");
+                $stmt->execute([$nama_bapak, $no_hp, $alamat, $kategori, $tempat_tahsin, $ustadz_luar, $lanjut_tahsin, $id]);
 
                 // Delete old children then re-insert to simplify sync
                 $pdo->prepare("DELETE FROM santri_detail WHERE wali_santri_id = ?")->execute([$id]);
                 $wali_id = $id;
             } else {
                 // Insert Wali
-                $stmt = $pdo->prepare("INSERT INTO wali_santri (nama_bapak, no_hp, alamat, kategori, tempat_tahsin, ustadz_luar) VALUES (?, ?, ?, ?, ?, ?)");
-                $stmt->execute([$nama_bapak, $no_hp, $alamat, $kategori, $tempat_tahsin, $ustadz_luar]);
+                $stmt = $pdo->prepare("INSERT INTO wali_santri (nama_bapak, no_hp, alamat, kategori, tempat_tahsin, ustadz_luar, lanjut_tahsin) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                $stmt->execute([$nama_bapak, $no_hp, $alamat, $kategori, $tempat_tahsin, $ustadz_luar, $lanjut_tahsin]);
                 $wali_id = $pdo->lastInsertId();
             }
 
@@ -133,7 +134,7 @@ $stmt->execute($params);
 $peserta = $stmt->fetchAll();
 
 // Fetch all unique classes for the filter dropdown
-$daftar_kelas = $pdo->query("SELECT DISTINCT kelas FROM santri_detail WHERE kelas IS NOT NULL AND kelas != '' ORDER BY kelas")->fetchAll(PDO::FETCH_COLUMN);
+$daftar_kelas = $pdo->query("SELECT DISTINCT kelas FROM santri_detail WHERE kelas IS NOT NULL AND kelas != '' AND kelas != 'Lulus' ORDER BY kelas")->fetchAll(PDO::FETCH_COLUMN);
 
 // Fetch all halaqoh for filter dropdown
 $daftar_halaqoh = $pdo->query("SELECT h.id, h.nama_halaqoh, u.nama_lengkap as nama_ustadz FROM halaqoh h JOIN users u ON h.ustadz_id = u.id ORDER BY h.nama_halaqoh")->fetchAll();
@@ -153,7 +154,7 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
     showImportModal: false,
     showFilterPanel: <?php echo $hasActiveFilter ? 'true' : 'false'; ?>,
     editMode: false,
-    formData: { id: '', nama_bapak: '', no_hp: '', alamat: '', kategori: 'reguler', tempat_tahsin: '', ustadz_luar: '', halaqoh_id: '' },
+    formData: { id: '', nama_bapak: '', no_hp: '', alamat: '', kategori: 'reguler', tempat_tahsin: '', ustadz_luar: '', halaqoh_id: '', lanjut_tahsin: 0 },
     anak: [{ nama: '', kelas: '' }],
     openAdd() {
         this.editMode = false;
@@ -367,6 +368,12 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                         <tr class="hover:bg-slate-50 transition">
                             <td class="px-6 py-4 font-bold text-slate-800 align-middle">
                                 <?php echo htmlspecialchars($p['nama_bapak']); ?>
+                                <?php if (empty($p['status_aktif'])): ?>
+                                    <span class="ml-1 px-2 py-0.5 rounded-lg bg-slate-200 text-slate-500 text-[9px] font-bold uppercase tracking-wider align-middle">Arsip</span>
+                                <?php endif; ?>
+                                <?php if (!empty($p['lanjut_tahsin'])): ?>
+                                    <span class="ml-1 px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-700 text-[9px] font-bold uppercase tracking-wider align-middle">Lanjut Tahsin</span>
+                                <?php endif; ?>
                             </td>
                             <td class="px-6 py-4 align-middle">
                                 <span
@@ -499,6 +506,16 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                         <?php endforeach; ?>
                     </select>
                     <p class="text-blue-500 text-[10px] mt-1 font-semibold">Pilih halaqoh untuk peserta ini</p>
+                </div>
+
+                <!-- Lanjut Tahsin flag (anak sudah lulus, bapak tetap mau tahsin) -->
+                <div class="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-start gap-3">
+                    <input type="checkbox" name="lanjut_tahsin" x-model="formData.lanjut_tahsin" :true-value="1" :false-value="0"
+                        class="mt-1 rounded border-amber-300 text-amber-600 focus:ring-amber-500">
+                    <div>
+                        <label class="block text-sm font-semibold text-amber-700">Bapak tetap mau ikut tahsin (anak sudah lulus)</label>
+                        <p class="text-amber-600 text-[10px] mt-1 font-semibold">Centang jika semua anak sudah lulus Mustawa 6 tetapi bapak masih ingin ikut tahsin. Wali ini tidak akan diarsipkan otomatis di menu Naik Kelas.</p>
+                    </div>
                 </div>
 
                 <!-- Tahsin Luar Specific Fields -->
