@@ -141,6 +141,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // Batalkan Lulus — kembalikan kelas satu santri dari 'Lulus' ke kelas yg dipilih.
+    if ($action === 'set_kelas') {
+        $sid = (int) ($_POST['santri_id'] ?? 0);
+        $kelas = trim((string) ($_POST['kelas'] ?? ''));
+        if ($sid <= 0) {
+            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('ID santri tidak valid.'));
+        }
+        if ($kelas === '' || $kelas === 'Lulus') {
+            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Pilih kelas pengganti yang valid (bukan Lulus).'));
+        }
+        try {
+            $pdo->prepare("UPDATE santri_detail SET kelas = ? WHERE id = ?")->execute([$kelas, $sid]);
+            addLog($pdo, 'SET_KELAS_SANTRI', "santri $sid -> kelas '$kelas'");
+            redirectTo('naik-kelas.php?tab=naik&msg=' . rawurlencode("Kelas santri dikembalikan ke '$kelas'."));
+        } catch (Exception $e) {
+            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Gagal: ' . $e->getMessage()));
+        }
+    }
+
     if ($action === 'bulk_archive') {
         $ids = array_values(array_unique(array_filter(array_map('intval', $_POST['wali_ids'] ?? []), fn($x) => $x > 0)));
         if (!$ids) {
@@ -264,6 +283,15 @@ foreach ($naikRows as $r) {
         $naikValidIds[] = (int) $r['id'];
     }
 }
+
+// Daftar santri yang sudah ditandai 'Lulus' (untuk dibatalkan bila keliru).
+$lulusList = $pdo->query("
+    SELECT sd.id, sd.nama_anak, sd.kelas, w.nama_bapak, w.status_aktif
+    FROM santri_detail sd
+    JOIN wali_santri w ON w.id = sd.wali_santri_id
+    WHERE sd.kelas = 'Lulus'
+    ORDER BY w.nama_bapak, sd.nama_anak
+")->fetchAll(PDO::FETCH_ASSOC);
 
 // Tab 2 — kandidat arsip (semua anak 'Lulus', aktif, bukan lanjut_tahsin)
 $kandidatArsip = $pdo->query("
@@ -485,6 +513,68 @@ require_once 'includes/sidebar.php';
                                     <?php else: ?>
                                         <span class="px-2.5 py-1 rounded-lg bg-slate-200 text-slate-500 font-semibold text-xs" title="Format kelas tidak dikenali — perbaiki via menu Data Peserta">Tidak dikenali</span>
                                     <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Batalkan Lulus: daftar santri yang ditandai Lulus, bisa dikembalikan -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mt-6">
+            <div class="p-5 border-b border-slate-100">
+                <h3 class="font-bold text-slate-800">Santri Ditandai "Lulus" — Batalkan jika keliru</h3>
+                <p class="text-xs text-slate-500 mt-0.5">
+                    Jika ada yang keliru diluluskan (mis. sebenarnya punya adik yang masih sekolah), pilih kelas pengganti lalu klik "Kembalikan".
+                    Wali tidak otomatis diarsip — arsip ada di Tab 2 dengan safeguard kakak-beradik.
+                </p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase text-xs font-bold tracking-wider">
+                        <tr>
+                            <th class="px-4 py-3">Nama Wali (Bapak)</th>
+                            <th class="px-4 py-3">Nama Anak</th>
+                            <th class="px-4 py-3">Status Wali</th>
+                            <th class="px-4 py-3">Kembalikan ke kelas</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <?php if (empty($lulusList)): ?>
+                            <tr>
+                                <td colspan="4" class="px-4 py-8 text-center text-slate-400 italic">Belum ada santri yang ditandai "Lulus".</td>
+                            </tr>
+                        <?php endif; ?>
+                        <?php foreach ($lulusList as $l): ?>
+                            <tr class="hover:bg-slate-50 transition">
+                                <td class="px-4 py-3 font-semibold text-slate-800 align-middle"><?php echo htmlspecialchars($l['nama_bapak']); ?></td>
+                                <td class="px-4 py-3 text-sm text-slate-600 align-middle"><?php echo htmlspecialchars($l['nama_anak']); ?></td>
+                                <td class="px-4 py-3 align-middle">
+                                    <?php if ($l['status_aktif']): ?>
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">Aktif</span>
+                                    <?php else: ?>
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-600">Arsip</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="px-4 py-3 align-middle">
+                                    <form method="POST" action="" class="flex items-center gap-2"
+                                        onsubmit="return confirm('Kembalikan kelas santri ini dari Lulus?')">
+                                        <?php csrfField(); ?>
+                                        <input type="hidden" name="action" value="set_kelas">
+                                        <input type="hidden" name="santri_id" value="<?php echo (int) $l['id']; ?>">
+                                        <select name="kelas" required
+                                            class="text-sm border border-slate-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 outline-none">
+                                            <option value="">— pilih kelas —</option>
+                                            <?php foreach ($daftar_kelas as $kls): ?>
+                                                <option value="<?php echo htmlspecialchars($kls); ?>"><?php echo htmlspecialchars($kls); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <button type="submit"
+                                            class="bg-amber-100 text-amber-700 px-3 py-1.5 rounded-xl text-[11px] font-bold uppercase hover:bg-amber-200 transition border border-amber-100 whitespace-nowrap">
+                                            Kembalikan
+                                        </button>
+                                    </form>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
