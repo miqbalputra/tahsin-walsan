@@ -115,6 +115,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // Luluskan manual (per-pilih) — tandai santri terpilih sbg 'Lulus' langsung,
+    // tanpa lewat nextKelas. Berguna bila kenaikan kelas sudah jalan sebagian
+    // sehingga label "Mustawa 6" berisi campuran mantan M5 & M6 asli, dan admin
+    // perlu memilih manual siapa yang benar-benar lulus.
+    if ($action === 'bulk_lulus') {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $_POST['santri_ids'] ?? []), fn($x) => $x > 0)));
+        if (!$ids) {
+            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Tidak ada santri yang dipilih untuk diluluskan.'));
+        }
+        try {
+            $pdo->beginTransaction();
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $stmt = $pdo->prepare("UPDATE santri_detail SET kelas = 'Lulus' WHERE id IN ($placeholders)");
+            $stmt->execute($ids);
+            $done = $stmt->rowCount();
+            addLog($pdo, 'BULK_LULUS_MANUAL', "Luluskan manual santri: " . implode(',', $ids));
+            $pdo->commit();
+            redirectTo('naik-kelas.php?tab=naik&msg=' . rawurlencode("$done santri ditandai 'Lulus' (manual)."));
+        } catch (Exception $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Gagal: ' . $e->getMessage()));
+        }
+    }
+
     if ($action === 'bulk_archive') {
         $ids = array_values(array_unique(array_filter(array_map('intval', $_POST['wali_ids'] ?? []), fn($x) => $x > 0)));
         if (!$ids) {
@@ -292,6 +318,7 @@ require_once 'includes/sidebar.php';
     selectedArsip: [],
     showConfirmNaik: false,
     showConfirmArsip: false,
+    showConfirmLulus: false,
     toggleAllNaik(ev) {
         this.selectedNaik = ev.target.checked ? [...JSON.parse(document.getElementById('naik-valid-ids').textContent)] : [];
     },
@@ -406,6 +433,15 @@ require_once 'includes/sidebar.php';
                     </svg>
                     Naikkan Kelas (<span x-text="selectedNaik.length"></span> terpilih)
                 </button>
+                <button @click="showConfirmLulus = true" :disabled="selectedNaik.length === 0"
+                    :class="selectedNaik.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-emerald-700'"
+                    class="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm transition shadow-sm flex items-center gap-2"
+                    title="Tandai santri terpilih sebagai Lulus (manual), tanpa menaikkan kelas. Pakai ini untuk memilih siapa yang benar-benar lulus.">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    Luluskan Terpilih (<span x-text="selectedNaik.length"></span>)
+                </button>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left">
@@ -477,6 +513,30 @@ require_once 'includes/sidebar.php';
                         class="flex-1 px-4 py-3 rounded-2xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 transition">Batal</button>
                     <button type="submit"
                         class="flex-1 px-4 py-3 rounded-2xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200">Ya, Naikkan</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Modal konfirmasi luluskan manual -->
+        <div x-show="showConfirmLulus" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <div class="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl" @click.away="showConfirmLulus = false">
+                <h3 class="text-xl font-bold text-slate-800 mb-3">Konfirmasi Luluskan Manual</h3>
+                <p class="text-sm text-slate-600 mb-2">Anda akan menandai <strong x-text="selectedNaik.length"></strong> santri terpilih sebagai <strong>"Lulus"</strong>.</p>
+                <ul class="text-xs text-slate-500 space-y-1 mb-5 bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+                    <li>• Kelas santri terpilih diubah jadi <strong>"Lulus"</strong> langsung (tidak dinaikkan).</li>
+                    <li>• Pakai ini untuk memilih manual siapa yang benar-benar lulus (mis. dari campuran Mustawa 6).</li>
+                    <li>• Yang tidak dicentang tetap di kelasnya saat ini.</li>
+                </ul>
+                <form method="POST" action="" class="flex gap-3">
+                    <?php csrfField(); ?>
+                    <input type="hidden" name="action" value="bulk_lulus">
+                    <template x-for="id in selectedNaik" :key="id">
+                        <input type="hidden" name="santri_ids[]" :value="id">
+                    </template>
+                    <button type="button" @click="showConfirmLulus = false"
+                        class="flex-1 px-4 py-3 rounded-2xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 transition">Batal</button>
+                    <button type="submit"
+                        class="flex-1 px-4 py-3 rounded-2xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 transition shadow-lg shadow-emerald-200">Ya, Luluskan</button>
                 </form>
             </div>
         </div>
