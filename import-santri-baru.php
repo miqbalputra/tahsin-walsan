@@ -89,6 +89,31 @@ function activeSourceFile(): string
 }
 
 /**
+ * Pilih direktori penyimpanan upload yang writable.
+ * Pada deployment Coolify, root aplikasi bisa read-only; karena itu gunakan
+ * fallback di direktori temporary container bila temp_excel tidak writable.
+ */
+function resolveImportTempDir(): string
+{
+    $candidates = [
+        __DIR__ . '/temp_excel',
+        rtrim(sys_get_temp_dir(), '/\\') . '/tahsin_import',
+        sys_get_temp_dir(),
+    ];
+
+    foreach ($candidates as $candidate) {
+        if (!is_dir($candidate) && !@mkdir($candidate, 0750, true) && !is_dir($candidate)) {
+            continue;
+        }
+        if (is_dir($candidate) && is_writable($candidate)) {
+            return $candidate;
+        }
+    }
+
+    return '';
+}
+
+/**
  * Hitung disposition tiap baris CSV terhadap DB live.
  * Kembalikan: ['rows' => [...], 'counts' => [...], 'new_families' => [...]]
  * Tiap row: [nama_bapak, no_hp, nama_anak, kelas, halaqoh, status, target_wali_id, kakak, catatan]
@@ -231,14 +256,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($_FILES['file_csv']['error'] !== UPLOAD_ERR_OK) {
             redirectTo('import-santri-baru.php?err=' . rawurlencode('Gagal upload file.'));
         }
-        // simpan ke temp_excel/
-        $tempDir = __DIR__ . '/temp_excel';
-        if (!is_dir($tempDir)) {
-            mkdir($tempDir, 0775, true);
+
+        $uploadTmp = (string) ($_FILES['file_csv']['tmp_name'] ?? '');
+        if ($uploadTmp === '' || !is_uploaded_file($uploadTmp)) {
+            error_log('Import santri baru: temporary upload tidak valid.');
+            redirectTo('import-santri-baru.php?err=' . rawurlencode('File upload tidak valid atau sudah kedaluwarsa.'));
         }
-        $dest = $tempDir . '/import_baru_' . bin2hex(random_bytes(8)) . '.csv';
-        if (!move_uploaded_file($_FILES['file_csv']['tmp_name'], $dest)) {
-            redirectTo('import-santri-baru.php?err=' . rawurlencode('Gagal menyimpan file upload.'));
+
+        $tempDir = resolveImportTempDir();
+        if ($tempDir === '') {
+            error_log('Import santri baru: tidak ada direktori upload yang writable.');
+            redirectTo('import-santri-baru.php?err=' . rawurlencode('Penyimpanan upload belum siap. Hubungi administrator untuk memperbaiki izin folder temporary.'));
+        }
+
+        $dest = tempnam($tempDir, 'import_baru_');
+        if ($dest === false || !move_uploaded_file($uploadTmp, $dest)) {
+            if ($dest !== false && is_file($dest)) {
+                @unlink($dest);
+            }
+            error_log('Import santri baru: gagal memindahkan upload ke direktori temporary: ' . $tempDir);
+            redirectTo('import-santri-baru.php?err=' . rawurlencode('Gagal menyimpan file upload. Penyimpanan temporary tidak dapat ditulis.'));
         }
         $_SESSION['import_baru_file'] = $dest;
         redirectTo('import-santri-baru.php?msg=' . rawurlencode('File CSV dimuat. Tinjau laporan preview di bawah.'));
