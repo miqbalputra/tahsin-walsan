@@ -102,8 +102,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     try {
         // Cek kepemilikan halaqoh
-        $check = $pdo->prepare("SELECT id FROM halaqoh WHERE id = ? AND ustadz_id = ?");
-        $check->execute([$halaqoh_id, $ustadz_id]);
+        $check = $pdo->prepare("SELECT h.id
+            FROM halaqoh h
+            JOIN halaqoh_members hm ON hm.halaqoh_id = h.id
+            JOIN wali_santri w ON w.id = hm.wali_santri_id
+            WHERE h.id = ? AND h.ustadz_id = ? AND hm.wali_santri_id = ?
+              AND hm.archived_at IS NULL AND w.status_aktif = 1");
+        $check->execute([$halaqoh_id, $ustadz_id, $wali_id]);
         if (!$check->fetch()) {
             throw new Exception("Halaqoh tidak ditemukan atau bukan milik Anda.");
         }

@@ -81,14 +81,14 @@ try {
                 h.nama_halaqoh,
                 u.nama_lengkap as ustadz_name,
                 u.no_hp as ustadz_phone,
-                (SELECT COUNT(*) FROM halaqoh_members hm WHERE hm.halaqoh_id = h.id) as total_anggota,
+                (SELECT COUNT(*) FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id AND hm.archived_at IS NULL AND w.status_aktif = 1) as total_anggota,
                 (SELECT COUNT(DISTINCT p.wali_santri_id) FROM presensi p WHERE p.halaqoh_id = h.id AND p.tanggal BETWEEN :tgl_start AND :tgl_end) as sudah_diisi
             FROM halaqoh h
             JOIN users u ON h.ustadz_id = u.id
             WHERE 
-                EXISTS (SELECT 1 FROM halaqoh_members hm WHERE hm.halaqoh_id = h.id)
+                EXISTS (SELECT 1 FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id AND hm.archived_at IS NULL AND w.status_aktif = 1)
                 AND (SELECT COUNT(DISTINCT p.wali_santri_id) FROM presensi p WHERE p.halaqoh_id = h.id AND p.tanggal BETWEEN :tgl_start2 AND :tgl_end2) 
-                    < (SELECT COUNT(*) FROM halaqoh_members hm WHERE hm.halaqoh_id = h.id)
+                    < (SELECT COUNT(*) FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id AND hm.archived_at IS NULL AND w.status_aktif = 1)
             ORDER BY u.nama_lengkap";
 
     $stmt = $pdo->prepare($sql);

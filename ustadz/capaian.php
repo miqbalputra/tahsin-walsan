@@ -31,7 +31,7 @@ $sql = "SELECT
             p.halaman,
             p.tanggal as last_date
         FROM wali_santri w
-        JOIN halaqoh_members hm ON w.id = hm.wali_santri_id
+        JOIN halaqoh_members hm ON w.id = hm.wali_santri_id AND hm.archived_at IS NULL
         JOIN halaqoh h ON hm.halaqoh_id = h.id
         JOIN users u ON h.ustadz_id = u.id
         LEFT JOIN santri_detail s ON w.id = s.wali_santri_id

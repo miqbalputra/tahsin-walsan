@@ -12,6 +12,8 @@ $end_date = $_GET['end_date'] ?? date('Y-m-d');
 $params = [
     ':start' => $start_date,
     ':end' => $end_date,
+    // Membership yang diarsipkan di tengah periode tetap tersedia di rekap periode itu.
+    ':membership_boundary' => $start_date . ' 00:00:00',
 ];
 $where = [];
 if ($role === 'ustadz') {
@@ -37,6 +39,7 @@ $sqlHalaqoh = "
     FROM halaqoh h
     JOIN users u ON u.id = h.ustadz_id
     LEFT JOIN halaqoh_members hm ON hm.halaqoh_id = h.id
+        AND (hm.archived_at IS NULL OR hm.archived_at >= :membership_boundary)
     LEFT JOIN presensi p ON p.halaqoh_id = h.id
         AND p.wali_santri_id = hm.wali_santri_id
         AND p.tanggal BETWEEN :start AND :end
@@ -63,6 +66,7 @@ $sqlUstadz = "
     FROM users u
     JOIN halaqoh h ON h.ustadz_id = u.id
     LEFT JOIN halaqoh_members hm ON hm.halaqoh_id = h.id
+        AND (hm.archived_at IS NULL OR hm.archived_at >= :membership_boundary)
     LEFT JOIN presensi p ON p.halaqoh_id = h.id
         AND p.wali_santri_id = hm.wali_santri_id
         AND p.tanggal BETWEEN :start AND :end

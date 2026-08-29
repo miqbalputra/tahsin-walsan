@@ -26,11 +26,11 @@ try {
     $stmtH->execute([$ustadz_id]);
     $halaqohs = $stmtH->fetchAll();
 
-    $stmtW = $pdo->prepare("SELECT DISTINCT w.id, w.nama_bapak FROM wali_santri w JOIN halaqoh_members hm ON w.id = hm.wali_santri_id JOIN halaqoh h ON hm.halaqoh_id = h.id WHERE h.ustadz_id = ? ORDER BY w.nama_bapak");
+    $stmtW = $pdo->prepare("SELECT DISTINCT w.id, w.nama_bapak FROM wali_santri w JOIN halaqoh_members hm ON w.id = hm.wali_santri_id JOIN halaqoh h ON hm.halaqoh_id = h.id WHERE h.ustadz_id = ? AND hm.archived_at IS NULL AND w.status_aktif = 1 ORDER BY w.nama_bapak");
     $stmtW->execute([$ustadz_id]);
     $all_wali = $stmtW->fetchAll();
 
-    $stmtK = $pdo->prepare("SELECT DISTINCT s.kelas FROM santri_detail s JOIN halaqoh_members hm ON s.wali_santri_id = hm.wali_santri_id JOIN halaqoh h ON hm.halaqoh_id = h.id WHERE h.ustadz_id = ? AND s.kelas IS NOT NULL AND s.kelas != '' ORDER BY s.kelas");
+    $stmtK = $pdo->prepare("SELECT DISTINCT s.kelas FROM santri_detail s JOIN halaqoh_members hm ON s.wali_santri_id = hm.wali_santri_id JOIN halaqoh h ON hm.halaqoh_id = h.id WHERE h.ustadz_id = ? AND hm.archived_at IS NULL AND s.kelas IS NOT NULL AND s.kelas != '' ORDER BY s.kelas");
     $stmtK->execute([$ustadz_id]);
     $daftar_kelas = $stmtK->fetchAll(PDO::FETCH_COLUMN);
 } catch (Exception $e) {

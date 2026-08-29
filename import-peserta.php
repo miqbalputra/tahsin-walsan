@@ -1,6 +1,7 @@
 <?php
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
+require_once 'includes/alumni_archive_helper.php';
 
 checkLogin();
 checkRole(['admin', 'pj_tahfidz']);
@@ -28,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $success_count = 0;
         $error_count = 0;
+        $affectedWaliIds = [];
 
         $pdo->beginTransaction();
         try {
@@ -66,12 +68,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!empty($nama_anak)) {
                     $stmtAnak = $pdo->prepare("INSERT INTO santri_detail (wali_santri_id, nama_anak, kelas) VALUES (?, ?, ?)");
                     $stmtAnak->execute([$wali_id, $nama_anak, $kelas]);
+                    $affectedWaliIds[] = (int) $wali_id;
+                    reactivateWaliIfHasActiveChild($pdo, (int) $wali_id);
                 }
 
                 $success_count++;
             }
+            $archiveResult = archiveEligibleAlumni($pdo, $affectedWaliIds, 'AUTO_IMPORT_PESERTA');
             $pdo->commit();
-            redirectTo("peserta.php?msg=Import berhasil! $success_count data diproses.");
+            $msg = "Import berhasil! $success_count data diproses.";
+            if ($archiveResult['archived_wali'] > 0) {
+                $msg .= " {$archiveResult['archived_wali']} wali alumni otomatis diarsipkan.";
+            }
+            redirectTo('peserta.php?msg=' . rawurlencode($msg));
         } catch (Exception $e) {
             $pdo->rollBack();
             redirectTo('peserta.php?err=Gagal import: ' . urlencode($e->getMessage()));

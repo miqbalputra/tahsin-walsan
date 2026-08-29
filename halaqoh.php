@@ -66,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Fetch all Halaqoh with Ustadz names and member counts
 $query = "SELECT h.*, u.nama_lengkap as nama_ustadz, 
-          (SELECT COUNT(*) FROM halaqoh_members WHERE halaqoh_id = h.id) as total_member 
+          (SELECT COUNT(*) FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id AND hm.archived_at IS NULL AND w.status_aktif = 1) as total_member
           FROM halaqoh h 
           JOIN users u ON h.ustadz_id = u.id 
           ORDER BY h.nama_halaqoh";

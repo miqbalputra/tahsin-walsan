@@ -112,6 +112,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             WHERE id = :id");
 
         foreach ($presensi_data as $wali_id => $data) {
+            $wali_id = filter_var($wali_id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($wali_id === false || !isset($allowedWaliIds[(int) $wali_id]) || !is_array($data)) {
+                throw new Exception("Peserta presensi tidak valid atau bukan anggota halaqoh ini.");
+            }
+
             $status = $data['status'] ?? 'A'; // Default to Alpha if not selected
             $alasan = ($status === 'S' || $status === 'I') ? ($data['alasan'] ?? '') : null;
 
@@ -202,7 +207,7 @@ $stmt = $pdo->prepare("SELECT w.id, w.nama_bapak, w.no_hp,
                       FROM wali_santri w 
                       JOIN halaqoh_members hm ON w.id = hm.wali_santri_id 
                       LEFT JOIN santri_detail sd ON w.id = sd.wali_santri_id
-                      WHERE hm.halaqoh_id = ? 
+                      WHERE hm.halaqoh_id = ? AND hm.archived_at IS NULL
                       AND (w.kategori = 'reguler' OR w.kategori = 'askar') 
                       AND w.status_aktif = 1 
                       GROUP BY w.id

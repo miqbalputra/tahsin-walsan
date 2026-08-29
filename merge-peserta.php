@@ -4,6 +4,7 @@ require_once 'includes/header.php';
 require_once 'includes/sidebar.php';
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
+require_once 'includes/alumni_archive_helper.php';
 
 checkRole(['admin']);
 
@@ -77,6 +78,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // 5. Delete the duplicate wali_santri
             $pdo->prepare("DELETE FROM wali_santri WHERE id = ?")->execute([$delete_id]);
+
+            archiveEligibleAlumni($pdo, [$keep_id], 'AUTO_MERGE_PESERTA');
 
             $pdo->commit();
 

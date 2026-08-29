@@ -4,6 +4,7 @@ require_once 'includes/header.php';
 require_once 'includes/sidebar.php';
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
+require_once 'includes/alumni_archive_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
@@ -26,6 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $tempat_tahsin = $_POST['tempat_tahsin'] ?? '';
     $ustadz_luar = $_POST['ustadz_luar'] ?? '';
     $lanjut_tahsin = isset($_POST['lanjut_tahsin']) ? 1 : 0;
+    $has_lanjut_tahsin_input = array_key_exists('lanjut_tahsin', $_POST);
     $anak_list = $_POST['anak'] ?? []; // Array of children
 
     if ($action === 'save') {
@@ -33,8 +35,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             if ($id) {
                 // Update Wali
-                $stmt = $pdo->prepare("UPDATE wali_santri SET nama_bapak=?, no_hp=?, alamat=?, kategori=?, tempat_tahsin=?, ustadz_luar=?, lanjut_tahsin=? WHERE id=?");
-                $stmt->execute([$nama_bapak, $no_hp, $alamat, $kategori, $tempat_tahsin, $ustadz_luar, $lanjut_tahsin, $id]);
+                if ($has_lanjut_tahsin_input) {
+                    $stmt = $pdo->prepare("UPDATE wali_santri SET nama_bapak=?, no_hp=?, alamat=?, kategori=?, tempat_tahsin=?, ustadz_luar=?, lanjut_tahsin=? WHERE id=?");
+                    $stmt->execute([$nama_bapak, $no_hp, $alamat, $kategori, $tempat_tahsin, $ustadz_luar, $lanjut_tahsin, $id]);
+                } else {
+                    // Nilai lama dipertahankan karena flag ini hanya menjadi catatan.
+                    $stmt = $pdo->prepare("UPDATE wali_santri SET nama_bapak=?, no_hp=?, alamat=?, kategori=?, tempat_tahsin=?, ustadz_luar=? WHERE id=?");
+                    $stmt->execute([$nama_bapak, $no_hp, $alamat, $kategori, $tempat_tahsin, $ustadz_luar, $id]);
+                }
 
                 // Delete old children then re-insert to simplify sync
                 $pdo->prepare("DELETE FROM santri_detail WHERE wali_santri_id = ?")->execute([$id]);
@@ -56,23 +64,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Update halaqoh membership
             $halaqoh_id_input = $_POST['halaqoh_id'] ?? '';
-            $pdo->prepare("DELETE FROM halaqoh_members WHERE wali_santri_id = ?")->execute([$wali_id]);
-            if (!empty($halaqoh_id_input)) {
-                $pdo->prepare("INSERT INTO halaqoh_members (halaqoh_id, wali_santri_id) VALUES (?, ?)")->execute([intval($halaqoh_id_input), $wali_id]);
+            $membershipWarning = '';
+            $canAssignMembership = empty($halaqoh_id_input) || waliCanJoinActiveHalaqoh($pdo, (int) $wali_id);
+            if ($canAssignMembership) {
+                $pdo->prepare("UPDATE halaqoh_members SET archived_at = CURRENT_TIMESTAMP, archive_reason = 'MANUAL_REASSIGN' WHERE wali_santri_id = ? AND archived_at IS NULL")
+                    ->execute([$wali_id]);
+                if (!empty($halaqoh_id_input)) {
+                    $halaqohId = (int) $halaqoh_id_input;
+                    $existingMembership = $pdo->prepare("SELECT id FROM halaqoh_members WHERE halaqoh_id = ? AND wali_santri_id = ? LIMIT 1");
+                    $existingMembership->execute([$halaqohId, $wali_id]);
+                    $membershipId = $existingMembership->fetchColumn();
+                    if ($membershipId) {
+                        $pdo->prepare("UPDATE halaqoh_members SET archived_at = NULL, archive_reason = NULL WHERE id = ?")
+                            ->execute([$membershipId]);
+                    } else {
+                        $pdo->prepare("INSERT INTO halaqoh_members (halaqoh_id, wali_santri_id) VALUES (?, ?)")
+                            ->execute([$halaqohId, $wali_id]);
+                    }
+                }
+            } elseif (!empty($halaqoh_id_input)) {
+                // Kelas kosong/tidak dikenal tidak boleh memicu arsip maupun
+                // menghapus roster lama secara tidak sengaja.
+                $membershipWarning = ' Halaqoh tidak diubah karena wali belum memiliki anak aktif dengan kelas yang valid.';
             }
+
+            $archiveResult = archiveEligibleAlumni($pdo, [(int) $wali_id], 'AUTO_SAVE_PESERTA');
 
             $pdo->commit();
             addLog($pdo, 'SAVE_PESERTA', ($id ? "Update" : "Tambah") . " data wali santri: $nama_bapak");
-            $message = "Data peserta berhasil disimpan!";
+            $message = "Data peserta berhasil disimpan!" . $membershipWarning;
+            if ($archiveResult['archived_wali'] > 0) {
+                $message .= " Wali alumni otomatis diarsipkan dan dikeluarkan dari roster halaqoh.";
+            }
         } catch (Exception $e) {
             $pdo->rollBack();
             $error = "Terjadi kesalahan: " . $e->getMessage();
         }
     } elseif ($action === 'delete' && $id) {
-        $stmt = $pdo->prepare("DELETE FROM wali_santri WHERE id = ?");
-        $stmt->execute([$id]);
-        addLog($pdo, 'DELETE_PESERTA', "Menghapus ID Peserta: $id");
-        $message = "Peserta berhasil dihapus!";
+        // Tombol lama tetap kompatibel, tetapi tidak lagi melakukan hard delete.
+        // Hard delete dapat menghapus anak, membership, dan presensi melalui FK.
+        $pdo->beginTransaction();
+        try {
+            $stmt = $pdo->prepare("UPDATE wali_santri SET status_aktif = 0 WHERE id = ?");
+            $stmt->execute([$id]);
+            $pdo->prepare("UPDATE halaqoh_members SET archived_at = CURRENT_TIMESTAMP, archive_reason = 'MANUAL_ARCHIVE' WHERE wali_santri_id = ? AND archived_at IS NULL")
+                ->execute([$id]);
+            addLog($pdo, 'ARCHIVE_PESERTA', "Arsip aman ID Peserta: $id");
+            $pdo->commit();
+            $message = "Peserta diarsipkan. Data anak dan riwayat presensi tetap tersimpan.";
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $error = "Gagal mengarsipkan peserta: " . $e->getMessage();
+        }
     }
 }
 
@@ -85,9 +130,9 @@ $halaqoh_filter = $_GET['halaqoh'] ?? '';
 
 // Build Query with multiple filters
 $sql = "SELECT w.*, GROUP_CONCAT(CONCAT(s.nama_anak, ' (', s.kelas, ')') SEPARATOR ', ') as daftar_anak,
-        (SELECT hm.halaqoh_id FROM halaqoh_members hm WHERE hm.wali_santri_id = w.id LIMIT 1) as current_halaqoh_id,
-        (SELECT h.nama_halaqoh FROM halaqoh_members hm JOIN halaqoh h ON hm.halaqoh_id = h.id WHERE hm.wali_santri_id = w.id LIMIT 1) as nama_halaqoh,
-        (SELECT u.nama_lengkap FROM halaqoh_members hm JOIN halaqoh h ON hm.halaqoh_id = h.id JOIN users u ON h.ustadz_id = u.id WHERE hm.wali_santri_id = w.id LIMIT 1) as nama_ustadz_halaqoh
+        (SELECT hm.halaqoh_id FROM halaqoh_members hm WHERE hm.wali_santri_id = w.id AND hm.archived_at IS NULL LIMIT 1) as current_halaqoh_id,
+        (SELECT h.nama_halaqoh FROM halaqoh_members hm JOIN halaqoh h ON hm.halaqoh_id = h.id WHERE hm.wali_santri_id = w.id AND hm.archived_at IS NULL LIMIT 1) as nama_halaqoh,
+        (SELECT u.nama_lengkap FROM halaqoh_members hm JOIN halaqoh h ON hm.halaqoh_id = h.id JOIN users u ON h.ustadz_id = u.id WHERE hm.wali_santri_id = w.id AND hm.archived_at IS NULL LIMIT 1) as nama_ustadz_halaqoh
         FROM wali_santri w 
         LEFT JOIN santri_detail s ON w.id = s.wali_santri_id ";
 
@@ -120,7 +165,7 @@ if (!empty($kategori_filter)) {
 
 // Filter: Halaqoh
 if (!empty($halaqoh_filter)) {
-    $conditions[] = "w.id IN (SELECT wali_santri_id FROM halaqoh_members WHERE halaqoh_id = :halaqoh_id)";
+    $conditions[] = "w.id IN (SELECT wali_santri_id FROM halaqoh_members WHERE halaqoh_id = :halaqoh_id AND archived_at IS NULL)";
     $params[':halaqoh_id'] = $halaqoh_filter;
 }
 
@@ -430,14 +475,14 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                                         class="text-blue-600 hover:bg-blue-600 hover:text-white font-bold text-[10px] uppercase transition bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
                                         Edit
                                     </button>
-                                    <form method="POST" onsubmit="return confirm('Hapus data bapak ini?')"
+                                    <form method="POST" onsubmit="return confirm('Arsipkan data bapak ini? Data anak dan riwayat presensi tetap disimpan.')"
                                         class="inline-flex">
                                         <?php csrfField(); ?>
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="id" value="<?php echo $p['id']; ?>">
                                         <button type="submit"
                                             class="text-red-600 hover:bg-red-600 hover:text-white font-bold text-[10px] uppercase transition bg-red-50 px-3 py-1.5 rounded-xl border border-red-100">
-                                            Hapus
+                                            Arsipkan
                                         </button>
                                     </form>
                                 </div>
@@ -508,14 +553,10 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                     <p class="text-blue-500 text-[10px] mt-1 font-semibold">Pilih halaqoh untuk peserta ini</p>
                 </div>
 
-                <!-- Lanjut Tahsin flag (anak sudah lulus, bapak tetap mau tahsin) -->
-                <div class="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-start gap-3">
-                    <input type="checkbox" name="lanjut_tahsin" x-model="formData.lanjut_tahsin" :true-value="1" :false-value="0"
-                        class="mt-1 rounded border-amber-300 text-amber-600 focus:ring-amber-500">
-                    <div>
-                        <label class="block text-sm font-semibold text-amber-700">Bapak tetap mau ikut tahsin (anak sudah lulus)</label>
-                        <p class="text-amber-600 text-[10px] mt-1 font-semibold">Centang jika semua anak sudah lulus Mustawa 6 tetapi bapak masih ingin ikut tahsin. Wali ini tidak akan diarsipkan otomatis di menu Naik Kelas.</p>
-                    </div>
+                <!-- Catatan legacy: nilainya dipertahankan, tetapi tidak lagi mengecualikan arsip alumni. -->
+                <div class="bg-amber-50 p-4 rounded-2xl border border-amber-100">
+                    <p class="text-amber-700 text-xs font-semibold">Aturan alumni: wali otomatis diarsipkan jika seluruh anak berstatus Lulus.</p>
+                    <p class="text-amber-600 text-[10px] mt-1 font-semibold">Catatan “Lanjut Tahsin” lama tetap tersimpan sebagai riwayat, tetapi tidak mencegah wali keluar dari roster halaqoh.</p>
                 </div>
 
                 <!-- Tahsin Luar Specific Fields -->

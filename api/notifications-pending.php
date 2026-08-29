@@ -48,7 +48,7 @@ try {
             JOIN users u ON h.ustadz_id = u.id
             WHERE 
                 -- Has at least one member
-                EXISTS (SELECT 1 FROM halaqoh_members hm WHERE hm.halaqoh_id = h.id)
+                EXISTS (SELECT 1 FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id AND hm.archived_at IS NULL AND w.status_aktif = 1)
                 -- NO attendance records today
                 AND NOT EXISTS (SELECT 1 FROM presensi p WHERE p.halaqoh_id = h.id AND p.tanggal = ?)
             ORDER BY u.nama_lengkap";

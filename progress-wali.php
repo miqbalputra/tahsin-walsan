@@ -72,7 +72,7 @@ $sql = "
             LIMIT 1
         ) AS materi_terakhir
     FROM wali_santri w
-    JOIN halaqoh_members hm ON hm.wali_santri_id = w.id
+    JOIN halaqoh_members hm ON hm.wali_santri_id = w.id AND hm.archived_at IS NULL
     JOIN halaqoh h ON h.id = hm.halaqoh_id
     JOIN users u ON u.id = h.ustadz_id
     LEFT JOIN presensi p ON p.wali_santri_id = w.id

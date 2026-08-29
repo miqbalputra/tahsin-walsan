@@ -49,6 +49,8 @@ CREATE TABLE halaqoh_members (
     id INT AUTO_INCREMENT PRIMARY KEY,
     halaqoh_id INT NOT NULL,
     wali_santri_id INT NOT NULL,
+    archived_at DATETIME NULL,
+    archive_reason VARCHAR(50) NULL,
     FOREIGN KEY (halaqoh_id) REFERENCES halaqoh(id) ON DELETE CASCADE,
     FOREIGN KEY (wali_santri_id) REFERENCES wali_santri(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;

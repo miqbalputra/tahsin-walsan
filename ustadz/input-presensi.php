@@ -11,7 +11,7 @@ $ustadz_id = $_SESSION['user_id'];
 
 // Get all halaqoh assigned to this ustadz
 $stmt = $pdo->prepare("SELECT h.*, 
-                      (SELECT COUNT(*) FROM halaqoh_members WHERE halaqoh_id = h.id) as total_member 
+                      (SELECT COUNT(*) FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id AND hm.archived_at IS NULL AND w.status_aktif = 1) as total_member
                       FROM halaqoh h 
                       WHERE h.ustadz_id = ? 
                       ORDER BY h.nama_halaqoh");

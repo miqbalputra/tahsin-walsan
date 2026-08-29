@@ -4,6 +4,7 @@ require_once 'includes/header.php';
 require_once 'includes/sidebar.php';
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
+require_once 'includes/alumni_archive_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
@@ -34,16 +35,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $wali_id = $_POST['wali_santri_id'] ?? null;
 
     if ($action === 'add' && $wali_id) {
-        // Check if already in this halaqoh
-        $check = $pdo->prepare("SELECT id FROM halaqoh_members WHERE halaqoh_id = ? AND wali_santri_id = ?");
-        $check->execute([$halaqoh_id, $wali_id]);
-        if (!$check->fetch()) {
-            $stmt = $pdo->prepare("INSERT INTO halaqoh_members (halaqoh_id, wali_santri_id) VALUES (?, ?)");
-            $stmt->execute([$halaqoh_id, $wali_id]);
+        $wali_id = (int) $wali_id;
+        if (!waliCanJoinActiveHalaqoh($pdo, $wali_id)) {
+            $message = "Wali alumni atau wali tanpa anak aktif tidak dapat ditambahkan ke halaqoh.";
+        } else {
+            // Jika relasi lama pernah diarsipkan, aktifkan kembali relasi yang sama.
+            $check = $pdo->prepare("SELECT id FROM halaqoh_members WHERE halaqoh_id = ? AND wali_santri_id = ? LIMIT 1");
+            $check->execute([$halaqoh_id, $wali_id]);
+            $membershipId = $check->fetchColumn();
+            if ($membershipId) {
+                $stmt = $pdo->prepare("UPDATE halaqoh_members SET archived_at = NULL, archive_reason = NULL WHERE id = ?");
+                $stmt->execute([$membershipId]);
+            } else {
+                $stmt = $pdo->prepare("INSERT INTO halaqoh_members (halaqoh_id, wali_santri_id) VALUES (?, ?)");
+                $stmt->execute([$halaqoh_id, $wali_id]);
+            }
             $message = "Anggota berhasil ditambahkan!";
         }
     } elseif ($action === 'remove' && $wali_id) {
-        $stmt = $pdo->prepare("DELETE FROM halaqoh_members WHERE halaqoh_id = ? AND wali_santri_id = ?");
+        $stmt = $pdo->prepare("UPDATE halaqoh_members SET archived_at = CURRENT_TIMESTAMP, archive_reason = 'MANUAL_REMOVE' WHERE halaqoh_id = ? AND wali_santri_id = ? AND archived_at IS NULL");
         $stmt->execute([$halaqoh_id, $wali_id]);
         $message = "Anggota berhasil dihapus dari kelompok!";
     }
@@ -55,7 +65,7 @@ $stmt = $pdo->prepare("SELECT w.*,
                        FROM santri_detail WHERE wali_santri_id = w.id) as daftar_anak
                       FROM wali_santri w 
                       JOIN halaqoh_members hm ON w.id = hm.wali_santri_id 
-                      WHERE hm.halaqoh_id = ? 
+                      WHERE hm.halaqoh_id = ? AND hm.archived_at IS NULL AND w.status_aktif = 1
                       ORDER BY w.nama_bapak");
 $stmt->execute([$halaqoh_id]);
 $members = $stmt->fetchAll();
@@ -65,7 +75,16 @@ $stmt = $pdo->prepare("SELECT w.id, w.nama_bapak,
                       (SELECT GROUP_CONCAT(CONCAT(nama_anak, ' (', kelas, ')') SEPARATOR ', ') 
                        FROM santri_detail WHERE wali_santri_id = w.id) as daftar_anak
                       FROM wali_santri w 
-                      WHERE w.id NOT IN (SELECT wali_santri_id FROM halaqoh_members) 
+                      WHERE w.status_aktif = 1
+                        AND EXISTS (
+                            SELECT 1 FROM santri_detail sd_active
+                            WHERE sd_active.wali_santri_id = w.id
+                              AND TRIM(COALESCE(sd_active.kelas, '')) <> ''
+                              AND LOWER(TRIM(sd_active.kelas)) <> 'lulus'
+                        )
+                        AND w.id NOT IN (
+                            SELECT wali_santri_id FROM halaqoh_members WHERE archived_at IS NULL
+                        )
                       ORDER BY w.nama_bapak");
 $stmt->execute();
 $available_wali = $stmt->fetchAll();

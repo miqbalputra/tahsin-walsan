@@ -359,7 +359,7 @@ function handlePeserta($pdo)
                    (SELECT COUNT(*) FROM presensi WHERE wali_santri_id = w.id AND status = 'H') as total_hadir,
                    (SELECT COUNT(*) FROM presensi WHERE wali_santri_id = w.id AND status = 'A') as total_alpha
             FROM wali_santri w
-            LEFT JOIN halaqoh_members hm ON w.id = hm.wali_santri_id
+            LEFT JOIN halaqoh_members hm ON w.id = hm.wali_santri_id AND hm.archived_at IS NULL
             LEFT JOIN halaqoh h ON hm.halaqoh_id = h.id
             LEFT JOIN users u ON h.ustadz_id = u.id
             WHERE w.id = ?
@@ -413,7 +413,7 @@ function handlePeserta($pdo)
     }
 
     if ($halaqoh_id) {
-        $conditions[] = "w.id IN (SELECT wali_santri_id FROM halaqoh_members WHERE halaqoh_id = :halaqoh_id)";
+        $conditions[] = "w.id IN (SELECT wali_santri_id FROM halaqoh_members WHERE halaqoh_id = :halaqoh_id AND archived_at IS NULL)";
         $params[':halaqoh_id'] = $halaqoh_id;
     }
 
@@ -431,8 +431,8 @@ function handlePeserta($pdo)
 
     $baseSql = "SELECT w.*, 
                        (SELECT GROUP_CONCAT(CONCAT(sd.nama_anak, IF(sd.kelas IS NULL OR sd.kelas = '', '', CONCAT(' (', sd.kelas, ')'))) SEPARATOR ', ') FROM santri_detail sd WHERE sd.wali_santri_id = w.id) as daftar_anak,
-                       (SELECT h.nama_halaqoh FROM halaqoh_members hm JOIN halaqoh h ON hm.halaqoh_id = h.id WHERE hm.wali_santri_id = w.id LIMIT 1) as nama_halaqoh,
-                       (SELECT u.nama_lengkap FROM halaqoh_members hm JOIN halaqoh h ON hm.halaqoh_id = h.id JOIN users u ON h.ustadz_id = u.id WHERE hm.wali_santri_id = w.id LIMIT 1) as nama_ustadz
+                       (SELECT h.nama_halaqoh FROM halaqoh_members hm JOIN halaqoh h ON hm.halaqoh_id = h.id WHERE hm.wali_santri_id = w.id AND hm.archived_at IS NULL LIMIT 1) as nama_halaqoh,
+                       (SELECT u.nama_lengkap FROM halaqoh_members hm JOIN halaqoh h ON hm.halaqoh_id = h.id JOIN users u ON h.ustadz_id = u.id WHERE hm.wali_santri_id = w.id AND hm.archived_at IS NULL LIMIT 1) as nama_ustadz
                 FROM wali_santri w
                 {$where}
                 ORDER BY w.nama_bapak";
@@ -459,7 +459,7 @@ function handleHalaqoh($pdo)
     if ($id) {
         $stmt = $pdo->prepare("
             SELECT h.*, u.nama_lengkap as nama_ustadz, u.no_hp as no_hp_ustadz,
-                   (SELECT COUNT(*) FROM halaqoh_members WHERE halaqoh_id = h.id) as total_member
+                   (SELECT COUNT(*) FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id AND hm.archived_at IS NULL AND w.status_aktif = 1) as total_member
             FROM halaqoh h
             JOIN users u ON h.ustadz_id = u.id
             WHERE h.id = ?
@@ -477,7 +477,7 @@ function handleHalaqoh($pdo)
                    (SELECT GROUP_CONCAT(CONCAT(sd.nama_anak, ' (', sd.kelas, ')') SEPARATOR ', ') FROM santri_detail sd WHERE sd.wali_santri_id = w.id) as anak
             FROM halaqoh_members hm
             JOIN wali_santri w ON hm.wali_santri_id = w.id
-            WHERE hm.halaqoh_id = ?
+            WHERE hm.halaqoh_id = ? AND hm.archived_at IS NULL AND w.status_aktif = 1
             ORDER BY w.nama_bapak
         ");
         $stmtAnggota->execute([$id]);
@@ -510,7 +510,7 @@ function handleHalaqoh($pdo)
     $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
 
     $baseSql = "SELECT h.*, u.nama_lengkap as nama_ustadz,
-                       (SELECT COUNT(*) FROM halaqoh_members WHERE halaqoh_id = h.id) as total_member
+                       (SELECT COUNT(*) FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id AND hm.archived_at IS NULL AND w.status_aktif = 1) as total_member
                 FROM halaqoh h
                 JOIN users u ON h.ustadz_id = u.id
                 {$where}
@@ -646,7 +646,7 @@ function handleStats($pdo)
                COUNT(p.id) as total_input,
                COALESCE(SUM(p.status = 'H'), 0) as hadir,
                COALESCE(SUM(p.status = 'A'), 0) as alpha,
-               (SELECT COUNT(*) FROM halaqoh_members WHERE halaqoh_id = h.id) as total_anggota
+               (SELECT COUNT(*) FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id AND hm.archived_at IS NULL AND w.status_aktif = 1) as total_anggota
         FROM halaqoh h
         JOIN users u ON h.ustadz_id = u.id
         LEFT JOIN presensi p ON p.halaqoh_id = h.id AND p.tanggal BETWEEN :start2 AND :end2
@@ -734,7 +734,7 @@ function handleProgress($pdo)
                MAX(p.tanggal) as terakhir_hadir,
                (SELECT CONCAT_WS(' ', lp.jenis_materi, CASE WHEN lp.jenis_materi = 'Iqro' THEN CONCAT('Jilid ', lp.jilid) WHEN lp.jenis_materi = 'Al Quran' THEN lp.nama_surat END, CASE WHEN lp.halaman IS NOT NULL THEN CONCAT('Hal/Ayat ', lp.halaman) END) FROM presensi lp WHERE lp.wali_santri_id = w.id AND lp.status = 'H' ORDER BY lp.tanggal DESC, lp.id DESC LIMIT 1) as materi_terakhir
         FROM wali_santri w
-        JOIN halaqoh_members hm ON hm.wali_santri_id = w.id
+        JOIN halaqoh_members hm ON hm.wali_santri_id = w.id AND hm.archived_at IS NULL
         JOIN halaqoh h ON h.id = hm.halaqoh_id
         JOIN users u ON u.id = h.ustadz_id
         LEFT JOIN presensi p ON p.wali_santri_id = w.id AND p.halaqoh_id = h.id AND p.tanggal BETWEEN :start AND :end
@@ -833,7 +833,7 @@ function handleUstadz($pdo)
         $stmt = $pdo->prepare("
             SELECT u.id, u.username, u.nama_lengkap, u.no_hp, u.role, u.created_at,
                    (SELECT COUNT(*) FROM halaqoh WHERE ustadz_id = u.id) as total_halaqoh,
-                   (SELECT COUNT(DISTINCT hm.wali_santri_id) FROM halaqoh h JOIN halaqoh_members hm ON h.id = hm.halaqoh_id WHERE h.ustadz_id = u.id) as total_member,
+                   (SELECT COUNT(DISTINCT hm.wali_santri_id) FROM halaqoh h JOIN halaqoh_members hm ON h.id = hm.halaqoh_id WHERE h.ustadz_id = u.id AND hm.archived_at IS NULL) as total_member,
                    (SELECT COUNT(*) FROM presensi p JOIN halaqoh h ON p.halaqoh_id = h.id WHERE h.ustadz_id = u.id) as total_input_presensi
             FROM users u
             WHERE u.id = ? AND u.role = 'ustadz'
@@ -847,7 +847,7 @@ function handleUstadz($pdo)
 
         // Halaqoh yang diampu
         $stmtH = $pdo->prepare("
-            SELECT h.*, (SELECT COUNT(*) FROM halaqoh_members WHERE halaqoh_id = h.id) as total_member
+            SELECT h.*, (SELECT COUNT(*) FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id AND hm.archived_at IS NULL AND w.status_aktif = 1) as total_member
             FROM halaqoh h WHERE h.ustadz_id = ?
         ");
         $stmtH->execute([$id]);
@@ -860,7 +860,7 @@ function handleUstadz($pdo)
 
     $baseSql = "SELECT u.id, u.username, u.nama_lengkap, u.no_hp, u.role, u.created_at,
                        (SELECT COUNT(*) FROM halaqoh WHERE ustadz_id = u.id) as total_halaqoh,
-                       (SELECT COUNT(DISTINCT hm.wali_santri_id) FROM halaqoh h JOIN halaqoh_members hm ON h.id = hm.halaqoh_id WHERE h.ustadz_id = u.id) as total_member
+                       (SELECT COUNT(DISTINCT hm.wali_santri_id) FROM halaqoh h JOIN halaqoh_members hm ON h.id = hm.halaqoh_id WHERE h.ustadz_id = u.id AND hm.archived_at IS NULL) as total_member
                 FROM users u
                 WHERE u.role = 'ustadz'
                 ORDER BY u.nama_lengkap";
@@ -967,7 +967,7 @@ function handleCapaian($pdo)
                GROUP_CONCAT(DISTINCT s.kelas SEPARATOR ', ') as classes,
                p.jenis_materi, p.jilid, p.nama_surat, p.halaman, p.tanggal as last_date, p.hasil_talaqqi
         FROM wali_santri w
-        JOIN halaqoh_members hm ON w.id = hm.wali_santri_id
+        JOIN halaqoh_members hm ON w.id = hm.wali_santri_id AND hm.archived_at IS NULL
         JOIN halaqoh h ON hm.halaqoh_id = h.id
         JOIN users u ON h.ustadz_id = u.id
         LEFT JOIN santri_detail s ON w.id = s.wali_santri_id
@@ -1015,7 +1015,7 @@ function handleSearch($pdo)
         SELECT w.id, w.nama_bapak as nama, w.no_hp, w.kategori, 'wali_santri' as tipe,
                h.nama_halaqoh as kelompok
         FROM wali_santri w
-        LEFT JOIN halaqoh_members hm ON w.id = hm.wali_santri_id
+        LEFT JOIN halaqoh_members hm ON w.id = hm.wali_santri_id AND hm.archived_at IS NULL
         LEFT JOIN halaqoh h ON hm.halaqoh_id = h.id
         WHERE w.nama_bapak LIKE ? OR w.no_hp LIKE ?
         LIMIT ?

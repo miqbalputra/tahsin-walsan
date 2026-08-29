@@ -28,6 +28,8 @@ $judulBulan = $bulanNama[(int) date('n', strtotime($start_date))] . ' ' . date('
 $params = [
     ':start' => $start_date,
     ':end' => $end_date,
+    // Membership yang diarsipkan di tengah periode tetap dihitung untuk laporan periode tersebut.
+    ':membership_boundary' => $start_date . ' 00:00:00',
 ];
 $where = [];
 if ($role === 'ustadz') {
@@ -49,6 +51,7 @@ $stmt = $pdo->prepare("
         COALESCE(SUM(p.hasil_talaqqi = 'Ulang'), 0) AS ulang
     FROM halaqoh h
     LEFT JOIN halaqoh_members hm ON hm.halaqoh_id = h.id
+        AND (hm.archived_at IS NULL OR hm.archived_at >= :membership_boundary)
     LEFT JOIN presensi p ON p.halaqoh_id = h.id
         AND p.wali_santri_id = hm.wali_santri_id
         AND p.tanggal BETWEEN :start AND :end
@@ -72,6 +75,7 @@ $stmt = $pdo->prepare("
     FROM halaqoh h
     JOIN users u ON u.id = h.ustadz_id
     LEFT JOIN halaqoh_members hm ON hm.halaqoh_id = h.id
+        AND (hm.archived_at IS NULL OR hm.archived_at >= :membership_boundary)
     LEFT JOIN presensi p ON p.halaqoh_id = h.id
         AND p.wali_santri_id = hm.wali_santri_id
         AND p.tanggal BETWEEN :start AND :end
@@ -110,6 +114,7 @@ $stmt = $pdo->prepare("
         ) AS materi_terakhir
     FROM wali_santri w
     JOIN halaqoh_members hm ON hm.wali_santri_id = w.id
+        AND (hm.archived_at IS NULL OR hm.archived_at >= :membership_boundary)
     JOIN halaqoh h ON h.id = hm.halaqoh_id
     JOIN users u ON u.id = h.ustadz_id
     LEFT JOIN presensi p ON p.wali_santri_id = w.id

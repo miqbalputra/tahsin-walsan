@@ -5,14 +5,14 @@
  * Tab 1 — Bulk Naik Kelas: pratinjau + naikkan santri_detail.kelas satu mustawa.
  *          Mustawa N (Ikhwan/Akhwat) -> Mustawa N+1 (Ikhwan/Akhwat); Mustawa 6 -> "Lulus".
  * Tab 2 — Arsip Lulusan: kandidat wali yang SEMUA anaknya "Lulus" -> status_aktif=0,
- *          toggle "Lanjut Tahsin" untuk wali yang tetap mau ikut tahsin,
- *          daftar wali terarsip + Aktifkan Kembali.
+ *          backfill satu kali, daftar wali terarsip + Aktifkan Kembali.
  *
  * Safeguard kakak-beradik dijalankan server-side: wali yang masih punya anak
- * aktif (kelas != 'Lulus') TIDAK dapat diarsipkan meski ID-nya dipaksa dari client.
+ * aktif (kelas bukan Lulus) TIDAK dapat diarsipkan meski ID-nya dipaksa dari client.
  */
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
+require_once 'includes/alumni_archive_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
@@ -87,6 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $upd = $pdo->prepare("UPDATE santri_detail SET kelas = ? WHERE id = ?");
             $snap = [];
+            $affectedWaliIds = [];
             $done = 0;
             $skip = 0;
             foreach ($rows as $r) {
@@ -97,12 +98,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $upd->execute([$next, $r['id']]);
                 $snap[] = $r['id'] . ':' . $r['kelas'] . '->' . $next;
+                $affectedWaliIds[] = (int) $r['wali_santri_id'];
                 $done++;
             }
+            $archiveResult = $done > 0
+                ? archiveEligibleAlumni($pdo, $affectedWaliIds, 'AUTO_NAIK_KELAS')
+                : ['archived_wali' => 0, 'archived_memberships' => 0];
             addLog($pdo, 'BULK_NAIK_KELAS', json_encode($snap));
             $pdo->commit();
 
             $msg = "$done anak berhasil dinaikkan kelas.";
+            if ($archiveResult['archived_wali'] > 0) {
+                $msg .= " {$archiveResult['archived_wali']} wali alumni otomatis diarsipkan dan keluar dari halaqoh.";
+            }
             if ($skip > 0) {
                 $msg .= " $skip di-skip (kelas sudah Lulus / format tidak dikenal).";
             }
@@ -127,12 +135,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $pdo->beginTransaction();
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $waliStmt = $pdo->prepare("SELECT DISTINCT wali_santri_id FROM santri_detail WHERE id IN ($placeholders) FOR UPDATE");
+            $waliStmt->execute($ids);
+            $affectedWaliIds = array_map('intval', $waliStmt->fetchAll(PDO::FETCH_COLUMN));
             $stmt = $pdo->prepare("UPDATE santri_detail SET kelas = 'Lulus' WHERE id IN ($placeholders)");
             $stmt->execute($ids);
             $done = $stmt->rowCount();
+            $archiveResult = $done > 0
+                ? archiveEligibleAlumni($pdo, $affectedWaliIds, 'AUTO_LULUS_MANUAL')
+                : ['archived_wali' => 0, 'archived_memberships' => 0];
             addLog($pdo, 'BULK_LULUS_MANUAL', "Luluskan manual santri: " . implode(',', $ids));
             $pdo->commit();
-            redirectTo('naik-kelas.php?tab=naik&msg=' . rawurlencode("$done santri ditandai 'Lulus' (manual)."));
+            $msg = "$done santri ditandai 'Lulus' (manual).";
+            if ($archiveResult['archived_wali'] > 0) {
+                $msg .= " {$archiveResult['archived_wali']} wali alumni otomatis diarsipkan dan keluar dari halaqoh.";
+            }
+            redirectTo('naik-kelas.php?tab=naik&msg=' . rawurlencode($msg));
         } catch (Exception $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -167,37 +185,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         try {
             $pdo->beginTransaction();
-            $placeholders = implode(',', array_fill(0, count($ids), '?'));
-            // Safeguard server-side: hanya wali aktif, bukan lanjut_tahsin,
-            // punya minimal 1 anak, DAN semua anaknya berkelas 'Lulus'.
-            $stmt = $pdo->prepare("
-                SELECT w.id FROM wali_santri w
-                WHERE w.id IN ($placeholders)
-                  AND w.status_aktif = 1
-                  AND w.lanjut_tahsin = 0
-                  AND EXISTS (SELECT 1 FROM santri_detail sd WHERE sd.wali_santri_id = w.id)
-                  AND NOT EXISTS (
-                      SELECT 1 FROM santri_detail sd
-                      WHERE sd.wali_santri_id = w.id AND sd.kelas <> 'Lulus'
-                  )
-            ");
-            $stmt->execute($ids);
-            $ok_ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
-
-            $archived = 0;
-            if ($ok_ids) {
-                $updPh = implode(',', array_fill(0, count($ok_ids), '?'));
-                $upd = $pdo->prepare("UPDATE wali_santri SET status_aktif = 0 WHERE id IN ($updPh)");
-                $upd->execute($ok_ids);
-                $archived = $upd->rowCount();
-            }
-            addLog($pdo, 'BULK_ARCHIVE_WALI', 'Arsipkan wali: ' . implode(',', $ok_ids));
+            $archiveResult = archiveEligibleAlumni($pdo, $ids, 'MANUAL_BACKFILL');
+            $ok_ids = $archiveResult['wali_ids'];
+            addLog($pdo, 'BULK_ARCHIVE_WALI', json_encode([
+                'wali_ids' => $ok_ids,
+                'batch_id' => $archiveResult['batch_id'],
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
             $pdo->commit();
 
             $rejected = count($ids) - count($ok_ids);
-            $msg = "$archived wali berhasil diarsipkan.";
+            $msg = "{$archiveResult['archived_wali']} wali berhasil diarsipkan dan {$archiveResult['archived_memberships']} keanggotaan halaqoh dinonaktifkan.";
             if ($rejected > 0) {
-                $msg .= " $rejected ditolak (masih punya anak aktif / ditandai lanjut tahsin).";
+                $msg .= " $rejected ditolak karena masih memiliki anak aktif, kelas kosong/tidak dikenal, atau sudah tidak aktif.";
             }
             redirectTo('naik-kelas.php?tab=arsip&msg=' . rawurlencode($msg));
         } catch (Exception $e) {
@@ -211,9 +210,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'unarchive') {
         $wid = (int) ($_POST['wali_id'] ?? 0);
         if ($wid > 0) {
-            $pdo->prepare("UPDATE wali_santri SET status_aktif = 1 WHERE id = ?")->execute([$wid]);
-            addLog($pdo, 'UNARCHIVE_WALI', "Aktifkan kembali wali: $wid");
-            redirectTo('naik-kelas.php?tab=arsip&msg=' . rawurlencode('Wali berhasil diaktifkan kembali.'));
+            try {
+                $pdo->beginTransaction();
+                if (!waliHasActiveSchoolChild($pdo, $wid)) {
+                    throw new RuntimeException('Wali belum memiliki anak aktif. Kembalikan kelas anak terlebih dahulu.');
+                }
+                $stmt = $pdo->prepare("UPDATE wali_santri SET status_aktif = 1 WHERE id = ? AND status_aktif = 0");
+                $stmt->execute([$wid]);
+                addLog($pdo, 'UNARCHIVE_WALI', "Aktifkan kembali wali: $wid; membership halaqoh lama tidak dipulihkan otomatis");
+                $pdo->commit();
+                redirectTo('naik-kelas.php?tab=arsip&msg=' . rawurlencode('Wali berhasil diaktifkan kembali. Silakan tetapkan halaqoh bila diperlukan.'));
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode($e->getMessage()));
+            }
         }
         redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode('ID wali tidak valid.'));
     }
@@ -224,7 +236,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($wid > 0) {
             $pdo->prepare("UPDATE wali_santri SET lanjut_tahsin = ? WHERE id = ?")->execute([$val, $wid]);
             addLog($pdo, 'TOGGLE_LANJUT_TAHSIN', "Wali $wid lanjut_tahsin=$val");
-            $label = $val ? 'Wali ditandai lanjut tahsin (tidak akan diarsipkan).' : 'Tanda lanjut tahsin dibatalkan.';
+            $label = $val ? 'Catatan lanjut tahsin disimpan, tetapi tidak mencegah arsip otomatis.' : 'Catatan lanjut tahsin dibatalkan.';
             redirectTo('naik-kelas.php?tab=arsip&msg=' . rawurlencode($label));
         }
         redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode('ID wali tidak valid.'));
@@ -253,7 +265,7 @@ $naikSql = "
     SELECT sd.id, sd.wali_santri_id, w.nama_bapak, sd.nama_anak, sd.kelas, h.nama_halaqoh
     FROM santri_detail sd
     JOIN wali_santri w ON w.id = sd.wali_santri_id AND w.status_aktif = 1
-    LEFT JOIN halaqoh_members hm ON hm.wali_santri_id = w.id
+    LEFT JOIN halaqoh_members hm ON hm.wali_santri_id = w.id AND hm.archived_at IS NULL
     LEFT JOIN halaqoh h ON h.id = hm.halaqoh_id
     WHERE sd.kelas LIKE 'Mustawa %' AND sd.kelas <> 'Lulus'
 ";
@@ -263,7 +275,7 @@ if ($kelas_filter !== '') {
     $naikParams[':kelas'] = $kelas_filter;
 }
 if ($halaqoh_filter !== '') {
-    $naikSql .= " AND w.id IN (SELECT wali_santri_id FROM halaqoh_members WHERE halaqoh_id = :halaqoh)";
+    $naikSql .= " AND w.id IN (SELECT wali_santri_id FROM halaqoh_members WHERE halaqoh_id = :halaqoh AND archived_at IS NULL)";
     $naikParams[':halaqoh'] = $halaqoh_filter;
 }
 $naikSql .= " ORDER BY sd.kelas, w.nama_bapak, sd.nama_anak";
@@ -293,22 +305,22 @@ $lulusList = $pdo->query("
     ORDER BY w.nama_bapak, sd.nama_anak
 ")->fetchAll(PDO::FETCH_ASSOC);
 
-// Tab 2 — kandidat arsip (semua anak 'Lulus', aktif, bukan lanjut_tahsin)
+// Tab 2 — kandidat arsip (semua anak 'Lulus' dan masih aktif)
 $kandidatArsip = $pdo->query("
     SELECT w.id, w.nama_bapak, w.kategori, w.no_hp,
         COUNT(sd.id) AS total_anak,
-        SUM(sd.kelas = 'Lulus') AS lulus_count,
+        SUM(LOWER(TRIM(COALESCE(sd.kelas, ''))) = 'lulus') AS lulus_count,
         GROUP_CONCAT(CONCAT(sd.nama_anak, ' (', sd.kelas, ')') SEPARATOR ', ') AS daftar_anak,
-        (SELECT h.nama_halaqoh FROM halaqoh_members hm JOIN halaqoh h ON h.id = hm.halaqoh_id WHERE hm.wali_santri_id = w.id LIMIT 1) AS nama_halaqoh
+        (SELECT h.nama_halaqoh FROM halaqoh_members hm JOIN halaqoh h ON h.id = hm.halaqoh_id WHERE hm.wali_santri_id = w.id AND hm.archived_at IS NULL LIMIT 1) AS nama_halaqoh
     FROM wali_santri w
     LEFT JOIN santri_detail sd ON sd.wali_santri_id = w.id
-    WHERE w.status_aktif = 1 AND w.lanjut_tahsin = 0
+    WHERE w.status_aktif = 1
     GROUP BY w.id
     HAVING total_anak > 0 AND lulus_count = total_anak
     ORDER BY w.nama_bapak
 ")->fetchAll(PDO::FETCH_ASSOC);
 
-// Tab 2 — wali ditandai lanjut tahsin (aktif)
+// Catatan lama lanjut_tahsin ditampilkan hanya sebagai informasi.
 $lanjutList = $pdo->query("
     SELECT w.id, w.nama_bapak, w.kategori,
         GROUP_CONCAT(CONCAT(sd.nama_anak, ' (', sd.kelas, ')') SEPARATOR ', ') AS daftar_anak
@@ -330,6 +342,41 @@ $terarsip = $pdo->query("
     GROUP BY w.id
     ORDER BY w.nama_bapak
 ")->fetchAll(PDO::FETCH_ASSOC);
+
+// Export preview backfill alumni tanpa mengubah database.
+if (($_GET['export'] ?? '') === 'alumni-backfill') {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="preview_alumni_backfill_' . date('Y-m-d_His') . '.csv"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['wali_id', 'nama_bapak', 'no_hp', 'kategori', 'total_anak', 'lulus_count', 'daftar_anak', 'halaqoh']);
+    foreach ($kandidatArsip as $row) {
+        fputcsv($out, [$row['id'], $row['nama_bapak'], $row['no_hp'], $row['kategori'], $row['total_anak'], $row['lulus_count'], $row['daftar_anak'], $row['nama_halaqoh']]);
+    }
+    fclose($out);
+    exit;
+}
+
+// Export state arsip untuk audit atau rollback terarah tanpa mengubah database.
+if (($_GET['export'] ?? '') === 'alumni-archive-state') {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="alumni_archive_state_' . date('Y-m-d_His') . '.csv"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['wali_id', 'nama_bapak', 'status_aktif', 'daftar_anak', 'membership_id', 'halaqoh_id', 'archived_at', 'archive_reason']);
+    $stateStmt = $pdo->query("
+        SELECT w.id, w.nama_bapak, w.status_aktif,
+               (SELECT GROUP_CONCAT(CONCAT(sd.nama_anak, ' [', sd.kelas, ']') SEPARATOR ' | ') FROM santri_detail sd WHERE sd.wali_santri_id = w.id) AS daftar_anak,
+               hm.id AS membership_id, hm.halaqoh_id, hm.archived_at, hm.archive_reason
+        FROM wali_santri w
+        LEFT JOIN halaqoh_members hm ON hm.wali_santri_id = w.id
+        WHERE w.status_aktif = 0 OR hm.archived_at IS NOT NULL
+        ORDER BY w.id, hm.id
+    ");
+    while ($row = $stateStmt->fetch(PDO::FETCH_ASSOC)) {
+        fputcsv($out, [$row['id'], $row['nama_bapak'], $row['status_aktif'], $row['daftar_anak'], $row['membership_id'], $row['halaqoh_id'], $row['archived_at'], $row['archive_reason']]);
+    }
+    fclose($out);
+    exit;
+}
 
 // JSON untuk Alpine
 $naikValidIdsJson = json_encode($naikValidIds);
@@ -637,7 +684,7 @@ require_once 'includes/sidebar.php';
         <div class="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-6 text-sm text-blue-800">
             Wali yang <strong>masih punya anak aktif</strong> (ada anak yang belum "Lulus") <strong>tidak muncul</strong> di daftar kandidat arsip —
             termasuk kasus kakak beradik (kakak lulus, adik masih sekolah). Wali yang diarsip tetap tersimpan di database beserta riwayat presensinya,
-            hanya tidak tampil di form presensi ustadz. Bisa diaktifkan kembali kapan saja.
+            hanya tidak tampil di roster aktif dan form presensi ustadz. Wali hanya dapat diaktifkan kembali setelah memiliki anak aktif.
         </div>
 
         <!-- A. Kandidat arsip -->
@@ -645,15 +692,16 @@ require_once 'includes/sidebar.php';
             <div class="flex items-center justify-between p-5 border-b border-slate-100">
                 <div>
                     <h3 class="font-bold text-slate-800">Kandidat Arsip (Semua Anak Lulus)</h3>
-                    <p class="text-xs text-slate-500 mt-0.5">Centang wali yang anaknya sudah lulus DAN berhenti tahsin. Untuk yang masih mau tahsin, klik "Lanjut Tahsin".</p>
+                    <p class="text-xs text-slate-500 mt-0.5">Gunakan daftar ini untuk backfill satu kali. Setelah itu arsip berjalan otomatis saat anak ditandai Lulus.</p>
                 </div>
+                <a href="naik-kelas.php?tab=arsip&export=alumni-backfill" class="bg-emerald-100 text-emerald-700 px-4 py-2.5 rounded-xl font-bold text-xs hover:bg-emerald-200 transition">Export Preview</a>
                 <button @click="showConfirmArsip = true" :disabled="selectedArsip.length === 0"
                     :class="selectedArsip.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-600'"
                     class="bg-red-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm transition shadow-sm flex items-center gap-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path>
                     </svg>
-                    Arsipkan (<span x-text="selectedArsip.length"></span> terpilih)
+                    Arsipkan Backfill (<span x-text="selectedArsip.length"></span>)
                 </button>
             </div>
             <div class="overflow-x-auto">
@@ -675,7 +723,7 @@ require_once 'includes/sidebar.php';
                     <tbody class="divide-y divide-slate-100">
                         <?php if (empty($kandidatArsip)): ?>
                             <tr>
-                                <td colspan="6" class="px-4 py-8 text-center text-slate-400 italic">Tidak ada kandidat arsip. Semua wali aktif masih punya anak yang belum lulus, atau sudah ditandai lanjut tahsin.</td>
+                                <td colspan="6" class="px-4 py-8 text-center text-slate-400 italic">Tidak ada kandidat arsip. Semua wali aktif masih memiliki anak aktif atau kelas yang belum dapat diverifikasi.</td>
                             </tr>
                         <?php endif; ?>
                         <?php foreach ($kandidatArsip as $k): ?>
@@ -689,24 +737,10 @@ require_once 'includes/sidebar.php';
                                     <span class="px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider <?php echo $k['kategori'] === 'reguler' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'; ?>">
                                         <?php echo htmlspecialchars(str_replace('_', ' ', $k['kategori'])); ?>
                                     </span>
-                                    <?php if ($k['kategori'] === 'tahsin_luar'): ?>
-                                        <div class="mt-1 text-[9px] text-amber-600 italic">Mungkin mau lanjut</div>
-                                    <?php endif; ?>
                                 </td>
                                 <td class="px-4 py-3 text-sm text-slate-600 align-middle max-w-xs"><?php echo htmlspecialchars($k['daftar_anak'] ?: '-'); ?></td>
                                 <td class="px-4 py-3 text-sm text-slate-500 align-middle"><?php echo htmlspecialchars($k['nama_halaqoh'] ?: '-'); ?></td>
-                                <td class="px-4 py-3 text-right align-middle">
-                                    <form method="POST" action="" class="inline-flex">
-                                        <?php csrfField(); ?>
-                                        <input type="hidden" name="action" value="set_lanjut_tahsin">
-                                        <input type="hidden" name="wali_id" value="<?php echo $k['id']; ?>">
-                                        <input type="hidden" name="value" value="1">
-                                        <button type="submit" class="text-emerald-700 hover:bg-emerald-600 hover:text-white font-bold text-[10px] uppercase transition bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100"
-                                            title="Bapak tetap mau ikut tahsin — kecualikan dari arsip">
-                                            Lanjut Tahsin
-                                        </button>
-                                    </form>
-                                </td>
+                                <td class="px-4 py-3 text-right align-middle text-xs text-slate-400">Otomatis saat proses Lulus</td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -714,7 +748,7 @@ require_once 'includes/sidebar.php';
             </div>
         </div>
 
-        <!-- B. Wali ditandai lanjut tahsin -->
+        <!-- B. Catatan lama lanjut tahsin -->
         <?php if (!empty($lanjutList)): ?>
             <div class="bg-white rounded-2xl shadow-sm border border-emerald-100 overflow-hidden mb-6">
                 <div class="p-5 border-b border-emerald-100 bg-emerald-50/40">
@@ -722,9 +756,9 @@ require_once 'includes/sidebar.php';
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                         </svg>
-                        Ditandai Lanjut Tahsin
+                        Catatan Lanjut Tahsin Lama
                     </h3>
-                    <p class="text-xs text-emerald-700 mt-0.5">Wali ini TIDAK akan diarsipkan saat bulk arsip dijalankan.</p>
+                    <p class="text-xs text-emerald-700 mt-0.5">Catatan ini dipertahankan untuk keamanan data, tetapi tidak mencegah wali alumni diarsipkan otomatis.</p>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left">
@@ -732,7 +766,7 @@ require_once 'includes/sidebar.php';
                             <tr>
                                 <th class="px-4 py-3">Nama Wali (Bapak)</th>
                                 <th class="px-4 py-3">Anak</th>
-                                <th class="px-4 py-3 text-right">Aksi</th>
+                                <th class="px-4 py-3 text-right">Status Aturan Baru</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
@@ -740,17 +774,7 @@ require_once 'includes/sidebar.php';
                                 <tr class="hover:bg-slate-50 transition">
                                     <td class="px-4 py-3 font-semibold text-slate-800"><?php echo htmlspecialchars($l['nama_bapak']); ?></td>
                                     <td class="px-4 py-3 text-sm text-slate-600 max-w-xs"><?php echo htmlspecialchars($l['daftar_anak'] ?: '-'); ?></td>
-                                    <td class="px-4 py-3 text-right">
-                                        <form method="POST" action="" class="inline-flex">
-                                            <?php csrfField(); ?>
-                                            <input type="hidden" name="action" value="set_lanjut_tahsin">
-                                            <input type="hidden" name="wali_id" value="<?php echo $l['id']; ?>">
-                                            <input type="hidden" name="value" value="0">
-                                            <button type="submit" class="text-slate-600 hover:bg-slate-200 font-bold text-[10px] uppercase transition bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
-                                                Batalkan Tanda
-                                            </button>
-                                        </form>
-                                    </td>
+                                    <td class="px-4 py-3 text-right text-xs text-slate-500">Tetap mengikuti aturan arsip alumni</td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -769,7 +793,7 @@ require_once 'includes/sidebar.php';
                         </svg>
                         Wali Terarsip (<?php echo count($terarsip); ?>)
                     </h3>
-                    <p class="text-xs text-slate-500 mt-0.5">Tidak tampil di form presensi. Riwayat presensi tetap utuh.</p>
+                    <p class="text-xs text-slate-500 mt-0.5">Tidak tampil di form presensi. Riwayat presensi tetap utuh. <a href="naik-kelas.php?tab=arsip&export=alumni-archive-state" class="underline font-semibold">Export state arsip</a></p>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left">
@@ -816,7 +840,7 @@ require_once 'includes/sidebar.php';
                 <p class="text-sm text-slate-600 mb-4">Anda akan mengarsipkan <strong x-text="selectedArsip.length"></strong> wali terpilih.</p>
                 <p class="text-xs text-slate-500 mb-5 bg-amber-50 border border-amber-100 rounded-xl p-4">
                     Wali arsip tidak tampil di form presensi ustadz dan progress, namun data + riwayat presensi tetap utuh.
-                    Wali yang masih punya anak aktif akan otomatis ditolak sistem. Bisa diaktifkan kembali kapan saja.
+                    Wali yang masih punya anak aktif, kelas kosong, atau kelas tidak dikenal akan otomatis ditolak sistem.
                 </p>
                 <form method="POST" action="" class="flex gap-3">
                     <?php csrfField(); ?>

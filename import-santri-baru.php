@@ -16,6 +16,7 @@
  */
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
+require_once 'includes/alumni_archive_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
@@ -314,13 +315,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->beginTransaction();
 
             $stmtInsertChild = $pdo->prepare("INSERT INTO santri_detail (wali_santri_id, nama_anak, kelas) VALUES (?, ?, ?)");
-            $stmtReactivate = $pdo->prepare("UPDATE wali_santri SET status_aktif = 1 WHERE id = ? AND status_aktif = 0");
+            $affectedWaliIds = [];
 
             // 1. Adik -> tempel ke wali existing
             foreach ($rows as $r) {
                 if ($r['status'] === 'attach') {
-                    $stmtReactivate->execute([$r['target_wali_id']]);
                     $stmtInsertChild->execute([$r['target_wali_id'], $r['nama_anak'], $r['kelas']]);
+                    $affectedWaliIds[] = (int) $r['target_wali_id'];
+                    // Hanya anak aktif yang boleh mengaktifkan kembali wali arsip.
+                    reactivateWaliIfHasActiveChild($pdo, (int) $r['target_wali_id']);
                     $attached++;
                 }
             }
@@ -333,6 +336,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $firstRow = $rows[$fam['rows'][0]];
                 $stmtInsertWali->execute([$firstRow['nama_bapak'], $firstRow['no_hp']]);
                 $waliId = (int) $pdo->lastInsertId();
+                $affectedWaliIds[] = $waliId;
                 $newWali++;
                 foreach ($fam['rows'] as $idx) {
                     $r = $rows[$idx];
@@ -344,6 +348,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
+            $archiveResult = archiveEligibleAlumni($pdo, $affectedWaliIds, 'AUTO_IMPORT_SANTRI');
+
             // 3. dup/error -> skip (hanya hitung)
             foreach ($rows as $r) {
                 if ($r['status'] === 'dup' || $r['status'] === 'error') {
@@ -351,7 +357,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            addLog($pdo, 'IMPORT_SANTRI_BARU', "Adik ditempel: $attached, Wali baru: $newWali, Anak baru di wali baru: $newChildren, Skip: $skipped");
+            addLog($pdo, 'IMPORT_SANTRI_BARU', json_encode([
+                'attached' => $attached,
+                'new_wali' => $newWali,
+                'new_children' => $newChildren,
+                'skipped' => $skipped,
+                'auto_archived_wali' => $archiveResult['archived_wali'],
+                'auto_archived_memberships' => $archiveResult['archived_memberships'],
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
             $pdo->commit();
 
             // bersihkan temp upload
@@ -361,6 +374,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             unset($_SESSION['import_baru_file']);
 
             $msg = "Import selesai. $attached adik ditempel ke wali existing, $newWali wali baru dibuat ($newChildren anak), $skipped baris di-skip (duplikat/error).";
+            if ($archiveResult['archived_wali'] > 0) {
+                $msg .= " {$archiveResult['archived_wali']} wali alumni otomatis diarsipkan.";
+            }
             redirectTo('import-santri-baru.php?done=' . rawurlencode($msg));
         } catch (Exception $e) {
             if ($pdo->inTransaction()) {
