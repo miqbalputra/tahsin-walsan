@@ -1,170 +1,63 @@
 <?php
 require_once '../config/database.php';
 require_once '../includes/auth_helper.php';
-session_start();
+require_once '../includes/attendance_helper.php';
 
-function combineRangeValue($start, $end, $delimiter = '-')
-{
-    $start = trim((string) $start);
-    $end = trim((string) $end);
+header('Content-Type: application/json');
 
-    if ($start === '') {
-        return '';
-    }
-
-    if ($end === '' || $end === $start) {
-        return $start;
-    }
-
-    return $delimiter === 's/d' ? "$start s/d $end" : "$start-$end";
-}
-
-// Proteksi Keamanan
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'ustadz') {
-    header('Content-Type: application/json');
+if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ustadz') {
+    http_response_code(403);
     echo json_encode(['status' => 'error', 'message' => 'Unauthorized']);
     exit();
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // CSRF Validation
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        header('Content-Type: application/json');
-        echo json_encode(['status' => 'error', 'message' => 'Invalid security token (CSRF)']);
-        exit();
-    }
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    header('Allow: POST');
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed']);
+    exit();
+}
 
-    $ustadz_id = $_SESSION['user_id'];
-    $halaqoh_id = $_POST['halaqoh_id'] ?? null;
-    $wali_id = $_POST['wali_santri_id'] ?? null;
-    $tanggal = $_POST['tanggal'] ?? null;
+if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+    http_response_code(403);
+    echo json_encode(['status' => 'error', 'message' => 'Token keamanan tidak valid. Muat ulang halaman lalu coba lagi.']);
+    exit();
+}
 
-    // Check if today is a holiday
-    $stmtHoliday = $pdo->prepare("SELECT id FROM holidays WHERE tanggal = ?");
-    $stmtHoliday->execute([$tanggal]);
-    $isHoliday = $stmtHoliday->fetch();
+$ustadzId = (int) $_SESSION['user_id'];
+$halaqohId = filter_var($_POST['halaqoh_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+$waliId = filter_var($_POST['wali_santri_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+$tanggal = normalizeDateInput($_POST['tanggal'] ?? '', '');
+if ($halaqohId === false || $waliId === false || $tanggal === '') {
+    http_response_code(422);
+    echo json_encode(['status' => 'error', 'message' => 'Data presensi tidak valid.']);
+    exit();
+}
 
-    // Data Presensi
-    $status = $_POST['status'] ?? 'A';
-    
-    // Prevent auto-alfa on holidays
-    if ($isHoliday && $status === 'A' && !isset($_POST['status'])) {
-        header('Content-Type: application/json');
-        echo json_encode(['status' => 'success', 'message' => 'Hari libur, tidak menyimpan Alfa otomatis.']);
-        exit();
-    }
-    $alasan = $_POST['alasan'] ?? null;
-    $jenis_materi = $_POST['jenis_materi'] ?? null;
-    $jilid = $_POST['jilid'] ?? null;
-    $nama_surat = $jenis_materi === 'Al Quran'
-        ? combineRangeValue($_POST['nama_surat_dari'] ?? '', $_POST['nama_surat_sampai'] ?? '', 's/d')
-        : null;
-    $halaman = combineRangeValue($_POST['halaman_dari'] ?? '', $_POST['halaman_sampai'] ?? '', '-');
-    $hasil_talaqqi = $_POST['hasil_talaqqi'] ?? null;
+$payload = [
+    'intent' => $_POST['intent'] ?? 'save',
+    'status' => $_POST['status'] ?? 'A',
+    'alasan' => $_POST['alasan'] ?? '',
+    'jenis_materi' => $_POST['jenis_materi'] ?? '',
+    'jilid' => $_POST['jilid'] ?? '',
+    'nama_surat_dari' => $_POST['nama_surat_dari'] ?? '',
+    'nama_surat_sampai' => $_POST['nama_surat_sampai'] ?? '',
+    'halaman_dari' => $_POST['halaman_dari'] ?? '',
+    'halaman_sampai' => $_POST['halaman_sampai'] ?? '',
+    'hasil_talaqqi' => $_POST['hasil_talaqqi'] ?? '',
+];
 
-    // Validasi Server-side
-    // Jika status adalah RESET, kita akan menghapus record tersebut
-    if ($status === 'RESET') {
-        // No further data validation needed for reset
-    } elseif ($status === 'H') {
-        if (empty($jenis_materi) || empty($halaman) || empty($hasil_talaqqi)) {
-            header('Content-Type: application/json');
-            echo json_encode(['status' => 'error', 'message' => 'Lengkapi data pencapaian materi!']);
-            exit();
-        }
-        if ($jenis_materi === 'Iqro' && empty($jilid)) {
-            header('Content-Type: application/json');
-            echo json_encode(['status' => 'error', 'message' => 'Pilih Jilid Iqro!']);
-            exit();
-        }
-        if ($jenis_materi === 'Iqro' && (empty($_POST['halaman_dari']) || empty($_POST['halaman_sampai']))) {
-            header('Content-Type: application/json');
-            echo json_encode(['status' => 'error', 'message' => 'Pilih halaman Iqro dari dan sampai!']);
-            exit();
-        }
-        if ($jenis_materi === 'Al Quran' && empty($nama_surat)) {
-            header('Content-Type: application/json');
-            echo json_encode(['status' => 'error', 'message' => 'Isi Nama Surat!']);
-            exit();
-        }
-        if ($jenis_materi === 'Al Quran' && (empty($_POST['nama_surat_dari']) || empty($_POST['nama_surat_sampai']) || empty($_POST['halaman_dari']) || empty($_POST['halaman_sampai']))) {
-            header('Content-Type: application/json');
-            echo json_encode(['status' => 'error', 'message' => 'Pilih nama surat dan ayat Al Quran dari-sampai!']);
-            exit();
-        }
-    } elseif ($status === 'S' || $status === 'I') {
-        if (empty($alasan)) {
-            header('Content-Type: application/json');
-            echo json_encode(['status' => 'error', 'message' => 'Isi alasan/keterangan!']);
-            exit();
-        }
-    }
-
-    try {
-        // Cek kepemilikan halaqoh
-        $check = $pdo->prepare("SELECT h.id
-            FROM halaqoh h
-            JOIN halaqoh_members hm ON hm.halaqoh_id = h.id
-            JOIN wali_santri w ON w.id = hm.wali_santri_id
-            WHERE h.id = ? AND h.ustadz_id = ? AND hm.wali_santri_id = ?
-              AND hm.archived_at IS NULL AND w.status_aktif = 1");
-        $check->execute([$halaqoh_id, $ustadz_id, $wali_id]);
-        if (!$check->fetch()) {
-            throw new Exception("Halaqoh tidak ditemukan atau bukan milik Anda.");
-        }
-
-        // Cek apakah data sudah ada
-        $stmtCheck = $pdo->prepare("SELECT id FROM presensi WHERE halaqoh_id = ? AND wali_santri_id = ? AND tanggal = ?");
-        $stmtCheck->execute([$halaqoh_id, $wali_id, $tanggal]);
-        $existing = $stmtCheck->fetch();
-
-        if ($status === 'RESET') {
-            if ($existing) {
-                // Hapus jika ada
-                $stmtDelete = $pdo->prepare("DELETE FROM presensi WHERE id = ?");
-                $stmtDelete->execute([$existing['id']]);
-            }
-            $resMessage = 'Presensi dibatalkan';
-        } elseif ($existing) {
-            // Update
-            $stmt = $pdo->prepare("UPDATE presensi SET 
-                status = :sts, alasan = :als, jenis_materi = :jm, jilid = :jld, nama_surat = :srt, halaman = :hal, hasil_talaqqi = :hsl 
-                WHERE id = :id");
-            $stmt->execute([
-                ':sts' => $status,
-                ':als' => $alasan,
-                ':jm' => $jenis_materi,
-                ':jld' => $jilid,
-                ':srt' => $nama_surat,
-                ':hal' => $halaman,
-                ':hsl' => $hasil_talaqqi,
-                ':id' => $existing['id']
-            ]);
-            $resMessage = 'Draft tersimpan otomatis';
-        } else {
-            // Insert
-            $stmt = $pdo->prepare("INSERT INTO presensi 
-                (halaqoh_id, wali_santri_id, tanggal, status, alasan, jenis_materi, jilid, nama_surat, halaman, hasil_talaqqi) 
-                VALUES (:h_id, :w_id, :tgl, :sts, :als, :jm, :jld, :srt, :hal, :hsl)");
-            $stmt->execute([
-                ':h_id' => $halaqoh_id,
-                ':w_id' => $wali_id,
-                ':tgl' => $tanggal,
-                ':sts' => $status,
-                ':als' => $alasan,
-                ':jm' => $jenis_materi,
-                ':jld' => $jilid,
-                ':srt' => $nama_surat,
-                ':hal' => $halaman,
-                ':hsl' => $hasil_talaqqi
-            ]);
-            $resMessage = 'Draft tersimpan otomatis';
-        }
-
-        header('Content-Type: application/json');
-        echo json_encode(['status' => 'success', 'message' => $resMessage]);
-    } catch (Exception $e) {
-        header('Content-Type: application/json');
-        echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
-    }
+try {
+    $result = attendanceSaveEntries($pdo, $halaqohId, $ustadzId, $tanggal, [$waliId => $payload]);
+    $message = $result['deleted'] > 0 || strtolower((string) $payload['intent']) === 'reset' || strtoupper((string) $payload['status']) === 'RESET'
+        ? 'Presensi dibatalkan'
+        : 'Draft tersimpan otomatis';
+    echo json_encode(['status' => 'success', 'message' => $message, 'saved' => $result['saved'], 'deleted' => $result['deleted']]);
+} catch (AttendanceValidationException $e) {
+    http_response_code(422);
+    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+} catch (Throwable $e) {
+    reportApplicationError($e, 'api-save-single');
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => 'Gagal menyimpan presensi. Silakan coba lagi.']);
 }

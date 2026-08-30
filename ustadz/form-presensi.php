@@ -4,10 +4,11 @@ require_once '../includes/header.php';
 require_once '../includes/sidebar.php';
 require_once '../config/database.php';
 require_once '../includes/auth_helper.php';
+require_once '../includes/attendance_helper.php';
 
 checkRole(['ustadz']);
 
-$halaqoh_id = $_GET['id'] ?? null;
+$halaqoh_id = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) ?: null;
 $ustadz_id = $_SESSION['user_id'];
 
 // Verify halaqoh ownership
@@ -57,32 +58,16 @@ function splitRangeValue($value, $delimiter = '-')
     return [$value, $value];
 }
 
-function combineRangeValue($start, $end, $delimiter = '-')
-{
-    $start = trim((string) $start);
-    $end = trim((string) $end);
-
-    if ($start === '') {
-        return '';
-    }
-
-    if ($end === '' || $end === $start) {
-        return $start;
-    }
-
-    return $delimiter === 's/d' ? "$start s/d $end" : "$start-$end";
-}
-
 function jsAttr($value)
 {
     return htmlspecialchars(json_encode($value), ENT_QUOTES, 'UTF-8');
 }
 
-$tanggal = $_GET['tanggal'] ?? date('Y-m-d');
+$tanggal = normalizeDateInput($_GET['tanggal'] ?? date('Y-m-d'), date('Y-m-d'));
 
 // Fetch existing attendance for this date and halaqoh to pre-fill
 $existing_attendance = [];
-$stmtExist = $pdo->prepare("SELECT * FROM presensi WHERE halaqoh_id = ? AND tanggal = ?");
+$stmtExist = $pdo->prepare("SELECT id, halaqoh_id, wali_santri_id, tanggal, status, alasan, jenis_materi, jilid, nama_surat, halaman, hasil_talaqqi FROM presensi WHERE halaqoh_id = ? AND tanggal = ?");
 $stmtExist->execute([$halaqoh_id, $tanggal]);
 while ($row = $stmtExist->fetch()) {
     $existing_attendance[$row['wali_santri_id']] = $row;
@@ -90,130 +75,34 @@ while ($row = $stmtExist->fetch()) {
 
 // Handle Submit
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // CSRF Validation
     if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
-    }
+        $error = 'Token keamanan tidak valid. Muat ulang halaman lalu coba lagi.';
+    } else {
+        $tanggal = normalizeDateInput($_POST['tanggal'] ?? date('Y-m-d'), date('Y-m-d'));
+        $presensi_data = is_array($_POST['presensi'] ?? null) ? $_POST['presensi'] : [];
 
-    $tanggal = $_POST['tanggal'] ?? date('Y-m-d');
-    $presensi_data = $_POST['presensi'] ?? [];
-
-    $pdo->beginTransaction();
-    try {
-        // Prepare statement for check
-        $stmtCheck = $pdo->prepare("SELECT id FROM presensi WHERE halaqoh_id = ? AND wali_santri_id = ? AND tanggal = ?");
-
-        $stmtInsert = $pdo->prepare("INSERT INTO presensi 
-            (halaqoh_id, wali_santri_id, tanggal, status, alasan, jenis_materi, jilid, nama_surat, halaman, hasil_talaqqi) 
-            VALUES (:h_id, :w_id, :tgl, :sts, :als, :jm, :jld, :srt, :hal, :hsl)");
-
-        $stmtUpdate = $pdo->prepare("UPDATE presensi SET 
-            status = :sts, alasan = :als, jenis_materi = :jm, jilid = :jld, nama_surat = :srt, halaman = :hal, hasil_talaqqi = :hsl 
-            WHERE id = :id");
-
-        foreach ($presensi_data as $wali_id => $data) {
-            $wali_id = filter_var($wali_id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-            if ($wali_id === false || !isset($allowedWaliIds[(int) $wali_id]) || !is_array($data)) {
-                throw new Exception("Peserta presensi tidak valid atau bukan anggota halaqoh ini.");
+        try {
+            $result = attendanceSaveEntries($pdo, $halaqoh_id, $ustadz_id, $tanggal, $presensi_data, true);
+            $message = sprintf('Presensi berhasil disimpan untuk %d peserta.', $result['saved']);
+            if ($result['deleted'] > 0) {
+                $message .= sprintf(' %d data yang dibatalkan juga dihapus.', $result['deleted']);
             }
 
-            $status = $data['status'] ?? 'A'; // Default to Alpha if not selected
-            $alasan = ($status === 'S' || $status === 'I') ? ($data['alasan'] ?? '') : null;
-
-            $jenis_materi = null;
-            $jilid = null;
-            $nama_surat = null;
-            $halaman = null;
-            $hasil_talaqqi = null;
-
-            if ($status === 'H') {
-                $jenis_materi = $data['jenis_materi'] ?? null;
-                $jilid = ($jenis_materi === 'Iqro') ? ($data['jilid'] ?? null) : null;
-                $nama_surat = ($jenis_materi === 'Al Quran') ? combineRangeValue($data['nama_surat_dari'] ?? '', $data['nama_surat_sampai'] ?? '', 's/d') : null;
-                $halaman = combineRangeValue($data['halaman_dari'] ?? '', $data['halaman_sampai'] ?? '', '-');
-                $hasil_talaqqi = $data['hasil_talaqqi'] ?? null;
-
-                // Validasi
-                if (empty($halaman) || empty($hasil_talaqqi)) {
-                    throw new Exception("Data pencapaian materi (Halaman/Ayat & Hasil) wajib diisi untuk yang Hadir.");
-                }
-                if ($jenis_materi === 'Iqro' && empty($jilid)) {
-                    throw new Exception("Jilid Iqro wajib dipilih.");
-                }
-                if ($jenis_materi === 'Iqro' && (empty($data['halaman_dari']) || empty($data['halaman_sampai']))) {
-                    throw new Exception("Halaman Iqro dari dan sampai wajib dipilih.");
-                }
-                if ($jenis_materi === 'Al Quran' && empty($nama_surat)) {
-                    throw new Exception("Nama Surat wajib diisi.");
-                }
-                if ($jenis_materi === 'Al Quran' && (empty($data['nama_surat_dari']) || empty($data['nama_surat_sampai']) || empty($data['halaman_dari']) || empty($data['halaman_sampai']))) {
-                    throw new Exception("Nama surat dan ayat Al Quran dari-sampai wajib dipilih.");
-                }
-            } elseif ($status === 'S' || $status === 'I') {
-                if (empty($alasan)) {
-                    throw new Exception("Alasan/Keterangan wajib diisi jika status Sakit atau Izin.");
-                }
+            $stmtExist->execute([$halaqoh_id, $tanggal]);
+            $existing_attendance = [];
+            while ($row = $stmtExist->fetch()) {
+                $existing_attendance[$row['wali_santri_id']] = $row;
             }
-
-            // Check if record exists
-            $stmtCheck->execute([$halaqoh_id, $wali_id, $tanggal]);
-            $existing = $stmtCheck->fetch();
-
-            if ($existing) {
-                $stmtUpdate->execute([
-                    ':sts' => $status,
-                    ':als' => $alasan,
-                    ':jm' => $jenis_materi,
-                    ':jld' => $jilid,
-                    ':srt' => $nama_surat,
-                    ':hal' => $halaman,
-                    ':hsl' => $hasil_talaqqi,
-                    ':id' => $existing['id']
-                ]);
-            } else {
-                $stmtInsert->execute([
-                    ':h_id' => $halaqoh_id,
-                    ':w_id' => $wali_id,
-                    ':tgl' => $tanggal,
-                    ':sts' => $status,
-                    ':als' => $alasan,
-                    ':jm' => $jenis_materi,
-                    ':jld' => $jilid,
-                    ':srt' => $nama_surat,
-                    ':hal' => $halaman,
-                    ':hsl' => $hasil_talaqqi
-                ]);
-            }
+        } catch (AttendanceValidationException $e) {
+            $error = 'Gagal menyimpan presensi: ' . $e->getMessage();
+        } catch (Throwable $e) {
+            reportApplicationError($e, 'form-presensi');
+            $error = 'Gagal menyimpan presensi. Tidak ada data yang disimpan; silakan coba lagi.';
         }
-
-        $pdo->commit();
-        $message = "Presensi berhasil disimpan!";
-
-        // Refresh existing data after save
-        $stmtExist->execute([$halaqoh_id, $tanggal]);
-        $existing_attendance = [];
-        while ($row = $stmtExist->fetch()) {
-            $existing_attendance[$row['wali_santri_id']] = $row;
-        }
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        $error = "Gagal menyimpan presensi: " . $e->getMessage();
     }
 }
 
-// Fetch members of this halaqoh (Only Reguler & Active)
-$stmt = $pdo->prepare("SELECT w.id, w.nama_bapak, w.no_hp,
-                              GROUP_CONCAT(CONCAT(sd.nama_anak, ' [', sd.kelas, ']') SEPARATOR '<br>') as info_anak
-                      FROM wali_santri w 
-                      JOIN halaqoh_members hm ON w.id = hm.wali_santri_id 
-                      LEFT JOIN santri_detail sd ON w.id = sd.wali_santri_id
-                      WHERE hm.halaqoh_id = ? AND hm.archived_at IS NULL
-                      AND (w.kategori = 'reguler' OR w.kategori = 'askar') 
-                      AND w.status_aktif = 1 
-                      GROUP BY w.id
-                      ORDER BY w.nama_bapak");
-$stmt->execute([$halaqoh_id]);
-$members = $stmt->fetchAll();
+$members = attendanceFetchActiveMembers($pdo, $halaqoh_id, $ustadz_id);
 
 // Check if today is a holiday
 $stmtHoliday = $pdo->prepare("SELECT keterangan FROM holidays WHERE tanggal = ?");
@@ -222,6 +111,7 @@ $holiday = $stmtHoliday->fetch();
 ?>
 
 <div x-data="{ 
+    isFinalizing: false,
     confirmModal: {
         show: false,
         title: '',
@@ -233,6 +123,16 @@ $holiday = $stmtHoliday->fetch();
         this.confirmModal.message = message;
         this.confirmModal.callback = callback;
         this.confirmModal.show = true;
+    },
+    async finalizeForm(event) {
+        if (this.isFinalizing) return;
+
+        this.isFinalizing = true;
+        window.attendanceFinalizing = true;
+        const pending = Array.from(window.attendanceDraftRequests || []);
+        await Promise.allSettled(pending);
+        await this.$nextTick();
+        event.target.submit();
     }
 }">
     <!-- Custom Interactive Modal -->
@@ -338,7 +238,7 @@ $holiday = $stmtHoliday->fetch();
     </div>
 <?php endif; ?>
 
-<form method="POST" action="">
+<form method="POST" action="" @submit.prevent="finalizeForm($event)">
     <?php csrfField(); ?>
     <!-- Tanggal Picker -->
     <div
@@ -369,8 +269,15 @@ $holiday = $stmtHoliday->fetch();
                 halamanSampai: <?php echo jsAttr($halaman_sampai); ?>,
                 suratDari: <?php echo jsAttr($nama_surat_dari); ?>,
                 suratSampai: <?php echo jsAttr($nama_surat_sampai); ?>,
+                intent: 'save',
                 isSaving: false,
                 isSaved: <?php echo isset($prev['id']) ? 'true' : 'false'; ?>,
+                trackDraft(request) {
+                    if (!window.attendanceDraftRequests) window.attendanceDraftRequests = new Set();
+                    window.attendanceDraftRequests.add(request);
+                    request.finally(() => window.attendanceDraftRequests.delete(request));
+                    return request;
+                },
                 isValid() {
                     if (!this.status) return false;
                     if (this.status === 'H') {
@@ -403,27 +310,34 @@ $holiday = $stmtHoliday->fetch();
                         formData.append('halaqoh_id', '<?php echo $halaqoh_id; ?>');
                         formData.append('wali_santri_id', '<?php echo $m['id']; ?>');
                         formData.append('tanggal', '<?php echo $tanggal; ?>');
-                        formData.append('status', 'RESET');
+                        formData.append('intent', 'reset');
 
-                        fetch('api-save-single.php', {
+                        const request = fetch('api-save-single.php', {
                             method: 'POST',
                             body: formData
                         })
                         .then(res => res.json())
                         .then(data => {
-                            this.isSaving = false;
                             if(data.status === 'success') {
                                 this.status = '';
+                                this.intent = 'reset';
                                 this.isSaved = true;
                                 setTimeout(() => { this.isSaved = false; }, 3000);
+                            } else {
+                                this.intent = 'save';
                             }
                         })
                         .catch(() => {
+                            this.intent = 'save';
+                        })
+                        .finally(() => {
                             this.isSaving = false;
                         });
+                        this.trackDraft(request);
                     });
                 },
                 saveDraft() {
+                    if (window.attendanceFinalizing || this.intent === 'reset') return;
                     if (!this.status) return; // Don't save if status is cleared
                     if (!this.isValid()) {
                         this.isSaved = false;
@@ -460,13 +374,12 @@ $holiday = $stmtHoliday->fetch();
                     const hasil = card.querySelector('[name*=\'hasil_talaqqi\']:checked')?.value;
                     if(hasil) formData.append('hasil_talaqqi', hasil);
 
-                    fetch('api-save-single.php', {
+                    const request = fetch('api-save-single.php', {
                         method: 'POST',
                         body: formData
                     })
                     .then(res => res.json())
                     .then(data => {
-                        this.isSaving = false;
                         if(data.status === 'success') {
                             this.isSaved = true;
                             // Reset saved indicator after 3s
@@ -474,12 +387,18 @@ $holiday = $stmtHoliday->fetch();
                         }
                     })
                     .catch(() => {
+                        this.isSaved = false;
+                    })
+                    .finally(() => {
                         this.isSaving = false;
                     });
+                    this.trackDraft(request);
                 }
             }" @change.debounce.500ms="saveDraft()"
                 class="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden transition-all duration-300 relative"
                 :class="status === 'H' ? 'ring-2 ring-blue-500 ring-offset-2' : (status === 'A' ? 'bg-red-50/30' : '')">
+
+                <input type="hidden" name="presensi[<?php echo $m['id']; ?>][intent]" x-model="intent">
 
                 <!-- Saving Indicator -->
                 <div class="absolute top-4 right-4 flex items-center gap-1.5 pointer-events-none">
@@ -538,28 +457,28 @@ $holiday = $stmtHoliday->fetch();
                         <div class="flex flex-wrap gap-2">
                             <label class="cursor-pointer">
                                 <input type="radio" name="presensi[<?php echo $m['id']; ?>][status]" value="H"
-                                    x-model="status" class="hidden">
+                                    x-model="status" @change="intent = 'save'" class="hidden">
                                 <div :class="status === 'H' ? 'bg-blue-600 text-white scale-105' : 'bg-slate-50 text-slate-500'"
                                     class="px-5 py-2 rounded-xl font-bold text-sm transition-all border border-transparent shadow-sm">
                                     Hadir</div>
                             </label>
                             <label class="cursor-pointer">
                                 <input type="radio" name="presensi[<?php echo $m['id']; ?>][status]" value="S"
-                                    x-model="status" class="hidden">
+                                    x-model="status" @change="intent = 'save'" class="hidden">
                                 <div :class="status === 'S' ? 'bg-emerald-500 text-white scale-105' : 'bg-slate-50 text-slate-500'"
                                     class="px-5 py-2 rounded-xl font-bold text-sm transition-all border border-transparent shadow-sm">
                                     Sakit</div>
                             </label>
                             <label class="cursor-pointer">
                                 <input type="radio" name="presensi[<?php echo $m['id']; ?>][status]" value="I"
-                                    x-model="status" class="hidden">
+                                    x-model="status" @change="intent = 'save'" class="hidden">
                                 <div :class="status === 'I' ? 'bg-amber-500 text-white scale-105' : 'bg-slate-50 text-slate-500'"
                                     class="px-5 py-2 rounded-xl font-bold text-sm transition-all border border-transparent shadow-sm">
                                     Izin</div>
                             </label>
                             <label class="cursor-pointer">
                                 <input type="radio" name="presensi[<?php echo $m['id']; ?>][status]" value="A"
-                                    x-model="status" class="hidden">
+                                    x-model="status" @change="intent = 'save'" class="hidden">
                                 <div :class="status === 'A' ? 'bg-red-500 text-white scale-105' : 'bg-slate-50 text-slate-500'"
                                     class="px-5 py-2 rounded-xl font-bold text-sm transition-all border border-transparent shadow-sm">
                                     Alpha</div>
@@ -749,14 +668,15 @@ $holiday = $stmtHoliday->fetch();
                 </svg>
                 Sistem menyimpan otomatis setiap kali Anda mengubah data.
             </div>
-            <button type="submit"
-                class="w-full md:flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-xl shadow-blue-200 transition-all active:scale-[0.98] flex justify-center items-center gap-2">
+            <button type="submit" :disabled="isFinalizing"
+                :class="isFinalizing ? 'cursor-wait opacity-70' : 'hover:bg-blue-700 active:scale-[0.98]'"
+                class="w-full md:flex-1 bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-blue-200 transition-all flex justify-center items-center gap-2">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4">
                     </path>
                 </svg>
-                FINALISASI & SIMPAN SEMUA
+                <span x-text="isFinalizing ? 'MENYIMPAN SEMUA...' : 'FINALISASI & SIMPAN SEMUA'"></span>
             </button>
         </div>
     </div>
