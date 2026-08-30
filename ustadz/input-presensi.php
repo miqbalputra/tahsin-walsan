@@ -4,14 +4,16 @@ require_once '../includes/header.php';
 require_once '../includes/sidebar.php';
 require_once '../config/database.php';
 require_once '../includes/auth_helper.php';
+require_once '../includes/attendance_helper.php';
 
 checkRole(['ustadz']);
 
 $ustadz_id = $_SESSION['user_id'];
+$archiveCondition = attendanceActiveMembershipCondition($pdo);
 
 // Get all halaqoh assigned to this ustadz
 $stmt = $pdo->prepare("SELECT h.*, 
-                      (SELECT COUNT(*) FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id AND hm.archived_at IS NULL AND w.status_aktif = 1) as total_member
+                      (SELECT COUNT(*) FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id{$archiveCondition} AND w.status_aktif = 1) as total_member
                       FROM halaqoh h 
                       WHERE h.ustadz_id = ? 
                       ORDER BY h.nama_halaqoh");

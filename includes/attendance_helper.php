@@ -11,6 +11,46 @@ class AttendanceValidationException extends RuntimeException
 {
 }
 
+/**
+ * Older production databases may not yet have the optional archive columns.
+ * Attendance must remain usable during that additive-migration window.
+ */
+function attendanceSupportsMemberArchiving(PDO $pdo)
+{
+    static $supportByConnection = [];
+
+    $connectionId = spl_object_id($pdo);
+    if (array_key_exists($connectionId, $supportByConnection)) {
+        return $supportByConnection[$connectionId];
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT 1 FROM information_schema.columns
+             WHERE table_schema = DATABASE()
+               AND table_name = 'halaqoh_members'
+               AND column_name = 'archived_at'
+             LIMIT 1"
+        );
+        $stmt->execute();
+        $supportByConnection[$connectionId] = (bool) $stmt->fetchColumn();
+    } catch (PDOException $e) {
+        // A restricted database account can still use the legacy schema.
+        $supportByConnection[$connectionId] = false;
+    }
+
+    return $supportByConnection[$connectionId];
+}
+
+function attendanceActiveMembershipCondition(PDO $pdo, $alias = 'hm')
+{
+    if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $alias)) {
+        throw new InvalidArgumentException('Alias tabel anggota tidak valid.');
+    }
+
+    return attendanceSupportsMemberArchiving($pdo) ? " AND {$alias}.archived_at IS NULL" : '';
+}
+
 function attendanceCombineRange($start, $end, $delimiter = '-')
 {
     $start = trim((string) $start);
@@ -33,14 +73,14 @@ function attendanceCombineRange($start, $end, $delimiter = '-')
  */
 function attendanceFetchActiveMembers(PDO $pdo, $halaqohId, $ustadzId)
 {
+    $archiveCondition = attendanceActiveMembershipCondition($pdo);
     $stmt = $pdo->prepare("SELECT w.id, w.nama_bapak, w.no_hp,
                                   GROUP_CONCAT(CONCAT(sd.nama_anak, ' [', sd.kelas, ']') SEPARATOR '<br>') AS info_anak
                            FROM halaqoh h
                            JOIN halaqoh_members hm ON hm.halaqoh_id = h.id
                            JOIN wali_santri w ON w.id = hm.wali_santri_id
                            LEFT JOIN santri_detail sd ON sd.wali_santri_id = w.id
-                           WHERE h.id = ? AND h.ustadz_id = ?
-                             AND hm.archived_at IS NULL
+                           WHERE h.id = ? AND h.ustadz_id = ?{$archiveCondition}
                              AND w.status_aktif = 1
                              AND w.kategori IN ('reguler', 'askar')
                            GROUP BY w.id, w.nama_bapak, w.no_hp
@@ -52,12 +92,12 @@ function attendanceFetchActiveMembers(PDO $pdo, $halaqohId, $ustadzId)
 
 function attendanceFetchActiveMemberIds(PDO $pdo, $halaqohId, $ustadzId, $forUpdate = false)
 {
+    $archiveCondition = attendanceActiveMembershipCondition($pdo);
     $sql = "SELECT DISTINCT hm.wali_santri_id
             FROM halaqoh h
             JOIN halaqoh_members hm ON hm.halaqoh_id = h.id
             JOIN wali_santri w ON w.id = hm.wali_santri_id
-            WHERE h.id = ? AND h.ustadz_id = ?
-              AND hm.archived_at IS NULL
+            WHERE h.id = ? AND h.ustadz_id = ?{$archiveCondition}
               AND w.status_aktif = 1
               AND w.kategori IN ('reguler', 'askar')
             ORDER BY hm.wali_santri_id";

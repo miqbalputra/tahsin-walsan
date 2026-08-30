@@ -252,6 +252,12 @@ $holiday = $stmtHoliday->fetch();
 
     <!-- Members List -->
     <div class="space-y-4 pb-32">
+        <?php if (empty($members)): ?>
+            <div class="bg-white p-8 rounded-3xl border border-slate-100 text-center text-slate-500">
+                <p class="font-bold text-slate-700">Belum ada peserta aktif di halaqoh ini.</p>
+                <p class="text-sm mt-2">Silakan hubungi admin untuk memeriksa penempatan peserta halaqoh.</p>
+            </div>
+        <?php endif; ?>
         <?php foreach ($members as $index => $m):
             $prev = $existing_attendance[$m['id']] ?? null;
             // Format phone for WA link
