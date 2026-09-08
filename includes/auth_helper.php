@@ -3,6 +3,41 @@ if (ob_get_level() === 0) {
     ob_start();
 }
 
+/**
+ * Security and request defaults are configured in one place so every page
+ * gets the same production behaviour without changing application flows.
+ */
+$request_is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+    || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
+    || (!empty($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443);
+
+ini_set('session.use_strict_mode', '1');
+ini_set('session.use_only_cookies', '1');
+ini_set('session.cookie_httponly', '1');
+ini_set('session.cookie_secure', $request_is_https ? '1' : '0');
+ini_set('session.cookie_samesite', 'Lax');
+
+if (!headers_sent()) {
+    header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: SAMEORIGIN');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+    header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
+}
+
+if (getenv('APP_PERF_LOG') === '1') {
+    $request_started_at = hrtime(true);
+    register_shutdown_function(static function () use ($request_started_at): void {
+        $durationMs = round((hrtime(true) - $request_started_at) / 1e6, 2);
+        error_log('[perf] ' . json_encode([
+            'method' => $_SERVER['REQUEST_METHOD'] ?? 'CLI',
+            'uri' => $_SERVER['REQUEST_URI'] ?? '',
+            'status' => http_response_code(),
+            'duration_ms' => $durationMs,
+            'memory_peak_bytes' => memory_get_peak_usage(true),
+        ], JSON_UNESCAPED_SLASHES));
+    });
+}
+
 // Set session lifetime to 30 days (2592000 seconds)
 $session_lifetime = 30 * 24 * 60 * 60;
 
@@ -26,9 +61,7 @@ ini_set('session.gc_probability', 1);
 ini_set('session.gc_divisor', 100);
 
 // Set secure session cookie parameters before starting session
-$is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-    || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
-    || (!empty($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
+$is_https = $request_is_https;
 
 if (defined('PHP_VERSION_ID') && PHP_VERSION_ID >= 70300) {
     session_set_cookie_params([
@@ -48,7 +81,14 @@ session_start();
 // Refresh session cookie on every request to extend the 30-day period
 if (isset($_SESSION['user_id'])) {
     $params = session_get_cookie_params();
-    setcookie(session_name(), session_id(), time() + $session_lifetime, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+    setcookie(session_name(), session_id(), [
+        'expires' => time() + $session_lifetime,
+        'path' => $params['path'],
+        'domain' => $params['domain'],
+        'secure' => $params['secure'],
+        'httponly' => $params['httponly'],
+        'samesite' => $params['samesite'] ?? 'Lax',
+    ]);
 }
 
 /**
@@ -82,6 +122,31 @@ function csrfField()
 function regenerateSession($persistent = false)
 {
     session_regenerate_id(true);
+}
+
+/**
+ * Return a safe YYYY-MM-DD value or the supplied fallback.
+ */
+function normalizeDateInput($value, $fallback)
+{
+    $value = trim((string) $value);
+    $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+    $errors = DateTimeImmutable::getLastErrors();
+
+    if ($date === false || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
+        return $fallback;
+    }
+
+    return $date->format('Y-m-d');
+}
+
+/**
+ * Log a production-safe error without exposing internals to the browser.
+ */
+function reportApplicationError(Throwable $error, $context = '')
+{
+    $prefix = $context !== '' ? '[' . $context . '] ' : '';
+    error_log($prefix . $error->getMessage() . ' in ' . $error->getFile() . ':' . $error->getLine());
 }
 
 function appBasePath()
@@ -136,8 +201,13 @@ function addLog($pdo, $action, $description = '')
     $username = $_SESSION['username'] ?? 'guest';
     $ip = $_SERVER['REMOTE_ADDR'] ?? '';
 
-    $stmt = $pdo->prepare("INSERT INTO activity_logs (user_id, username, action, description, ip_address) VALUES (?, ?, ?, ?, ?)");
-    $stmt->execute([$user_id, $username, $action, $description, $ip]);
+    try {
+        $stmt = $pdo->prepare("INSERT INTO activity_logs (user_id, username, action, description, ip_address) VALUES (?, ?, ?, ?, ?)");
+        $stmt->execute([$user_id, $username, $action, $description, $ip]);
+    } catch (Throwable $e) {
+        // Activity logging must never break a valid user operation.
+        reportApplicationError($e, 'activity-log');
+    }
 }
 
 /**

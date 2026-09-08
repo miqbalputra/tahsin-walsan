@@ -4,6 +4,7 @@ require_once 'includes/header.php';
 require_once 'includes/sidebar.php';
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
+require_once 'includes/data_induk_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
@@ -27,8 +28,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'save') {
         if ($id) {
-            // Update
-            if ($password) {
+            $mapping = $pdo->prepare('SELECT data_induk_teacher_id FROM users WHERE id=?');
+            $mapping->execute([$id]);
+            $identityLocked = dataIndukIsConfigured() && (string) $mapping->fetchColumn() !== '';
+            // Login, password, and role remain local. Teacher identity is central.
+            if ($identityLocked && $password) {
+                $hashed = password_hash($password, PASSWORD_DEFAULT);
+                $stmt = $pdo->prepare('UPDATE users SET username=?, password=?, role=? WHERE id=?');
+                $stmt->execute([$username, $hashed, $role, $id]);
+            } elseif ($identityLocked) {
+                $stmt = $pdo->prepare('UPDATE users SET username=?, role=? WHERE id=?');
+                $stmt->execute([$username, $role, $id]);
+            } elseif ($password) {
                 $hashed = password_hash($password, PASSWORD_DEFAULT);
                 $stmt = $pdo->prepare("UPDATE users SET username=?, password=?, nama_lengkap=?, role=?, no_hp=? WHERE id=?");
                 $stmt->execute([$username, $hashed, $nama_lengkap, $role, $no_hp, $id]);
@@ -45,7 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute([$username, $hashed, $nama_lengkap, $role, $no_hp]);
                 $message = "User berhasil ditambahkan!";
             } catch (PDOException $e) {
-                $error = "Gagal menambah user: " . $e->getMessage();
+                reportApplicationError($e, 'user-create');
+                $error = 'Gagal menambah user. Pastikan username belum digunakan.';
             }
         }
     } elseif ($action === 'delete' && $id) {
@@ -171,7 +183,8 @@ $users = $pdo->query("SELECT * FROM users ORDER BY role, nama_lengkap")->fetchAl
                 <div class="space-y-4">
                     <div>
                         <label class="block text-sm font-semibold text-slate-700 mb-1">Nama Lengkap</label>
-                        <input type="text" name="nama_lengkap" x-model="userData.nama_lengkap" required
+                        <p x-show="userData.data_induk_teacher_id" class="mb-3 rounded-xl bg-blue-50 p-3 text-xs text-blue-700">Nama dan kontak ustadz mengikuti Data Induk; akun login, password, dan role tetap dikelola di sini.</p>
+                        <input type="text" name="nama_lengkap" x-model="userData.nama_lengkap" required :readonly="!!userData.data_induk_teacher_id"
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
                     </div>
                     <div>
@@ -191,7 +204,7 @@ $users = $pdo->query("SELECT * FROM users ORDER BY role, nama_lengkap")->fetchAl
                     </div>
                     <div>
                         <label class="block text-sm font-semibold text-slate-700 mb-1">No. HP / WhatsApp</label>
-                        <input type="text" name="no_hp" x-model="userData.no_hp"
+                        <input type="text" name="no_hp" x-model="userData.no_hp" :readonly="!!userData.data_induk_teacher_id"
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition"
                             placeholder="08xxxx">
                     </div>

@@ -24,7 +24,7 @@
         },
         {
             "parameters": {
-                "url": "=https://[DOMAIN_APLIKASI_ANDA]/api/daily-reminder.php?key=tahsin_secure_key_123",
+                "url": "=https://[DOMAIN_APLIKASI_ANDA]/api/daily-reminder.php?key=GANTI_DENGAN_N8N_API_KEY",
                 "options": {}
             },
             "id": "http-check-01",

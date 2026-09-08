@@ -9,6 +9,9 @@ checkRole(['ustadz']);
 $ustadz_id = $_SESSION['user_id'];
 $message = $_GET['msg'] ?? '';
 $error = $_GET['err'] ?? '';
+$page = max(1, (int) ($_GET['page'] ?? 1));
+$perPage = 50;
+$totalResults = 0;
 
 $filters = getReportFilters();
 $start_date = $filters['start_date'];
@@ -19,7 +22,15 @@ $kelas_filter = $filters['kelas'];
 $search = $filters['search'];
 
 try {
-    $results = fetchPresensiReport($pdo, $filters, 'ustadz', $ustadz_id, ['include_phone' => true]);
+    $totalResults = countPresensiReport($pdo, $filters, 'ustadz', $ustadz_id);
+    $totalPages = max(1, (int) ceil($totalResults / $perPage));
+    $page = min($page, $totalPages);
+    $results = fetchPresensiReport($pdo, $filters, 'ustadz', $ustadz_id, [
+        'include_phone' => true,
+        'paginate' => true,
+        'page' => $page,
+        'limit' => $perPage,
+    ]);
 
     // 2. Fetch Filter Options (Ustadz Restricted)
     $stmtH = $pdo->prepare("SELECT id, nama_halaqoh FROM halaqoh WHERE ustadz_id = ? ORDER BY nama_halaqoh");
@@ -34,12 +45,24 @@ try {
     $stmtK->execute([$ustadz_id]);
     $daftar_kelas = $stmtK->fetchAll(PDO::FETCH_COLUMN);
 } catch (Exception $e) {
-    $error = "Kesalahan Database: " . $e->getMessage();
+    reportApplicationError($e, 'ustadz-laporan');
+    $error = "Kesalahan saat mengambil laporan. Silakan coba lagi.";
     $results = [];
+    $totalPages = 1;
     $halaqohs = [];
     $all_wali = [];
     $daftar_kelas = [];
 }
+
+$paginationParams = array_filter([
+    'start_date' => $filters['start_date'],
+    'end_date' => $filters['end_date'],
+    'halaqoh_id' => $filters['halaqoh_id'],
+    'wali_santri_id' => $filters['wali_santri_id'],
+    'kelas' => $filters['kelas'],
+    'search' => $filters['search'],
+], static fn($value) => $value !== '' && $value !== null);
+$paginationQuery = http_build_query($paginationParams);
 
 $pageTitle = 'Rekap Presensi Halaqoh';
 require_once '../includes/header.php';
@@ -235,6 +258,25 @@ require_once '../includes/sidebar.php';
                 </tbody>
             </table>
         </div>
+        <?php if ($totalResults > 0): ?>
+            <div class="px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row gap-3 items-center justify-between">
+                <p class="text-xs text-slate-500">
+                    Menampilkan <?php echo number_format((($page - 1) * $perPage) + 1); ?>–<?php echo number_format(min($page * $perPage, $totalResults)); ?>
+                    dari <?php echo number_format($totalResults); ?> data.
+                </p>
+                <?php if ($totalPages > 1): ?>
+                    <div class="flex items-center gap-2">
+                        <?php if ($page > 1): ?>
+                            <a href="?<?php echo htmlspecialchars($paginationQuery . '&page=' . ($page - 1)); ?>" class="px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50">Sebelumnya</a>
+                        <?php endif; ?>
+                        <span class="text-xs font-bold text-slate-500">Halaman <?php echo $page; ?> / <?php echo $totalPages; ?></span>
+                        <?php if ($page < $totalPages): ?>
+                            <a href="?<?php echo htmlspecialchars($paginationQuery . '&page=' . ($page + 1)); ?>" class="px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50">Berikutnya</a>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
     </div>
 </div>
 

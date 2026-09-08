@@ -5,8 +5,8 @@
  * Export : GET ?export=1  -> download ZIP berisi CSV per-tabel (preserve ID + relasi FK),
  *          manifest.json, schema.sql. NULL -> sentinel "\N".
  * Preview: POST action=preview (upload .zip) -> validasi + ringkasan baris, tanpa eksekusi.
- * Restore: POST action=restore -> safety backup otomatis lalu ganti seluruh data tabel
- *          (DELETE + INSERT preserved-ID) dalam satu transaksi (FK_CHECKS=0 -> 1).
+ * Restore: POST action=restore -> safety backup otomatis lalu merge data baru
+ *          (preserve-ID, skip konflik, tanpa DELETE/UPDATE data lama).
  * Download: GET ?download=<filename> -> whitelist file di temp_excel/ (safety backup).
  *
  * Tabel (urutan dependensi parent-dulu): users, wali_santri, halaqoh, santri_detail,
@@ -24,9 +24,10 @@ $pageTitle = 'Backup & Restore';
 // ---------------------------------------------------------------------------
 // Konfigurasi
 // ---------------------------------------------------------------------------
-$BACKUP_TABLES = ['users', 'wali_santri', 'halaqoh', 'santri_detail', 'halaqoh_members', 'presensi'];
+$BACKUP_TABLES = [];
 $NULL_TOKEN   = "\\N"; // penanda NULL di CSV (konvensi mysqldump)
-$MAX_UPLOAD   = 100 * 1024 * 1024; // 100MB
+$MAX_UPLOAD_MB = max(100, (int) (getenv('BACKUP_MAX_UPLOAD_MB') ?: 100));
+$MAX_UPLOAD   = $MAX_UPLOAD_MB * 1024 * 1024;
 $TEMP_DIR     = resolveTempDir(); // direktori temp yang pasti writable (hoisted)
 
 // ---------------------------------------------------------------------------
@@ -34,8 +35,88 @@ $TEMP_DIR     = resolveTempDir(); // direktori temp yang pasti writable (hoisted
 // ---------------------------------------------------------------------------
 function tableColumns(PDO $pdo, string $table): array
 {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $table)) {
+        throw new InvalidArgumentException('Nama tabel tidak valid.');
+    }
     $stmt = $pdo->query("SHOW COLUMNS FROM `$table`");
     return $stmt->fetchAll(PDO::FETCH_COLUMN, 0); // nama kolom (Field)
+}
+
+function tablePrimaryKeyColumns(PDO $pdo, string $table): array
+{
+    $stmt = $pdo->query("SHOW KEYS FROM `$table` WHERE Key_name = 'PRIMARY' ORDER BY Seq_in_index");
+    return $stmt->fetchAll(PDO::FETCH_COLUMN, 4);
+}
+
+/**
+ * Discover every physical table in the current database. This prevents
+ * operational tables added by later migrations from being silently omitted
+ * from a backup.
+ */
+function discoverBackupTables(PDO $pdo): array
+{
+    $stmt = $pdo->query("SELECT TABLE_NAME
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'
+        ORDER BY TABLE_NAME");
+    $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    if (empty($tables)) {
+        throw new RuntimeException('Tidak ada tabel database yang dapat dibackup.');
+    }
+
+    // Parent tables must be restored before child tables. A cycle is kept in
+    // stable alphabetical order and will be rejected by enabled FK checks.
+    $dependencies = array_fill_keys($tables, []);
+    $fkStmt = $pdo->query("SELECT TABLE_NAME, REFERENCED_TABLE_NAME
+        FROM information_schema.KEY_COLUMN_USAGE
+        WHERE CONSTRAINT_SCHEMA = DATABASE()
+          AND REFERENCED_TABLE_NAME IS NOT NULL");
+    foreach ($fkStmt->fetchAll(PDO::FETCH_ASSOC) as $fk) {
+        if (isset($dependencies[$fk['TABLE_NAME']], $dependencies[$fk['REFERENCED_TABLE_NAME']])) {
+            $dependencies[$fk['TABLE_NAME']][] = $fk['REFERENCED_TABLE_NAME'];
+        }
+    }
+
+    $ordered = [];
+    $remaining = array_fill_keys($tables, true);
+    while (!empty($remaining)) {
+        $progress = false;
+        foreach (array_keys($remaining) as $table) {
+            $parentsReady = true;
+            foreach (array_unique($dependencies[$table]) as $parent) {
+                if (isset($remaining[$parent])) {
+                    $parentsReady = false;
+                    break;
+                }
+            }
+            if ($parentsReady) {
+                $ordered[] = $table;
+                unset($remaining[$table]);
+                $progress = true;
+            }
+        }
+        if (!$progress) {
+            foreach (array_keys($remaining) as $table) {
+                $ordered[] = $table;
+            }
+            break;
+        }
+    }
+
+    return $ordered;
+}
+
+function tableOrderClause(PDO $pdo, string $table, array $columns): string
+{
+    $keys = tablePrimaryKeyColumns($pdo, $table);
+    if (empty($keys)) {
+        return '';
+    }
+
+    $keys = array_values(array_intersect($keys, $columns));
+    return empty($keys)
+        ? ''
+        : ' ORDER BY ' . implode(', ', array_map(static fn($column) => "`$column`", $keys));
 }
 
 /**
@@ -65,7 +146,9 @@ function safeFilename(string $name): ?string
 }
 
 /**
- * Bangun ZIP backup lengkap di $zipPath (tidak di-stream).
+ * Bangun ZIP backup lengkap di $zipPath dengan snapshot konsisten dan
+ * checksum per tabel. CSV ditulis ke file sementara agar tidak memuat satu
+ * tabel penuh ke memory PHP.
  * Mengembalikan ['ok'=>bool, 'counts'=>[], 'error'=>string].
  */
 function createBackupZip(PDO $pdo, string $zipPath, array $tables, string $nullToken): array
@@ -78,48 +161,92 @@ function createBackupZip(PDO $pdo, string $zipPath, array $tables, string $nullT
         return ['ok' => false, 'error' => 'Gagal membuat file ZIP.'];
     }
     $counts = [];
-    foreach ($tables as $tbl) {
-        $cols    = tableColumns($pdo, $tbl);
-        $colList = implode(', ', array_map(fn($c) => "`$c`", $cols));
-        $rows    = $pdo->query("SELECT $colList FROM `$tbl` ORDER BY 1")->fetchAll(PDO::FETCH_ASSOC);
+    $checksums = [];
+    $tempFiles = [];
+    $inTransaction = false;
 
-        $csv = fopen('php://temp', 'r+');
-        fputcsv($csv, $cols);
-        foreach ($rows as $r) {
-            $line = [];
-            foreach ($cols as $c) {
-                $v = $r[$c] ?? null;
-                $line[] = ($v === null) ? $nullToken : $v;
+    try {
+        // InnoDB snapshot: concurrent writes remain available and every table
+        // is exported from the same read view.
+        $pdo->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        $pdo->beginTransaction();
+        $inTransaction = true;
+
+        foreach ($tables as $tbl) {
+            $cols = tableColumns($pdo, $tbl);
+            $colList = implode(', ', array_map(static fn($column) => "`$column`", $cols));
+            $orderClause = tableOrderClause($pdo, $tbl, $cols);
+            $tempPath = tempnam(sys_get_temp_dir(), 'tahsin_backup_');
+            if ($tempPath === false) {
+                throw new RuntimeException('Tidak dapat membuat file sementara backup.');
             }
-            fputcsv($csv, $line);
+            $tempFiles[] = $tempPath;
+            $csv = fopen($tempPath, 'wb');
+            if ($csv === false) {
+                throw new RuntimeException('Tidak dapat menulis CSV sementara.');
+            }
+
+            fputcsv($csv, $cols);
+            $stmt = $pdo->query("SELECT $colList FROM `$tbl`$orderClause");
+            $count = 0;
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $line = [];
+                foreach ($cols as $column) {
+                    $line[] = ($row[$column] ?? null) === null ? $nullToken : $row[$column];
+                }
+                fputcsv($csv, $line);
+                $count++;
+            }
+            fclose($csv);
+
+            $counts[$tbl] = $count;
+            $checksums[$tbl] = hash_file('sha256', $tempPath);
+            if (!$zip->addFile($tempPath, $tbl . '.csv')) {
+                throw new RuntimeException("Gagal menambahkan {$tbl}.csv ke ZIP.");
+            }
         }
-        rewind($csv);
-        $zip->addFromString($tbl . '.csv', stream_get_contents($csv));
-        fclose($csv);
-        $counts[$tbl] = count($rows);
-    }
-    $manifest = [
-        'app'          => 'tahsin-walsan',
-        'version'      => 1,
-        'generated_at' => date('Y-m-d H:i:s'),
-        'tables'       => $counts,
-    ];
-    $zip->addFromString('manifest.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
-    $schema = '';
-    foreach ($tables as $tbl) {
-        $row    = $pdo->query("SHOW CREATE TABLE `$tbl`")->fetch(PDO::FETCH_ASSOC);
-        $schema .= ($row['Create Table'] ?? '') . ";\n\n";
-    }
-    $zip->addFromString('schema.sql', $schema);
-    if ($zip->close() !== true) {
-        return ['ok' => false, 'error' => 'ZipArchive::close gagal menulis (cek writable temp dir & ruang disk).'];
-    }
-    if (!is_file($zipPath) || filesize($zipPath) === 0) {
-        return ['ok' => false, 'error' => 'File ZIP kosong setelah ditulis.'];
-    }
+        $schema = '';
+        foreach ($tables as $tbl) {
+            $row = $pdo->query("SHOW CREATE TABLE `$tbl`")->fetch(PDO::FETCH_ASSOC);
+            $schema .= ($row['Create Table'] ?? '') . ";\n\n";
+        }
+        $zip->addFromString('schema.sql', $schema);
+        $manifest = [
+            'app' => 'tahsin-walsan',
+            'version' => 2,
+            'generated_at' => date('c'),
+            'database' => $pdo->query('SELECT DATABASE()')->fetchColumn(),
+            'tables' => $counts,
+            'checksums' => $checksums,
+        ];
+        $zip->addFromString('manifest.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 
-    return ['ok' => true, 'counts' => $counts];
+        if ($zip->close() !== true) {
+            throw new RuntimeException('ZipArchive::close gagal menulis (cek writable temp dir & ruang disk).');
+        }
+        $pdo->commit();
+        $inTransaction = false;
+
+        if (!is_file($zipPath) || filesize($zipPath) === 0) {
+            throw new RuntimeException('File ZIP kosong setelah ditulis.');
+        }
+
+        return ['ok' => true, 'counts' => $counts, 'checksums' => $checksums];
+    } catch (Throwable $e) {
+        if ($inTransaction) {
+            try { $pdo->rollBack(); } catch (Throwable $ignored) {}
+        }
+        try { $zip->close(); } catch (Throwable $ignored) {}
+        reportApplicationError($e, 'backup-export');
+        return ['ok' => false, 'error' => 'Backup gagal dibuat. Periksa log aplikasi dan ruang disk.'];
+    } finally {
+        foreach ($tempFiles as $tempFile) {
+            if (is_file($tempFile)) {
+                @unlink($tempFile);
+            }
+        }
+    }
 }
 
 /**
@@ -142,6 +269,7 @@ function analyzeRestoreZip(PDO $pdo, string $zipPath, array $tables, string $nul
         $zip->close();
         return ['error' => 'ZIP bukan backup tahsin-walsan yang valid (app tidak cocok).'];
     }
+    $manifestChecksums = is_array($manifest['checksums'] ?? null) ? $manifest['checksums'] : [];
 
     $rows     = [];
     $totalZip = 0;
@@ -162,6 +290,11 @@ function analyzeRestoreZip(PDO $pdo, string $zipPath, array $tables, string $nul
                 'note'      => 'CSV tidak ada di ZIP',
             ];
             continue;
+        }
+
+        if (isset($manifestChecksums[$tbl]) && hash('sha256', $csvRaw) !== $manifestChecksums[$tbl]) {
+            $zip->close();
+            return ['error' => "Checksum CSV {$tbl}.csv tidak cocok. File backup mungkin rusak atau berubah."];
         }
 
         $h = fopen('php://temp', 'r+');
@@ -185,6 +318,7 @@ function analyzeRestoreZip(PDO $pdo, string $zipPath, array $tables, string $nul
             'zip_rows'  => $dataRows,
             'db_rows'   => $dbCount,
             'cols_ok'   => empty($missing),
+            'checksum_ok' => !isset($manifestChecksums[$tbl]) || hash('sha256', $csvRaw) === $manifestChecksums[$tbl],
             'missing'   => $missing,
             'note'      => $header ? '' : 'CSV kosong / header tidak terbaca',
         ];
@@ -202,45 +336,62 @@ function analyzeRestoreZip(PDO $pdo, string $zipPath, array $tables, string $nul
 }
 
 /**
- * Eksekusi restore: transaksi, FK off, DELETE semua tabel, INSERT per tabel preserve ID.
- * Rollback penuh bila ada baris gagal.
+ * Merge-only restore. Existing primary keys are never updated or deleted;
+ * conflicting rows are counted and skipped. Foreign keys remain enabled.
  */
-function executeRestore(PDO $pdo, string $zipPath, array $tables, string $nullToken): array
+function executeMergeRestore(PDO $pdo, string $zipPath, array $tables, string $nullToken): array
 {
     $zip = new ZipArchive();
     if ($zip->open($zipPath) !== true) {
         return ['error' => 'Tidak bisa membuka file ZIP.'];
     }
     $counts = [];
+    $conflicts = [];
+    $skipped = [];
+    $inTransaction = false;
     try {
         $pdo->beginTransaction();
-        $pdo->exec('SET FOREIGN_KEY_CHECKS=0');
+        $inTransaction = true;
 
-        // Hapus semua (DELETE = transaksional, bisa rollback; bukan TRUNCATE).
-        foreach ($tables as $tbl) {
-            $pdo->exec("DELETE FROM `$tbl`");
-        }
-
-        // Insert parent-dulu.
+        // Insert parent-dulu while keeping all existing rows untouched.
         foreach ($tables as $tbl) {
             $csvRaw = $zip->getFromName($tbl . '.csv');
-            if ($csvRaw === false) { $counts[$tbl] = 0; continue; }
+            if ($csvRaw === false) {
+                $counts[$tbl] = 0;
+                $conflicts[$tbl] = 0;
+                continue;
+            }
 
             $dbCols = tableColumns($pdo, $tbl);
+            $primaryKeys = tablePrimaryKeyColumns($pdo, $tbl);
+            if (empty($primaryKeys)) {
+                $skipped[$tbl] = 'Tidak memiliki primary key; dilewati agar tidak membuat duplikasi.';
+                $counts[$tbl] = 0;
+                $conflicts[$tbl] = 0;
+                continue;
+            }
             $h = fopen('php://temp', 'r+');
             fwrite($h, $csvRaw);
             rewind($h);
             $header = fgetcsv($h, 0, ',', '"', '');
             if ($header === false || $header === null) { fclose($h); $counts[$tbl] = 0; continue; }
 
-            // Intersect kolom CSV ∩ kolom DB -> resilient thd schema drift.
-            $cols   = array_values(array_intersect($header, $dbCols));
-            $colIdx = array_map(fn($c) => array_search($c, $header, true), $cols);
-            $colList     = implode(', ', array_map(fn($c) => "`$c`", $cols));
+            $cols = array_values(array_intersect($header, $dbCols));
+            $missingPrimaryKeys = array_diff($primaryKeys, $cols);
+            if (!empty($missingPrimaryKeys)) {
+                fclose($h);
+                throw new RuntimeException("Backup {$tbl} tidak memiliki primary key: " . implode(', ', $missingPrimaryKeys));
+            }
+            $colIdx = array_map(static fn($column) => array_search($column, $header, true), $cols);
+            $pkIdx = array_map(static fn($column) => array_search($column, $header, true), $primaryKeys);
+            $colList = implode(', ', array_map(static fn($column) => "`$column`", $cols));
             $placeholders = implode(', ', array_fill(0, count($cols), '?'));
-            $stmt = $pdo->prepare("INSERT INTO `$tbl` ($colList) VALUES ($placeholders)");
+            $where = implode(' AND ', array_map(static fn($column) => "`$column` = ?", $primaryKeys));
+            $existsStmt = $pdo->prepare("SELECT 1 FROM `$tbl` WHERE $where LIMIT 1");
+            $insertStmt = $pdo->prepare("INSERT INTO `$tbl` ($colList) VALUES ($placeholders)");
 
-            $n = 0;
+            $inserted = 0;
+            $conflictCount = 0;
             while (($r = fgetcsv($h, 0, ',', '"', '')) !== false) {
                 $isEmpty = true;
                 foreach ($r as $cell) {
@@ -253,24 +404,45 @@ function executeRestore(PDO $pdo, string $zipPath, array $tables, string $nullTo
                     $val = $r[$i] ?? '';
                     $params[] = ($val === $nullToken) ? null : $val;
                 }
-                $stmt->execute($params);
-                $n++;
+                $keyParams = [];
+                foreach ($pkIdx as $i) {
+                    $val = $r[$i] ?? '';
+                    $keyParams[] = ($val === $nullToken) ? null : $val;
+                }
+                $existsStmt->execute($keyParams);
+                if ($existsStmt->fetchColumn() !== false) {
+                    $conflictCount++;
+                    continue;
+                }
+                $insertStmt->execute($params);
+                $inserted++;
             }
             fclose($h);
-            $counts[$tbl] = $n;
+            $counts[$tbl] = $inserted;
+            $conflicts[$tbl] = $conflictCount;
         }
 
-        $pdo->exec('SET FOREIGN_KEY_CHECKS=1');
         $pdo->commit();
+        $inTransaction = false;
         $zip->close();
-        return ['error' => null, 'counts' => $counts, 'summary' => 'inserted ' . json_encode($counts)];
+        return [
+            'error' => null,
+            'counts' => $counts,
+            'conflicts' => $conflicts,
+            'skipped' => $skipped,
+            'summary' => 'inserted=' . json_encode($counts) . '; conflicts=' . json_encode($conflicts) . '; skipped=' . json_encode($skipped),
+        ];
     } catch (Throwable $e) {
-        try { $pdo->exec('SET FOREIGN_KEY_CHECKS=1'); } catch (Throwable $ee) {}
-        try { $pdo->rollBack(); } catch (Throwable $ee) {}
+        if ($inTransaction) {
+            try { $pdo->rollBack(); } catch (Throwable $ignored) {}
+        }
         $zip->close();
-        return ['error' => $e->getMessage()];
+        reportApplicationError($e, 'backup-merge-restore');
+        return ['error' => 'Merge restore gagal dan seluruh perubahan parsial telah di-rollback.'];
     }
 }
+
+$BACKUP_TABLES = discoverBackupTables($pdo);
 
 // ---------------------------------------------------------------------------
 // GET handler: export
@@ -342,7 +514,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($ext !== 'zip') {
                 $err = 'File harus berformat .zip';
             } elseif ($f['size'] > $MAX_UPLOAD) {
-                $err = 'Ukuran file melebihi 100MB.';
+                $err = 'Ukuran file melebihi ' . $MAX_UPLOAD_MB . 'MB.';
             } else {
                 if (!is_dir($TEMP_DIR)) mkdir($TEMP_DIR, 0755, true);
                 $stamp = date('Y-m-d_His');
@@ -378,13 +550,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$safety['ok']) {
                 $err = 'Gagal membuat safety backup pre-restore: ' . ($safety['error'] ?? 'unknown');
             } else {
-                $r = executeRestore($pdo, $dest, $BACKUP_TABLES, $NULL_TOKEN);
+                $r = executeMergeRestore($pdo, $dest, $BACKUP_TABLES, $NULL_TOKEN);
                 if (!empty($r['error'])) {
-                    $err = 'Restore gagal & dirollback: ' . $r['error'];
+                    $err = 'Merge restore gagal & dirollback: ' . $r['error'];
                 } else {
                     $safetyName = 'backup_pre_restore_' . $safetyStamp . '.zip';
                     addLog($pdo, 'RESTORE_BACKUP', 'safety=' . $safetyName . '; ' . $r['summary']);
-                    $msg = 'Restore berhasil. Safety backup: ' . $safetyName
+                    $msg = 'Merge restore berhasil tanpa mengubah data lama. Safety backup: ' . $safetyName
                         . ' (download via menu Backup & Restore jika perlu rollback).';
                     unset($_SESSION['restore_zip'], $_SESSION['restore_token']);
                     @unlink($dest);
@@ -435,7 +607,7 @@ require_once 'includes/sidebar.php';
         <div class="p-5 border-b border-slate-100">
             <h3 class="font-bold text-slate-800">Download Backup (ZIP CSV)</h3>
             <p class="text-xs text-slate-500 mt-0.5">
-                Export seluruh data 6 tabel (preserve ID + relasi) ke satu file ZIP. Bisa di-restore kapan saja.
+                Export seluruh tabel operasional (preserve ID + relasi) ke satu file ZIP. Bisa diverifikasi dan dipulihkan kapan saja.
             </p>
         </div>
         <div class="p-5">
@@ -475,15 +647,15 @@ require_once 'includes/sidebar.php';
         <div class="p-5 border-b border-slate-100">
             <h3 class="font-bold text-slate-800">Restore dari Backup</h3>
             <p class="text-xs text-slate-500 mt-0.5">
-                Upload ZIP backup → pratinjau → konfirmasi. <strong>Seluruh data 6 tabel akan DIGANTI</strong>.
+                Upload ZIP backup → pratinjau → konfirmasi. Restore aman hanya menambahkan data yang belum ada.
             </p>
         </div>
         <div class="p-5">
             <?php if ($preview): ?>
                 <!-- Hasil preview -->
                 <div class="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-800 mb-4">
-                    ⚠️ Pratinjau berikut akan <strong>mengganti seluruh data</strong> tabel di bawah.
-                    Backup terbaru otomatis dibuat sebelum eksekusi (lihat "Safety Backup" setelah selesai).
+                    ✅ Pratinjau berikut menjalankan <strong>merge-only restore</strong>: data lama tidak dihapus atau di-update.
+                    Baris dengan primary key yang sudah ada akan dilewati. Backup terbaru tetap dibuat sebelum eksekusi.
                 </div>
                 <div class="overflow-x-auto mb-4">
                     <table class="w-full text-sm">
@@ -542,10 +714,11 @@ require_once 'includes/sidebar.php';
                     <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
                         <h3 class="text-lg font-bold text-red-600 mb-2">Konfirmasi Restore</h3>
                         <p class="text-sm text-slate-600 mb-4">
-                            Tindakan ini akan <strong>mengganti seluruh data</strong> 6 tabel dengan isi ZIP.
+                            Tindakan ini hanya akan <strong>menambahkan baris yang belum ada</strong> dari ZIP.
+                            Baris yang sudah memiliki primary key akan dilewati dan tidak diubah.
                             Safety backup otomatis dibuat sebelum eksekusi.
                         </p>
-                        <p class="text-xs text-slate-500 mb-2">Ketik <strong class="font-mono">RESTORE</strong> untuk mengaktifkan tombol:</p>
+                        <p class="text-xs text-slate-500 mb-2">Ketik <strong class="font-mono">RESTORE</strong> untuk mengaktifkan merge aman:</p>
                         <input type="text" x-model="confirmText" placeholder="RESTORE"
                             class="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono mb-4 focus:ring-2 focus:ring-red-400 focus:border-red-400 outline-none">
                         <form method="post" action="backup-restore.php">
@@ -613,7 +786,7 @@ require_once 'includes/sidebar.php';
     <?php endif; ?>
 
     <div class="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-sm text-amber-800">
-        <strong>ℹ️ Catatan:</strong> Restore bersifat <strong>destruktif</strong> (mengganti seluruh data tabel).
+        <strong>ℹ️ Catatan:</strong> Restore bersifat <strong>non-destruktif</strong>: tidak menghapus atau mengubah data lama.
         Safety backup otomatis dibuat sebelum eksekusi. Hanya admin / pj_tahfidz.
         Riwayat export/restore tercatat di <strong>Log Aktivitas</strong>.
     </div>

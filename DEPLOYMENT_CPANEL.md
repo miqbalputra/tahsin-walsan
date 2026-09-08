@@ -48,6 +48,11 @@ Anda bisa mengompres semua file dalam direktori ini kecuali file-file berikut ya
 
 ## 5. Fitur Otomatisasi (n8n API)
 Terdapat API di `/api/notifications-pending.php` untuk integrasi n8n (pengingat WhatsApp). 
-*   **Security Key**: Harap buka file tersebut dan ganti `$apiKey = "tahsin_secure_key_123"` dengan kunci rahasia Anda sendiri demi keamanan.
+*   **Security Key**: Set `N8N_API_KEY` sebagai environment variable/secret hosting. Endpoint akan menolak request jika secret belum dikonfigurasi.
+
+## 6. Arsip Wali Alumni
+Untuk database existing, backup dan uji restore terlebih dahulu. Setelah itu jalankan migrasi additive `migrate_alumni_archive.php` satu kali melalui CLI hosting atau URL admin yang terlindungi. Migrasi hanya menambah kolom `archived_at`, `archive_reason`, dan index pada `halaqoh_members`; tidak menghapus atau mengubah data lama.
+
+Setelah aplikasi diperbarui, buka menu **Naik Kelas & Arsip Lulusan**. Daftar kandidat adalah preview backfill dan dapat diekspor sebelum dikonfirmasi. Setelah backfill awal, wali dengan seluruh anak berstatus `Lulus` akan otomatis keluar dari roster halaqoh saat proses kenaikan kelas, pelulusan, import, atau penyimpanan peserta.
 
 Semoga sukses proses upload-nya! Jika ada error koneksi setelah upload, cek kembali penulisan username/password database di `config/database.php`.

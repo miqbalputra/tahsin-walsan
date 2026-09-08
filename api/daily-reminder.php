@@ -13,9 +13,15 @@ require_once '../config/database.php';
 // PENTING: Set timezone ke WIB agar perhitungan tanggal benar
 date_default_timezone_set('Asia/Jakarta');
 
-// Simple API Key security. Set N8N_API_KEY in Coolify for production.
-$apiKey = trim(getenv('N8N_API_KEY') ?: "tahsin_secure_key_123");
-$headers = array_change_key_case(getallheaders(), CASE_LOWER);
+// Fail closed: a missing production secret must not expose this endpoint.
+$apiKey = trim(getenv('N8N_API_KEY') ?: '');
+if ($apiKey === '') {
+    header('Content-Type: application/json');
+    http_response_code(503);
+    echo json_encode(['error' => 'API belum dikonfigurasi.']);
+    exit;
+}
+$headers = array_change_key_case(function_exists('getallheaders') ? getallheaders() : [], CASE_LOWER);
 $providedKey = trim($headers['x-api-key'] ?? ($_GET['key'] ?? ''));
 
 if ($providedKey !== $apiKey) {
@@ -137,7 +143,8 @@ try {
     ]);
 
 } catch (Exception $e) {
+    error_log('daily-reminder error: ' . $e->getMessage());
     header('Content-Type: application/json');
     http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    echo json_encode(['error' => 'Terjadi kesalahan server.']);
 }

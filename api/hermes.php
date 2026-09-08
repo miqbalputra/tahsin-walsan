@@ -55,6 +55,8 @@ header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, X-API-Key, Authorization');
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, no-cache, must-revalidate');
+header('X-Content-Type-Options: nosniff');
 
 // Handle preflight
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -72,7 +74,11 @@ if (!in_array($_SERVER['REQUEST_METHOD'], ['GET', 'POST'])) {
 // ============================================================
 
 // Baca API key dari environment variable
-define('HERMES_API_KEY', trim(getenv('HERMES_API_KEY') ?: getenv('N8N_API_KEY') ?: 'hermes_default_key_2026'));
+$configuredHermesKey = trim(getenv('HERMES_API_KEY') ?: getenv('N8N_API_KEY') ?: '');
+if ($configuredHermesKey === '') {
+    jsonError(503, 'API belum dikonfigurasi. Set HERMES_API_KEY di environment.');
+}
+define('HERMES_API_KEY', $configuredHermesKey);
 
 // Default pagination
 define('DEFAULT_PAGE', 1);
@@ -114,7 +120,7 @@ function jsonError($httpCode, $message)
  */
 function authenticate()
 {
-    $headers = array_change_key_case(getallheaders(), CASE_LOWER);
+    $headers = array_change_key_case(function_exists('getallheaders') ? getallheaders() : [], CASE_LOWER);
     $key = $headers['x-api-key'] ?? $_GET['api_key'] ?? $_POST['api_key'] ?? '';
 
     if ($key !== HERMES_API_KEY) {
@@ -213,6 +219,7 @@ try {
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
+        PDO::ATTR_TIMEOUT => max(1, (int) (getenv('DB_CONNECT_TIMEOUT') ?: 5)),
     ]);
 } catch (\PDOException $e) {
     error_log('Hermes API DB Error: ' . $e->getMessage());
@@ -276,9 +283,11 @@ try {
             jsonError(400, 'Action tidak dikenal. Gunakan: status, peserta, halaqoh, presensi, stats, progress, peringatan, ustadz, libur, pengumuman, capaian, search, schema, logs, users');
     }
 } catch (PDOException $e) {
-    jsonError(500, 'Database error: ' . $e->getMessage());
+    error_log('Hermes API request failed: ' . $e->getMessage());
+    jsonError(500, 'Database error. Silakan coba lagi.');
 } catch (Exception $e) {
-    jsonError(500, 'Server error: ' . $e->getMessage());
+    error_log('Hermes API server error: ' . $e->getMessage());
+    jsonError(500, 'Server error. Silakan coba lagi.');
 }
 
 // ============================================================

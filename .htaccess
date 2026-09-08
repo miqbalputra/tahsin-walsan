@@ -26,3 +26,10 @@ DirectoryIndex index.php login.php
     Order Allow,Deny
     Deny from all
 </Files>
+
+# One-off migration scripts are CLI-only in production. This prevents an
+# accidental or unauthenticated browser request from changing the schema.
+<FilesMatch "^migrate.*\.php$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>

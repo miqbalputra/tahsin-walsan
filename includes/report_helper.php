@@ -2,14 +2,23 @@
 
 function getReportFilters()
 {
+    $defaultStart = date('Y-m-01');
+    $defaultEnd = date('Y-m-d');
+
     return [
-        'start_date' => $_GET['start_date'] ?? date('Y-m-01'),
-        'end_date' => $_GET['end_date'] ?? date('Y-m-d'),
-        'halaqoh_id' => $_GET['halaqoh_id'] ?? '',
-        'wali_santri_id' => $_GET['wali_santri_id'] ?? '',
-        'kelas' => $_GET['kelas'] ?? '',
-        'search' => $_GET['search'] ?? '',
+        'start_date' => normalizeDateInput($_GET['start_date'] ?? $defaultStart, $defaultStart),
+        'end_date' => normalizeDateInput($_GET['end_date'] ?? $defaultEnd, $defaultEnd),
+        'halaqoh_id' => filterPositiveInt($_GET['halaqoh_id'] ?? ''),
+        'wali_santri_id' => filterPositiveInt($_GET['wali_santri_id'] ?? ''),
+        'kelas' => trim(substr((string) ($_GET['kelas'] ?? ''), 0, 50)),
+        'search' => trim(substr((string) ($_GET['search'] ?? ''), 0, 100)),
     ];
+}
+
+function filterPositiveInt($value)
+{
+    $value = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    return $value === false ? '' : (int) $value;
 }
 
 function buildPresensiReportQuery($filters, $role = '', $user_id = null, $options = [])
@@ -97,6 +106,14 @@ function buildPresensiReportQuery($filters, $role = '', $user_id = null, $option
 
     $sql .= ' ORDER BY p.tanggal DESC, h.nama_halaqoh, w.nama_bapak';
 
+    if (!empty($options['paginate'])) {
+        $page = max(1, (int) ($options['page'] ?? 1));
+        $limit = min(100, max(1, (int) ($options['limit'] ?? 50)));
+        $params[':report_limit'] = $limit;
+        $params[':report_offset'] = ($page - 1) * $limit;
+        $sql .= ' LIMIT :report_limit OFFSET :report_offset';
+    }
+
     return [$sql, $params];
 }
 
@@ -104,6 +121,20 @@ function fetchPresensiReport($pdo, $filters, $role = '', $user_id = null, $optio
 {
     [$sql, $params] = buildPresensiReportQuery($filters, $role, $user_id, $options);
     $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
+    foreach ($params as $name => $value) {
+        $type = in_array($name, [':report_limit', ':report_offset'], true) ? PDO::PARAM_INT : PDO::PARAM_STR;
+        $stmt->bindValue($name, $value, $type);
+    }
+    $stmt->execute();
     return $stmt->fetchAll();
+}
+
+function countPresensiReport($pdo, $filters, $role = '', $user_id = null)
+{
+    [$sql, $params] = buildPresensiReportQuery($filters, $role, $user_id);
+    $sql = preg_replace('/\s+ORDER BY\s+.*$/si', '', $sql);
+    $countSql = 'SELECT COUNT(*) FROM (' . $sql . ') AS report_count';
+    $stmt = $pdo->prepare($countSql);
+    $stmt->execute($params);
+    return (int) $stmt->fetchColumn();
 }

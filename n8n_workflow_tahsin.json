@@ -23,7 +23,7 @@
         },
         {
             "parameters": {
-                "url": "=https://[DOMAIN_APLIKASI_ANDA]/api/notifications-pending.php?key=tahsin_secure_key_123",
+                "url": "=https://[DOMAIN_APLIKASI_ANDA]/api/notifications-pending.php?key=GANTI_DENGAN_N8N_API_KEY",
                 "options": {}
             },
             "id": "a1b2c3d4-e5f6-4a1b-9c2d-3e4f5a6b7c8d",

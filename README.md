@@ -21,6 +21,7 @@ Sistem pencatatan kehadiran dan perkembangan materi **Tahsin Al-Qur'an** untuk p
 - [API Documentation](#api-documentation)
 - [Struktur Database](#struktur-database)
 - [Deployment](#deployment)
+- [Operasional Production Aman](#operasional-production-aman)
 
 ---
 
@@ -502,6 +503,37 @@ Berisi detail setiap endpoint, parameter, contoh request/response, dan panduan t
 | **cPanel** | [DEPLOYMENT_CPANEL.md](DEPLOYMENT_CPANEL.md) |
 | **Info Deploy** | [DEPLOYMENT_INFO.md](DEPLOYMENT_INFO.md) |
 | **Docker** | [Dockerfile](Dockerfile) |
+
+---
+
+## 🛡️ Operasional Production Aman
+
+Sebelum deployment, ambil baseline read-only dan simpan hasilnya di luar web root:
+
+```bash
+php scripts/production-baseline.php > baseline-before.json
+```
+
+Buat juga snapshot SQL independen tanpa menimpa file backup lama:
+
+```bash
+php scripts/database-snapshot.php /secure/backup/path/tahsin_YYYYmmdd.sql
+```
+
+Migrasi index tidak berjalan melalui browser. Jalankan dry-run terlebih dahulu, lalu apply hanya setelah backup database berhasil dan restore staging tervalidasi:
+
+```bash
+php migrate_performance_indexes.php
+APPLY_MIGRATIONS=1 php migrate_performance_indexes.php
+```
+
+Backup ZIP dari menu **Backup & Restore** kini mencakup seluruh tabel yang ada, memakai checksum, dan restore bersifat merge-only. Data dengan primary key yang sudah ada tidak dihapus atau di-update.
+
+### Arsip Wali Alumni Otomatis
+
+Wali akan otomatis diarsipkan setelah seluruh anaknya berstatus `Lulus`. Sistem hanya mengubah `status_aktif` wali dan menandai membership halaqoh dengan `archived_at`; data wali, anak, presensi, dan relasi lama tetap tersimpan.
+
+Untuk database existing, jalankan migrasi additive `migrate_alumni_archive.php` satu kali setelah backup berhasil direstore di staging. Setelah deploy, buka **Naik Kelas & Arsip Lulusan** untuk melihat preview backfill alumni lama, export preview, lalu konfirmasi hanya kandidat yang benar. Kelas kosong atau tidak dikenal tidak akan diarsipkan otomatis.
 
 ---
 

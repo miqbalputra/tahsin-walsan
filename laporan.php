@@ -16,34 +16,59 @@ $search = $filters['search'];
 
 $message = $_GET['msg'] ?? '';
 $error = $_GET['err'] ?? '';
+$page = max(1, (int) ($_GET['page'] ?? 1));
+$perPage = 50;
+$totalResults = 0;
 
 // Handle Delete (Admin Only)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete'
+    && in_array($_SESSION['role'] ?? '', ['admin', 'pj_tahfidz'], true)) {
     if (verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        $presensi_id = $_POST['id'] ?? null;
-        if ($presensi_id) {
+        $presensi_id = filter_var($_POST['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($presensi_id !== false) {
             $stmt = $pdo->prepare("DELETE FROM presensi WHERE id = ?");
             if ($stmt->execute([$presensi_id])) {
                 $message = "Data presensi berhasil dihapus!";
+                addLog($pdo, 'DELETE_PRESENSI', 'id=' . $presensi_id);
             }
         }
     }
 }
 
 try {
-    $results = fetchPresensiReport($pdo, $filters, $_SESSION['role'] ?? '', $_SESSION['user_id'] ?? null, ['include_phone' => true]);
+    $totalResults = countPresensiReport($pdo, $filters, $_SESSION['role'] ?? '', $_SESSION['user_id'] ?? null);
+    $totalPages = max(1, (int) ceil($totalResults / $perPage));
+    $page = min($page, $totalPages);
+    $results = fetchPresensiReport($pdo, $filters, $_SESSION['role'] ?? '', $_SESSION['user_id'] ?? null, [
+        'include_phone' => true,
+        'paginate' => true,
+        'page' => $page,
+        'limit' => $perPage,
+    ]);
 
     // 2. Fetch Filter Options
     $halaqohs = $pdo->query("SELECT id, nama_halaqoh FROM halaqoh ORDER BY nama_halaqoh")->fetchAll();
     $all_wali = $pdo->query("SELECT id, nama_bapak FROM wali_santri ORDER BY nama_bapak")->fetchAll();
     $daftar_kelas = $pdo->query("SELECT DISTINCT kelas FROM santri_detail WHERE kelas IS NOT NULL AND kelas != '' ORDER BY kelas")->fetchAll(PDO::FETCH_COLUMN);
 } catch (Exception $e) {
-    $error = "Kesalahan Database: " . $e->getMessage();
+    reportApplicationError($e, 'laporan');
+    $error = "Kesalahan saat mengambil laporan. Silakan coba lagi.";
     $results = [];
+    $totalPages = 1;
     $halaqohs = [];
     $all_wali = [];
     $daftar_kelas = [];
 }
+
+$paginationParams = array_filter([
+    'start_date' => $filters['start_date'],
+    'end_date' => $filters['end_date'],
+    'halaqoh_id' => $filters['halaqoh_id'],
+    'wali_santri_id' => $filters['wali_santri_id'],
+    'kelas' => $filters['kelas'],
+    'search' => $filters['search'],
+], static fn($value) => $value !== '' && $value !== null);
+$paginationQuery = http_build_query($paginationParams);
 
 $pageTitle = 'Rekap Presensi';
 require_once 'includes/header.php';
@@ -242,18 +267,39 @@ require_once 'includes/sidebar.php';
                                 <?php endif; ?>
                             </td>
                             <td class="px-6 py-4 text-right">
-                                <form method="POST" onsubmit="return confirm('Hapus data ini?')" class="inline">
-                                    <?php csrfField(); ?>
-                                    <input type="hidden" name="action" value="delete">
-                                    <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
-                                    <button type="submit" class="text-red-400 hover:text-red-600 transition">Hapus</button>
-                                </form>
+                                <?php if (in_array($_SESSION['role'] ?? '', ['admin', 'pj_tahfidz'], true)): ?>
+                                    <form method="POST" onsubmit="return confirm('Hapus data ini?')" class="inline">
+                                        <?php csrfField(); ?>
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
+                                        <button type="submit" class="text-red-400 hover:text-red-600 transition">Hapus</button>
+                                    </form>
+                                <?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
+        <?php if ($totalResults > 0): ?>
+            <div class="px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row gap-3 items-center justify-between">
+                <p class="text-xs text-slate-500">
+                    Menampilkan <?php echo number_format((($page - 1) * $perPage) + 1); ?>–<?php echo number_format(min($page * $perPage, $totalResults)); ?>
+                    dari <?php echo number_format($totalResults); ?> data.
+                </p>
+                <?php if ($totalPages > 1): ?>
+                    <div class="flex items-center gap-2">
+                        <?php if ($page > 1): ?>
+                            <a href="?<?php echo htmlspecialchars($paginationQuery . '&page=' . ($page - 1)); ?>" class="px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50">Sebelumnya</a>
+                        <?php endif; ?>
+                        <span class="text-xs font-bold text-slate-500">Halaman <?php echo $page; ?> / <?php echo $totalPages; ?></span>
+                        <?php if ($page < $totalPages): ?>
+                            <a href="?<?php echo htmlspecialchars($paginationQuery . '&page=' . ($page + 1)); ?>" class="px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50">Berikutnya</a>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
     </div>
 </div>
 

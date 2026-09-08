@@ -5,11 +5,13 @@ WORKDIR /var/www/html
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         curl \
+        libcurl4-openssl-dev \
         libicu-dev \
         libzip-dev \
         unzip \
     && docker-php-ext-install -j"$(nproc)" \
         intl \
+        curl \
         opcache \
         pdo_mysql \
         mysqli \
@@ -33,7 +35,7 @@ RUN chmod +x /usr/local/bin/presensi-entrypoint \
 EXPOSE 80
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD curl -fsS http://127.0.0.1/login.php >/dev/null || exit 1
+    CMD curl -fsS http://127.0.0.1/health.php >/dev/null || exit 1
 
 ENTRYPOINT ["presensi-entrypoint"]
 CMD ["apache2-foreground"]

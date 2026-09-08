@@ -5,6 +5,7 @@ require_once 'includes/sidebar.php';
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
 require_once 'includes/alumni_archive_helper.php';
+require_once 'includes/data_induk_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
@@ -33,9 +34,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'save') {
         $pdo->beginTransaction();
         try {
+            $identityLocked = false;
             if ($id) {
-                // Update Wali
-                if ($has_lanjut_tahsin_input) {
+                $mapping = $pdo->prepare('SELECT data_induk_guardian_id FROM wali_santri WHERE id=?');
+                $mapping->execute([$id]);
+                $identityLocked = dataIndukIsConfigured() && (string) $mapping->fetchColumn() !== '';
+                if ($identityLocked) {
+                    // Identitas pusat tidak boleh tertimpa oleh nilai form lama.
+                    $stmt = $pdo->prepare('UPDATE wali_santri SET kategori=?, tempat_tahsin=?, ustadz_luar=?, lanjut_tahsin=? WHERE id=?');
+                    $stmt->execute([$kategori, $tempat_tahsin, $ustadz_luar, $lanjut_tahsin, $id]);
+                } elseif ($has_lanjut_tahsin_input) {
                     $stmt = $pdo->prepare("UPDATE wali_santri SET nama_bapak=?, no_hp=?, alamat=?, kategori=?, tempat_tahsin=?, ustadz_luar=?, lanjut_tahsin=? WHERE id=?");
                     $stmt->execute([$nama_bapak, $no_hp, $alamat, $kategori, $tempat_tahsin, $ustadz_luar, $lanjut_tahsin, $id]);
                 } else {
@@ -44,10 +52,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt->execute([$nama_bapak, $no_hp, $alamat, $kategori, $tempat_tahsin, $ustadz_luar, $id]);
                 }
 
-                // Delete old children then re-insert to simplify sync
-                $pdo->prepare("DELETE FROM santri_detail WHERE wali_santri_id = ?")->execute([$id]);
+                if (!$identityLocked) {
+                    // Legacy local-only entries retain the existing edit flow.
+                    $pdo->prepare("DELETE FROM santri_detail WHERE wali_santri_id = ?")->execute([$id]);
+                }
                 $wali_id = $id;
             } else {
+                if (dataIndukIsConfigured()) {
+                    throw new RuntimeException('Biodata baru dibuat di Data Induk. Jalankan sinkronisasi untuk menariknya ke Presensi.');
+                }
                 // Insert Wali
                 $stmt = $pdo->prepare("INSERT INTO wali_santri (nama_bapak, no_hp, alamat, kategori, tempat_tahsin, ustadz_luar, lanjut_tahsin) VALUES (?, ?, ?, ?, ?, ?, ?)");
                 $stmt->execute([$nama_bapak, $no_hp, $alamat, $kategori, $tempat_tahsin, $ustadz_luar, $lanjut_tahsin]);
@@ -55,10 +68,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             // Insert Children
-            $stmtAnak = $pdo->prepare("INSERT INTO santri_detail (wali_santri_id, nama_anak, kelas) VALUES (?, ?, ?)");
-            foreach ($anak_list as $anak) {
-                if (!empty($anak['nama'])) {
-                    $stmtAnak->execute([$wali_id, $anak['nama'], $anak['kelas']]);
+            if (!$identityLocked) {
+                $stmtAnak = $pdo->prepare("INSERT INTO santri_detail (wali_santri_id, nama_anak, kelas) VALUES (?, ?, ?)");
+                foreach ($anak_list as $anak) {
+                    if (!empty($anak['nama'])) {
+                        $stmtAnak->execute([$wali_id, $anak['nama'], $anak['kelas']]);
+                    }
                 }
             }
 
@@ -96,15 +111,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($archiveResult['archived_wali'] > 0) {
                 $message .= " Wali alumni otomatis diarsipkan dan dikeluarkan dari roster halaqoh.";
             }
-        } catch (Exception $e) {
-            $pdo->rollBack();
-            $error = "Terjadi kesalahan: " . $e->getMessage();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            reportApplicationError($e, 'peserta-save');
+            $error = $e instanceof RuntimeException ? $e->getMessage() : 'Data peserta tidak dapat disimpan. Periksa log server.';
         }
     } elseif ($action === 'delete' && $id) {
         // Tombol lama tetap kompatibel, tetapi tidak lagi melakukan hard delete.
         // Hard delete dapat menghapus anak, membership, dan presensi melalui FK.
         $pdo->beginTransaction();
         try {
+            $mapping = $pdo->prepare('SELECT data_induk_guardian_id FROM wali_santri WHERE id=?');
+            $mapping->execute([$id]);
+            if (dataIndukIsConfigured() && (string) $mapping->fetchColumn() !== '') {
+                throw new RuntimeException('Arsip identitas pusat dilakukan di Data Induk, bukan dari Presensi.');
+            }
             $stmt = $pdo->prepare("UPDATE wali_santri SET status_aktif = 0 WHERE id = ?");
             $stmt->execute([$id]);
             $pdo->prepare("UPDATE halaqoh_members SET archived_at = CURRENT_TIMESTAMP, archive_reason = 'MANUAL_ARCHIVE' WHERE wali_santri_id = ? AND archived_at IS NULL")
@@ -116,7 +139,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            $error = "Gagal mengarsipkan peserta: " . $e->getMessage();
+            reportApplicationError($e, 'peserta-archive');
+            $error = $e instanceof RuntimeException ? $e->getMessage() : 'Gagal mengarsipkan peserta. Periksa log server.';
         }
     }
 }
@@ -506,16 +530,17 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                 <?php csrfField(); ?>
                 <input type="hidden" name="action" value="save">
                 <input type="hidden" name="id" x-model="formData.id">
+                <p x-show="formData.data_induk_guardian_id" class="rounded-xl bg-blue-50 p-3 text-xs text-blue-700">Nama, kontak, alamat, dan data anak dikelola oleh Data Induk. Di halaman ini hanya pengaturan Tahsin dan penempatan halaqoh yang dapat diubah.</p>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label class="block text-sm font-semibold text-slate-700 mb-1">Nama Bapak (Wali)</label>
-                        <input type="text" name="nama_bapak" x-model="formData.nama_bapak" required
+                        <input type="text" name="nama_bapak" x-model="formData.nama_bapak" required :readonly="!!formData.data_induk_guardian_id"
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
                     </div>
                     <div>
                         <label class="block text-sm font-semibold text-slate-700 mb-1">No. HP / WhatsApp</label>
-                        <input type="text" name="no_hp" x-model="formData.no_hp" required
+                        <input type="text" name="no_hp" x-model="formData.no_hp" required :readonly="!!formData.data_induk_guardian_id"
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition"
                             placeholder="08xxxx">
                     </div>
@@ -533,7 +558,7 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                     </div>
                     <div>
                         <label class="block text-sm font-semibold text-slate-700 mb-1">Alamat</label>
-                        <input type="text" name="alamat" x-model="formData.alamat"
+                        <input type="text" name="alamat" x-model="formData.alamat" :readonly="!!formData.data_induk_guardian_id"
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
                     </div>
                 </div>
@@ -593,12 +618,12 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                         <template x-for="(item, index) in anak" :key="index">
                             <div class="flex gap-3">
                                 <div class="flex-1">
-                                    <input type="text" :name="'anak['+index+'][nama]'" x-model="item.nama"
+                                    <input type="text" :name="'anak['+index+'][nama]'" x-model="item.nama" :readonly="!!formData.data_induk_guardian_id"
                                         placeholder="Nama Anak" required
                                         class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition bg-white text-sm">
                                 </div>
                                 <div class="w-32">
-                                    <input type="text" :name="'anak['+index+'][kelas]'" x-model="item.kelas"
+                                    <input type="text" :name="'anak['+index+'][kelas]'" x-model="item.kelas" :readonly="!!formData.data_induk_guardian_id"
                                         placeholder="Kelas"
                                         class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition bg-white text-sm">
                                 </div>
