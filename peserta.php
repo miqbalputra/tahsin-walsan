@@ -36,9 +36,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $identityLocked = false;
             if ($id) {
-                $mapping = $pdo->prepare('SELECT data_induk_guardian_id FROM wali_santri WHERE id=?');
-                $mapping->execute([$id]);
-                $identityLocked = dataIndukIsConfigured() && (string) $mapping->fetchColumn() !== '';
+                $identityLocked = false;
+                if (dataIndukIdentityMode($pdo)) {
+                    $mapping = $pdo->prepare('SELECT data_induk_guardian_id FROM wali_santri WHERE id=?');
+                    $mapping->execute([$id]);
+                    $identityLocked = (string) $mapping->fetchColumn() !== '';
+                }
                 if ($identityLocked) {
                     // Identitas pusat tidak boleh tertimpa oleh nilai form lama.
                     $stmt = $pdo->prepare('UPDATE wali_santri SET kategori=?, tempat_tahsin=?, ustadz_luar=?, lanjut_tahsin=? WHERE id=?');
@@ -58,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $wali_id = $id;
             } else {
-                if (dataIndukIsConfigured()) {
+                if (dataIndukIdentityMode($pdo)) {
                     throw new RuntimeException('Biodata baru dibuat di Data Induk. Jalankan sinkronisasi untuk menariknya ke Presensi.');
                 }
                 // Insert Wali
@@ -80,7 +83,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Update halaqoh membership
             $halaqoh_id_input = $_POST['halaqoh_id'] ?? '';
             $membershipWarning = '';
-            $canAssignMembership = empty($halaqoh_id_input) || waliCanJoinActiveHalaqoh($pdo, (int) $wali_id);
+            if (!empty($halaqoh_id_input)) {
+                $halaqohCheck = $pdo->prepare('SELECT id FROM halaqoh WHERE id=? LIMIT 1');
+                $halaqohCheck->execute([(int) $halaqoh_id_input]);
+                if (!$halaqohCheck->fetchColumn()) {
+                    throw new RuntimeException('Halaqoh yang dipilih tidak ditemukan. Muat ulang halaman lalu coba lagi.');
+                }
+            }
+            // Penempatan halaqoh adalah pengaturan lokal dan tetap boleh diubah
+            // selama wali belum diarsipkan; validasi kelas tidak boleh membuat
+            // perubahan pilihan halaqoh diam-diam dibatalkan.
+            $activeWali = $pdo->prepare('SELECT status_aktif FROM wali_santri WHERE id=?');
+            $activeWali->execute([(int) $wali_id]);
+            $canAssignMembership = empty($halaqoh_id_input) || (int) $activeWali->fetchColumn() === 1;
             if ($canAssignMembership) {
                 $pdo->prepare("UPDATE halaqoh_members SET archived_at = CURRENT_TIMESTAMP, archive_reason = 'MANUAL_REASSIGN' WHERE wali_santri_id = ? AND archived_at IS NULL")
                     ->execute([$wali_id]);
@@ -98,9 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             } elseif (!empty($halaqoh_id_input)) {
-                // Kelas kosong/tidak dikenal tidak boleh memicu arsip maupun
-                // menghapus roster lama secara tidak sengaja.
-                $membershipWarning = ' Halaqoh tidak diubah karena wali belum memiliki anak aktif dengan kelas yang valid.';
+                $membershipWarning = ' Halaqoh tidak diubah karena wali sudah diarsipkan.';
             }
 
             $archiveResult = archiveEligibleAlumni($pdo, [(int) $wali_id], 'AUTO_SAVE_PESERTA');
@@ -123,10 +136,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Hard delete dapat menghapus anak, membership, dan presensi melalui FK.
         $pdo->beginTransaction();
         try {
-            $mapping = $pdo->prepare('SELECT data_induk_guardian_id FROM wali_santri WHERE id=?');
-            $mapping->execute([$id]);
-            if (dataIndukIsConfigured() && (string) $mapping->fetchColumn() !== '') {
-                throw new RuntimeException('Arsip identitas pusat dilakukan di Data Induk, bukan dari Presensi.');
+            if (dataIndukIdentityMode($pdo)) {
+                $mapping = $pdo->prepare('SELECT data_induk_guardian_id FROM wali_santri WHERE id=?');
+                $mapping->execute([$id]);
+                if ((string) $mapping->fetchColumn() !== '') {
+                    throw new RuntimeException('Arsip identitas pusat dilakukan di Data Induk, bukan dari Presensi.');
+                }
             }
             $stmt = $pdo->prepare("UPDATE wali_santri SET status_aktif = 0 WHERE id = ?");
             $stmt->execute([$id]);
@@ -410,6 +425,11 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
             </svg>
             <?php echo $message; ?>
+        </div>
+    <?php endif; ?>
+    <?php if ($error): ?>
+        <div class="bg-red-50 text-red-700 p-4 rounded-xl mb-6 border border-red-200" role="alert">
+            <?php echo htmlspecialchars($error); ?>
         </div>
     <?php endif; ?>
 

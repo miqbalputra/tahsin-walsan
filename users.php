@@ -28,9 +28,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'save') {
         if ($id) {
-            $mapping = $pdo->prepare('SELECT data_induk_teacher_id FROM users WHERE id=?');
-            $mapping->execute([$id]);
-            $identityLocked = dataIndukIsConfigured() && (string) $mapping->fetchColumn() !== '';
+            $identityLocked = false;
+            if (dataIndukIdentityMode($pdo)) {
+                $mapping = $pdo->prepare('SELECT data_induk_teacher_id FROM users WHERE id=?');
+                $mapping->execute([$id]);
+                $identityLocked = (string) $mapping->fetchColumn() !== '';
+            }
             // Login, password, and role remain local. Teacher identity is central.
             if ($identityLocked && $password) {
                 $hashed = password_hash($password, PASSWORD_DEFAULT);

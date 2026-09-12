@@ -23,13 +23,18 @@ if ($role === 'ustadz') {
 }
 
 if ($search !== '') {
-    $where[] = "(w.nama_bapak LIKE :search OR h.nama_halaqoh LIKE :search OR EXISTS (
+    // PDO native prepares reject reusing one named placeholder more than once
+    // (the old :search caused HTTP 500 for searches such as "widi").
+    $where[] = "(w.nama_bapak LIKE :search_wali OR h.nama_halaqoh LIKE :search_halaqoh OR EXISTS (
         SELECT 1
         FROM santri_detail sd_search
         WHERE sd_search.wali_santri_id = w.id
-        AND sd_search.nama_anak LIKE :search
+        AND sd_search.nama_anak LIKE :search_anak
     ))";
-    $params[':search'] = '%' . $search . '%';
+    $searchPattern = '%' . $search . '%';
+    $params[':search_wali'] = $searchPattern;
+    $params[':search_halaqoh'] = $searchPattern;
+    $params[':search_anak'] = $searchPattern;
 }
 
 $whereSql = implode(' AND ', $where);

@@ -33,6 +33,47 @@ function dataIndukIsConfigured(): bool
     return $config['enabled'] && $config['base_url'] !== '' && $config['api_key'] !== '' && $config['unit_id'] !== '';
 }
 
+/** Return false on older databases until the additive migration is applied. */
+function dataIndukSchemaReady(PDO $pdo): bool
+{
+    static $ready;
+    if ($ready !== null) {
+        return $ready;
+    }
+    try {
+        $required = [
+            ['wali_santri', 'data_induk_guardian_id'],
+            ['santri_detail', 'data_induk_student_id'],
+            ['users', 'data_induk_teacher_id'],
+            ['users', 'data_induk_active'],
+            ['data_induk_sync_state', null],
+        ];
+        foreach ($required as [$table, $column]) {
+            if ($column === null) {
+                $tableStmt = $pdo->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?");
+                $tableStmt->execute([$table]);
+                if ((int) $tableStmt->fetchColumn() !== 1) {
+                    return $ready = false;
+                }
+                continue;
+            }
+            $columnStmt = $pdo->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=?");
+            $columnStmt->execute([$table, $column]);
+            if ((int) $columnStmt->fetchColumn() !== 1) {
+                return $ready = false;
+            }
+        }
+        return $ready = true;
+    } catch (Throwable $error) {
+        return $ready = false;
+    }
+}
+
+function dataIndukIdentityMode(PDO $pdo): bool
+{
+    return dataIndukIsConfigured() && dataIndukSchemaReady($pdo);
+}
+
 function dataIndukNormalize(string $value): string
 {
     $value = function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
@@ -125,8 +166,7 @@ function dataIndukFetchAll(string $path, array $query = []): array
 
 function dataIndukRequireSchema(PDO $pdo): void
 {
-    $stmt = $pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='data_induk_sync_state'");
-    if ((int) $stmt->fetchColumn() === 0) {
+    if (!dataIndukSchemaReady($pdo)) {
         throw new RuntimeException('Migrasi Data Induk belum dijalankan. Jalankan: php migrate_data_induk.php --apply');
     }
 }
