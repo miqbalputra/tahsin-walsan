@@ -451,7 +451,10 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
             }
             if ($inPeriod && $ownerMatches && ($owners || $raw)) $relevant = true;
             if (!$ownerMatches) continue;
-            $cell += ['session_date' => $session, 'owner' => $owner, 'expected' => $inSchedule && count($owners) === 1,
+            // A wali with multiple simultaneously recorded placements is still
+            // one required participant-session; the group attribution remains
+            // unresolved until the placement conflict is reviewed.
+            $cell += ['session_date' => $session, 'owner' => $owner, 'expected' => $inSchedule && count($owners) >= 1,
                 'in_schedule' => $inSchedule, 'verified_roster' => (bool) $known, 'deadline_at' => tahsinDeadline($session),
                 'roster_source' => $known ? 'Histori roster pada sesi' : ($session === $liveSession ? 'Roster aktif saat ini; histori sesi belum terverifikasi' : 'Histori belum tersedia')];
             if ($inSchedule && $cell['record'] && $cell['record']['status'] === 'H') {
@@ -492,27 +495,28 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
     }
     $summary = tahsinEmptyTotals();
     $perHalaqoh = $perGuru = $trend = [];
-    foreach ($sessions as $session) $trend[$session] = ['tanggal' => $session] + tahsinEmptyTotals();
+    foreach ($sessions as $session) {
+        $rosterVerified = $data['tracked_from'] && $session . ' 00:00:00.000000' >= $data['tracked_from'];
+        $trend[$session] = ['tanggal' => $session, 'roster_verified' => (bool) $rosterVerified] + tahsinEmptyTotals();
+    }
+    $periodParticipantIds = [];
     foreach ($rows as $row) {
         foreach (array_keys($summary) as $key) $summary[$key] += $row[$key];
-        if (!empty($row['halaqoh_id'])) {
-            $meta = array_intersect_key($row, array_flip(['halaqoh_id', 'ustadz_id', 'nama_halaqoh', 'nama_ustadz']));
-            foreach (['halaqoh' => 'halaqoh_id', 'guru' => 'ustadz_id'] as $type => $key) {
-                $target =& ${$type === 'halaqoh' ? 'perHalaqoh' : 'perGuru'};
-                $ownerId = (int) ($meta[$key] ?? 0);
-                if (!isset($target[$ownerId])) $target[$ownerId] = $meta + tahsinEmptyTotals() + ['member_ids' => []];
-                $target[$ownerId]['member_ids'][$row['id']] = true;
-                $target[$ownerId]['unverified'] = max($target[$ownerId]['unverified'], $row['unverified']);
-                unset($target);
-            }
-        }
         foreach ($row['details'] as $cell) {
             if (!$cell['in_schedule']) continue;
+            if ($cell['expected'] || !empty($cell['records'])) $periodParticipantIds[$row['id']] = true;
             $owner = $cell['owner'];
+            $placementConflict = in_array('verifikasi penempatan ganda pada sesi ini', $cell['missing_fields'] ?? [], true);
             foreach (['halaqoh' => 'halaqoh_id', 'guru' => 'ustadz_id'] as $type => $key) {
                 $target =& ${$type === 'halaqoh' ? 'perHalaqoh' : 'perGuru'};
-                $ownerId = (int) ($owner[$key] ?? 0);
-                if (!isset($target[$ownerId])) $target[$ownerId] = $owner + tahsinEmptyTotals() + ['member_ids' => []];
+                $groupOwner = $owner;
+                if ($placementConflict) {
+                    $groupOwner = $type === 'halaqoh'
+                        ? ['halaqoh_id' => 0, 'ustadz_id' => 0, 'nama_halaqoh' => 'Perlu Verifikasi Penempatan', 'nama_ustadz' => 'Belum ditentukan']
+                        : ['halaqoh_id' => 0, 'ustadz_id' => 0, 'nama_halaqoh' => 'Penempatan belum terverifikasi', 'nama_ustadz' => 'Perlu Verifikasi Penempatan'];
+                }
+                $ownerId = $placementConflict ? 0 : (int) ($groupOwner[$key] ?? 0);
+                if (!isset($target[$ownerId])) $target[$ownerId] = $groupOwner + tahsinEmptyTotals() + ['member_ids' => []];
                 $target[$ownerId]['member_ids'][$row['id']] = true;
                 $target[$ownerId]['unverified'] = max($target[$ownerId]['unverified'], $row['unverified']);
                 tahsinAddCell($target[$ownerId], $cell);
@@ -532,6 +536,21 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
     }
     $summary = tahsinFinalizeTotals($summary);
     $summary['peserta'] = count($rows);
+    $summary['peserta_periode'] = count($periodParticipantIds);
+    // One wali is counted once per Ahad session. `expected` only comes from
+    // the historical roster (or the explicitly labeled live reminder roster).
+    // Older sessions stay visibly unverified instead of guessing from today's roster.
+    foreach ($trend as &$sessionRow) {
+        $sessionRow['peserta_roster'] = $sessionRow['roster_verified'] ? $sessionRow['expected'] : null;
+        $sessionRow['peserta_sesi'] = $sessionRow['expected'];
+        if (!$sessionRow['roster_verified']) $sessionRow['unverified'] = 1;
+        $sessionRow['provisional'] = !$sessionRow['roster_verified'] || $sessionRow['conflicts'] > 0
+            || $sessionRow['missing_capaian'] > 0 || $sessionRow['missing_keterangan'] > 0
+            || $sessionRow['complete_input'] < $sessionRow['expected'];
+        $sessionRow = tahsinFinalizeTotals($sessionRow);
+    }
+    unset($sessionRow);
+    $summary['peserta_sesi'] = $summary['expected'];
     $summary['total_halaqoh'] = count(array_filter(array_keys($perHalaqoh)));
     $summary['rawan'] = count(array_filter($rows, static fn($r) => $r['risk_level'] === 'rawan'));
     return ['rows' => $rows, 'summary' => $summary, 'halaqoh' => array_values($perHalaqoh), 'guru' => array_values($perGuru),

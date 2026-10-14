@@ -32,6 +32,8 @@ try {
 try {
     $dataset = tahsinLoadDataset($pdo, $filters['end_date']);
     $report = tahsinAssembleReport($dataset, $filters, $role, $userId);
+    $summaryFilters = array_replace($filters, ['wali_santri_id' => 0, 'kelas' => '', 'search' => '', 'kategori' => '', 'aktif' => '', 'kelengkapan' => '', 'risk' => '']);
+    $meetingReport = tahsinAssembleReport($dataset, $summaryFilters, $role, $userId);
 } catch (Throwable $e) {
     reportApplicationError($e, 'rekap-lengkap');
     http_response_code(500);
@@ -42,11 +44,20 @@ try {
     exit;
 }
 $print = ($_GET['print'] ?? '') === '1';
+$summaryOnly = ($_GET['summary_only'] ?? '') === '1';
 $meeting = ($_GET['mode'] ?? '') === 'rapat';
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $totalPages = max(1, (int) ceil(count($report['rows']) / 50));
 $page = min($page, $totalPages);
 $rows = $print ? $report['rows'] : array_slice($report['rows'], ($page - 1) * 50, 50);
+if (($_GET['export'] ?? '') === 'summary_excel') {
+    header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+    header('Content-Disposition: attachment; filename="Ringkasan_Presensi_Tahsin_' . $summaryFilters['start_date'] . '_' . $summaryFilters['end_date'] . '.xls"');
+    header('Cache-Control: no-store');
+    echo '<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><style>body{font-family:Arial,sans-serif}td{mso-number-format:"\\@"}table{border-collapse:collapse}td,th{border:1px solid #999;padding:6px}h1,h2{color:#17365d}</style></head><body><h1>Ringkasan Statistik Presensi Tahsin</h1><p>Periode sesi ' . tahsinH($summaryFilters['start_date'] . ' s/d ' . $summaryFilters['end_date']) . '</p><p>Data agregat tanpa nama wali dan anak. Data kosong bukan Alfa.</p>';
+    tahsinRenderMeetingSummary($meetingReport, true);
+    echo '</body></html>'; exit;
+}
 if (($_GET['export'] ?? '') === 'excel') {
     header('Content-Type: application/vnd.ms-excel; charset=utf-8');
     header('Content-Disposition: attachment; filename="Rekap_Lengkap_Tahsin_' . $filters['start_date'] . '_' . $filters['end_date'] . '.xls"');
@@ -72,10 +83,25 @@ require __DIR__ . '/includes/sidebar.php';
 ?>
 <link rel="stylesheet" href="assets/css/tahsin-report.css">
 <?php if ($meeting): ?><script>document.body.classList.add('tahsin-meeting');</script><?php endif; ?>
+<?php if ($summaryOnly): ?><script>document.body.classList.add('tahsin-summary-print');</script>
+<div class="tahsin-report tahsin-summary-page">
+<div class="tahsin-heading"><div><h2>Ringkasan Statistik Presensi Tahsin</h2><p class="tahsin-note">Periode sesi <?= tahsinH($summaryFilters['start_date']) ?> s/d <?= tahsinH($summaryFilters['end_date']) ?> · Data agregat tanpa nama wali atau anak.</p></div><div class="tahsin-actions no-print"><button class="tahsin-button primary" onclick="window.print()">Cetak / Simpan PDF</button><button class="tahsin-button" type="button" data-export-meeting-png>Unduh PNG</button><a class="tahsin-button" href="?<?= tahsinH(tahsinQuery($summaryFilters, ['export' => 'summary_excel'])) ?>">Unduh Excel</a><a class="tahsin-button" href="?<?= tahsinH(tahsinQuery($filters)) ?>#ringkasan-pertemuan">Kembali ke Rekap</a></div></div>
+<?php if (!$meetingReport['schema_ready']): ?><div class="tahsin-alert">Histori roster belum diaktifkan. Presensi tersimpan tetap ditampilkan, tetapi jumlah peserta dan kekosongan roster lama belum dapat diverifikasi.</div><?php endif; ?>
+<details class="tahsin-panel no-print" open><summary><strong>Filter Ringkasan</strong></summary><form method="get" class="tahsin-filters" style="margin-top:15px"><input type="hidden" name="summary_only" value="1"><label>Awal periode sesi<input type="date" name="start_date" value="<?= tahsinH($summaryFilters['start_date']) ?>" required></label><label>Akhir periode sesi<input type="date" name="end_date" value="<?= tahsinH($summaryFilters['end_date']) ?>" required></label>
+<label>Halaqoh<select name="halaqoh_id"><option value="">Semua halaqoh</option><?php foreach ($dataset['halaqoh'] as $h): if ($role === 'ustadz' && (int) $h['ustadz_id'] !== $userId && !array_filter($dataset['history'], static fn($m) => (int) $m['ustadz_id'] === $userId && (int) $m['halaqoh_id'] === (int) $h['id'])) continue; ?><option value="<?= (int) $h['id'] ?>" <?= $summaryFilters['halaqoh_id'] === (int) $h['id'] ? 'selected' : '' ?>><?= tahsinH($h['nama_halaqoh']) ?></option><?php endforeach; ?></select></label>
+<?php if ($role !== 'ustadz'): $teachers = []; foreach ($dataset['halaqoh'] as $h) $teachers[(int) $h['ustadz_id']] = $h['nama_ustadz']; foreach ($dataset['history'] as $h) $teachers[(int) $h['ustadz_id']] = $h['nama_ustadz']; ?><label>Guru<select name="ustadz_id"><option value="">Semua guru</option><?php foreach ($teachers as $id => $name): ?><option value="<?= $id ?>" <?= $summaryFilters['ustadz_id'] === $id ? 'selected' : '' ?>><?= tahsinH($name) ?></option><?php endforeach; ?></select></label><?php endif; ?><div class="tahsin-actions" style="align-items:end"><button class="tahsin-button primary">Terapkan</button><a class="tahsin-button" href="rekap-lengkap.php?summary_only=1">Reset</a></div></form></details>
+<section class="tahsin-panel"><h3>Grafik Ringkas per Pertemuan</h3><div class="tahsin-chart"><canvas id="tahsin-trend" role="img" aria-label="Grafik ringkasan presensi per sesi Ahad"></canvas></div></section>
+<?php tahsinRenderMeetingSummary($meetingReport); ?>
+</div>
+<script type="application/json" id="tahsin-chart-data"><?= json_encode($meetingReport['trend'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
+<script type="application/json" id="tahsin-meeting-export-data"><?= json_encode(['payload' => tahsinMeetingPayload($meetingReport), 'start_date' => $summaryFilters['start_date'], 'end_date' => $summaryFilters['end_date']], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
+<script src="assets/js/chart.umd.min.js"></script><script src="assets/js/tahsin-report.js"></script>
+<?php require __DIR__ . '/includes/footer.php'; exit; endif; ?>
 <div class="tahsin-report">
 <div class="tahsin-heading"><div><h2><?= tahsinH($pageTitle) ?> Tahsin Wali Santri</h2><p class="tahsin-note">Periode sesi <?= tahsinH($filters['start_date']) ?> s/d <?= tahsinH($filters['end_date']) ?> · Dibuat <?= tahsinNow()->format('d/m/Y H:i') ?> WIB<br>Hadir dan Alfa berdasarkan catatan guru. Data kosong tidak dinilai sebagai ketidakhadiran.</p></div>
 <div class="tahsin-actions no-print">
 <a class="tahsin-button" href="?<?= tahsinH(tahsinQuery($filters, ['mode' => $meeting ? '' : 'rapat', 'page' => $page])) ?>"><?= $meeting ? 'Keluar Mode Rapat' : 'Mode Rapat' ?></a>
+<a class="tahsin-button" href="?<?= tahsinH(tahsinQuery($summaryFilters, ['summary_only' => '1'])) ?>">Ringkasan Pertemuan</a>
 <a class="tahsin-button" href="?<?= tahsinH(tahsinQuery($filters, ['export' => 'excel'])) ?>">Unduh Excel</a>
 <?php if ($print): ?><button class="tahsin-button primary" onclick="window.print()">Cetak / Simpan PDF</button><?php else: ?><a class="tahsin-button primary" target="_blank" rel="noopener" href="?<?= tahsinH(tahsinQuery($filters, ['print' => '1'])) ?>">Cetak Semua / PDF</a><?php endif; ?>
 <a class="tahsin-button" href="pantau-input.php">Pemantauan Input</a></div></div>
@@ -95,12 +121,14 @@ require __DIR__ . '/includes/sidebar.php';
 <?php if ($filters['wali_santri_id']): ?><input type="hidden" name="wali_santri_id" value="<?= $filters['wali_santri_id'] ?>"><?php endif; ?>
 <div class="tahsin-actions" style="align-items:end"><button class="tahsin-button primary">Terapkan</button><a class="tahsin-button" href="rekap-lengkap.php">Reset</a></div></form></details>
 <?php tahsinRenderCards($report['summary']); ?>
-<section class="tahsin-panel"><h3>Tren Kehadiran Pekanan</h3><div class="tahsin-chart"><canvas id="tahsin-trend" role="img" aria-label="Tren jumlah hadir, sakit, izin, alfa, dan data belum diinput per sesi"></canvas></div><p class="tahsin-note">Jumlah belum diinput hanya ditampilkan bila roster sesi diketahui. Grafik tidak mengubah data kosong menjadi Alfa.</p></section>
-<div class="tahsin-group-grid"><?php tahsinRenderGroupTable($report['halaqoh']); tahsinRenderGroupTable($report['guru'], true); ?></div>
+<div class="tahsin-summary-export-actions no-print"><a class="tahsin-button primary" href="?<?= tahsinH(tahsinQuery($summaryFilters, ['summary_only' => '1'])) ?>">Buka Ringkasan Pertemuan</a><a class="tahsin-button" href="?<?= tahsinH(tahsinQuery($summaryFilters, ['export' => 'summary_excel'])) ?>">Excel Statistik</a><a class="tahsin-button" target="_blank" rel="noopener" href="?<?= tahsinH(tahsinQuery($summaryFilters, ['summary_only' => '1'])) ?>">Cetak / PDF Statistik</a><button class="tahsin-button" type="button" data-export-meeting-png>Unduh PNG Statistik</button></div>
+<section class="tahsin-panel"><h3>Grafik Ringkas per Pertemuan</h3><div class="tahsin-chart"><canvas id="tahsin-trend" role="img" aria-label="Grafik ringkasan presensi per sesi Ahad"></canvas></div></section>
+<?php tahsinRenderMeetingSummary($meetingReport); ?>
 <section class="tahsin-panel"><h3>Rekap Seluruh Wali · <?= count($report['rows']) ?> orang</h3><?php tahsinRenderWaliTable($rows, $filters); ?>
 <?php if (!$print): ?><div class="tahsin-pagination no-print"><span>Halaman <?= $page ?> / <?= $totalPages ?> · maksimal 50 wali per halaman</span><div class="tahsin-actions"><?php if ($page > 1): ?><a class="tahsin-button" href="?<?= tahsinH(tahsinQuery($filters, ['page' => $page - 1, 'mode' => $meeting ? 'rapat' : ''])) ?>">Sebelumnya</a><?php endif; ?><?php if ($page < $totalPages): ?><a class="tahsin-button" href="?<?= tahsinH(tahsinQuery($filters, ['page' => $page + 1, 'mode' => $meeting ? 'rapat' : ''])) ?>">Berikutnya</a><?php endif; ?></div></div><?php endif; ?></section>
 <?php tahsinRenderDetails($rows, $canVerify && $report['schema_ready'] && !$print, $print); ?>
 </div>
-<script type="application/json" id="tahsin-chart-data"><?= json_encode($report['trend'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
+<script type="application/json" id="tahsin-chart-data"><?= json_encode($meetingReport['trend'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
+<script type="application/json" id="tahsin-meeting-export-data"><?= json_encode(['payload' => tahsinMeetingPayload($meetingReport), 'start_date' => $summaryFilters['start_date'], 'end_date' => $summaryFilters['end_date']], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
 <script src="assets/js/chart.umd.min.js"></script><script src="assets/js/tahsin-report.js"></script>
 <?php require __DIR__ . '/includes/footer.php'; ?>

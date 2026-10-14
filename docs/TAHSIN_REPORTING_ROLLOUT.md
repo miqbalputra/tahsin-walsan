@@ -1,6 +1,6 @@
 # Rekap Lengkap dan Pemantauan Input Tahsin
 
-Menu **Rekap Lengkap** menyediakan rekap seluruh wali, status kepesertaan, H/S/I/A, persentase kehadiran, kelengkapan input, detail pekanan, Mode Rapat, Excel, dan cetak/PDF. Menu **Pemantauan Input** memisahkan kekurangan presensi, capaian, dan konflik menurut guru/halaqoh/sesi. WhatsApp dibuka sebagai pesan siap kirim oleh admin/PJ; fitur ini tidak menjadwalkan atau mengirim pesan otomatis.
+Menu **Rekap Lengkap** menyediakan rekap seluruh wali, status kepesertaan, H/S/I/A, persentase kehadiran, kelengkapan input, detail pekanan, Mode Rapat, Excel, dan cetak/PDF. **Ringkasan Pertemuan** menyediakan jumlah peserta serta statistik H/S/I/A dan kelengkapan per sesi, total periode, serta rekap per halaqoh/guru. Excel, PNG, dan PDF statistik hanya berisi agregat; nama wali dan anak tidak disertakan. Data kosong tetap Belum Diinput dan Alfa hanya berasal dari status tersimpan. Menu **Pemantauan Input** memisahkan kekurangan presensi, capaian, dan konflik menurut guru/halaqoh/sesi. WhatsApp dibuka sebagai pesan siap kirim oleh admin/PJ; fitur ini tidak menjadwalkan atau mengirim pesan otomatis.
 
 ## Penerapan
 
@@ -8,7 +8,7 @@ Menu **Rekap Lengkap** menyediakan rekap seluruh wali, status kepesertaan, H/S/I
 2. Jalankan `php migrate_tahsin_reporting.php` untuk dry-run. Perintah ini tidak mengubah database.
 3. Dalam jendela pemeliharaan, jalankan `APPLY_MIGRATIONS=1 php migrate_tahsin_reporting.php`. Di PowerShell, set `$env:APPLY_MIGRATIONS='1'` lalu jalankan perintah PHP. Gunakan akun database dengan izin CREATE/ALTER dan TRIGGER. Semua tabel sumber harus InnoDB.
 4. Pastikan empat tabel tambahan, tujuh trigger, dan satu baris `tahsin_tracking` tersedia. Ulangi migrasi bila terputus; boundary histori dan baseline yang sudah dibuat tidak direset. Jangan menghapus trigger ketika memindahkan atau merestore database. Pengecekan aplikasi memerlukan visibilitas trigger pada akun database aplikasi.
-5. Build aset dengan `npm run build`, deploy kode dan aset, kemudian periksa rekap/pemantauan menggunakan akun admin, kepala sekolah, dan guru. Cache PWA v4 mengambil CSS baru.
+5. Build aset dengan `npm run build`, deploy kode dan aset, kemudian periksa rekap/pemantauan menggunakan akun admin, kepala sekolah, dan guru. Service worker v5 membuang cache v4 agar browser mengambil CSS/JavaScript laporan terbaru.
 6. Bandingkan baseline sebelum/sesudah. Migrasi tidak mengubah atau menghapus wali, anak, halaqoh, dan presensi lama. Tabel baru ikut mekanisme backup seluruh tabel. Trigger harus diterapkan kembali setelah restore ke server baru.
 
 Histori roster direkam otomatis dalam transaksi sumber lewat trigger, termasuk impor, sinkronisasi, mutasi, arsip, reaktivasi, dan penghapusan grup. Penggabungan peserta juga memindahkan histori/capaian awal/verifikasi ke identitas yang dipertahankan. Perubahan identitas atau sumber membatalkan fingerprint verifikasi lama.
@@ -32,7 +32,7 @@ Sebelum migrasi, rekap masih dapat dibaca; kelengkapan historis berstatus belum 
 
 `scripts/verify-tahsin-snapshot.php` merestore direktori backup CSV lokal ke database staging baru pada instance yang sama, membandingkan hash seluruh kolom sumber sebelum/sesudah migrasi, dan memastikan rekap historis tidak berubah. Jangan menggunakannya terhadap server produksi; koneksinya sengaja dibatasi pada instance pengujian lokal.
 
-`tests/tahsin-browser-checks.cjs` menggunakan Playwright dan browser Chromium pada router staging localhost dengan fixture sintetis. Pemeriksaan mencakup role, CSRF, input tanpa status, Hadir tanpa capaian, API, pagination, seluruh hasil ekspor/cetak, ponsel, dan Mode Rapat. Screenshot/PDF hasil pemeriksaan disimpan pada `.sessions/tahsin-ui/` yang diabaikan Git. Dependensi pengujian browser bukan dependensi aplikasi produksi.
+`tests/tahsin-browser-checks.cjs` menggunakan Playwright dan browser Chromium pada router staging localhost dengan fixture sintetis. Pemeriksaan mencakup role, CSRF, input tanpa status, Hadir tanpa capaian, API, pagination, ekspor detail, konsistensi statistik pertemuan pada layar/PNG/PDF/Excel tanpa nama wali/anak, ponsel, dan Mode Rapat. Screenshot/PDF hasil pemeriksaan disimpan pada `.sessions/tahsin-ui/` yang diabaikan Git. Dependensi pengujian browser bukan dependensi aplikasi produksi.
 
 Field lama endpoint n8n dipertahankan. Tambahan: `ustadz_id`, `complete_input`, `missing_presensi`, `missing_capaian`, `missing_keterangan`, `conflicts`, `pending_participants`, `coverage_percent`, `deadline_at`, `roster_source`, `data_verified`, dan `timeliness`. Setiap item mempunyai tanggal sesi sendiri. Dashboard manual menyertakan backlog; endpoint n8n tetap memakai sesi terakhir secara default. `all_pending=1` mengikutsertakan backlog bila memang diinginkan. Template n8n harian menggunakan tanggal item; tidak ada workflow yang diaktifkan oleh perubahan ini.
 

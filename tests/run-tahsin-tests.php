@@ -2,6 +2,7 @@
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 /** Standalone regression suite: php tests/run-tahsin-tests.php (no external services needed). */
 require_once __DIR__ . '/../includes/tahsin_report_helper.php';
+require_once __DIR__ . '/../includes/tahsin_report_view.php';
 require_once __DIR__ . '/../includes/attendance_helper.php';
 date_default_timezone_set('Asia/Jakarta');
 $checks = 0;
@@ -40,12 +41,27 @@ expectTahsin(50.0, $report['summary']['hadir_percent'], 'Attendance uses confirm
 expectTahsin(50.0, $report['summary']['coverage_percent'], 'Completeness includes missing entries');
 expectTahsin(1, $report['summary']['alpha'], 'Missing rows are never alpha');
 expectTahsin(2, $report['summary']['missing_presensi'], 'Two rows are still pending');
+expectTahsin(4, $report['trend'][0]['peserta_roster'], 'Per-session roster counts each guardian once');
+expectTahsin(1, $report['trend'][0]['hadir'], 'Per-session H matches the overall total');
+expectTahsin(1, $report['trend'][0]['alpha'], 'Per-session A only counts a saved alpha status');
+expectTahsin(2, $report['trend'][0]['missing_presensi'], 'Per-session empty rows stay pending input');
+expectTahsin(50.0, $report['trend'][0]['hadir_percent'], 'Per-session attendance percentage uses stored H/S/I/A only');
+expectTahsin(50.0, $report['trend'][0]['coverage_percent'], 'Per-session completeness remains separate from attendance');
+expectTahsin(true, $report['trend'][0]['roster_verified'], 'Tracked roster is labeled verified');
 expectTahsin(4, $report['summary']['peserta'], 'Multiple children do not multiply parents');
+expectTahsin(4, $report['summary']['peserta_periode'], 'Period headcount includes known roster members once');
 expectTahsin(1, $report['summary']['total_halaqoh'], 'Unassigned people do not create a fictitious group');
 expectTahsin('2026-10-11', $report['rows'][0]['terakhir_hadir'], 'Last attendance requires H');
 expectTahsin(null, $report['rows'][1]['terakhir_hadir'], 'Alpha is not last attendance');
 expectTahsin('belum_data', $report['rows'][2]['risk_level'], 'No data does not trigger follow-up');
 expectTahsin(true, $report['summary']['provisional'], 'Incomplete attendance is provisional');
+$meetingPayload = tahsinMeetingPayload($report);
+expectTahsin(false, str_contains(json_encode($meetingPayload), 'Wali 1'), 'Meeting export payload excludes guardian names');
+expectTahsin(false, str_contains(json_encode($meetingPayload), 'Anak Satu'), 'Meeting export payload excludes child names');
+expectTahsin(4, $meetingPayload['trend'][0]['peserta_roster'], 'Exported per-session count matches the report');
+ob_start(); tahsinRenderMeetingSummary($report); $meetingHtml = ob_get_clean();
+expectTahsin(false, str_contains($meetingHtml, 'Wali 1'), 'Meeting HTML excludes guardian names');
+expectTahsin(false, str_contains($meetingHtml, 'Anak Satu'), 'Meeting HTML excludes child names');
 $pending = tahsinPendingFromReport($report, $now);
 expectTahsin(2, $pending[0]['belum_diisi'], 'Reminder counts outstanding participants');
 expectTahsin('Terlambat', $pending[0]['timeliness'], 'Deadline starts at Monday 10 WIB');
@@ -91,6 +107,9 @@ $legacy = $data; $legacy['tracked_from'] = null; $legacy['history'] = [];
 $r = tahsinAssembleReport($legacy, $filters, 'admin', 0, $now);
 expectTahsin(null, $r['summary']['coverage_percent'], 'Historical roster completeness is not guessed');
 expectTahsin(0, $r['summary']['missing_presensi'], 'Current roster creates no historical missing attendance');
+expectTahsin(false, $r['trend'][0]['roster_verified'], 'Pre-tracking meeting session is labeled unverified');
+expectTahsin(null, $r['trend'][0]['peserta_roster'], 'Pre-tracking participant count is never inferred');
+expectTahsin(2, $r['summary']['peserta_periode'], 'Historical headcount only includes guardians with recorded sessions');
 $r = tahsinAssembleReport($legacy, $filters, 'admin', 0, $now, '2026-10-11');
 expectTahsin(2, tahsinPendingFromReport($r, $now)[0]['belum_diisi'], 'Operational latest-session fallback uses labeled current roster');
 $suspect = $data; $suspect['suspect_ids'][1] = true;
@@ -136,6 +155,10 @@ $dual['history'][] = array_replace($dual['history'][0], ['halaqoh_id' => 2, 'ust
 $r = tahsinAssembleReport($dual, $filters, 'ustadz', 2, $now);
 expectTahsin(1, $r['summary']['conflicts'], 'Both teachers can see their own ambiguous placement');
 expectTahsin(0, $r['summary']['alpha'], 'Ambiguous placement never produces Alpha');
+$r = tahsinAssembleReport($dual, $filters, 'admin', 0, $now);
+expectTahsin(4, $r['trend'][0]['peserta_roster'], 'Ambiguous placements still count each wali once in the school roster');
+expectTahsin(4, $r['summary']['expected'], 'Ambiguous placement does not erase known participant-session obligations');
+expectTahsin(true, (bool) array_filter($r['halaqoh'], static fn($g) => $g['nama_halaqoh'] === 'Perlu Verifikasi Penempatan' && $g['conflicts'] === 1), 'Ambiguous placements are not attributed to an arbitrary halaqoh');
 expectTahsin('2026-08-30', tahsinSessionDate('2026-09-01'), 'Month boundary replacement belongs to previous month');
 expectTahsin('2025-12-28', tahsinSessionDate('2026-01-01'), 'Year boundary replacement belongs to previous year');
 $boundary = $data; $boundary['records'] = [fixtureRecord(1, 1, 'H', '2026-09-01')];

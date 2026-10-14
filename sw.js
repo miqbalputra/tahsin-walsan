@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tahsin-presensi-v4';
+const CACHE_NAME = 'tahsin-presensi-v5';
 
 // Hanya cache aset STATIS — JANGAN cache file PHP
 const STATIC_ASSETS = [

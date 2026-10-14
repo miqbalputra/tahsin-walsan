@@ -86,6 +86,17 @@
 .tahsin-meeting .tahsin-table{font-size:9px}
 .tahsin-meeting .tahsin-table th,.tahsin-meeting .tahsin-table small,.tahsin-meeting .tahsin-badge{font-size:8px}}
 
+.tahsin-summary-export-actions{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 20px}
+.tahsin-meeting-summary .tahsin-panel{margin-bottom:18px}
+.tahsin-meeting-summary .tahsin-weekly-stats td:not(:first-child),.tahsin-meeting-total td{text-align:center;font-weight:700}
+.tahsin-meeting-summary .tahsin-note{margin-top:12px}
+.tahsin-summary-page{max-width:1600px;margin:0 auto}
+@media(max-width:700px){.tahsin-summary-export-actions .tahsin-button{flex:1 1 45%}}
+
 @media print{.tahsin-group-grid>.tahsin-panel{break-inside:avoid}
 .tahsin-panel h3{break-after:avoid}
-.tahsin-detail summary{break-after:avoid}}
+.tahsin-detail summary{break-after:avoid}
+.tahsin-summary-page{max-width:none;margin:0}
+.tahsin-meeting-summary .tahsin-panel{margin-bottom:12px}
+.tahsin-weekly-stats tr,.tahsin-meeting-aggregate tr{break-inside:avoid}
+.tahsin-summary-print nav,.tahsin-summary-print aside,.tahsin-summary-print header,.tahsin-summary-print [data-sidebar]{display:none!important}}
