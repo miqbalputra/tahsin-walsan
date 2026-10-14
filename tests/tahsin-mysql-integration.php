@@ -1,0 +1,126 @@
+<?php
+/** Isolated test database only. Never uses the application DB environment variables. */
+if (PHP_SAPI !== 'cli') exit;
+require __DIR__ . '/run-tahsin-tests.php';
+require_once __DIR__ . '/../includes/tahsin_migration_helper.php';
+$database = $argv[1] ?? 'tahsin_test_reporting_' . getmypid();
+if (!preg_match('/^tahsin_test_[a-z0-9_]+$/', $database)) throw new RuntimeException('Only tahsin_test_* databases are allowed.');
+$pdo = new PDO('mysql:host=127.0.0.1;port=13317;charset=utf8mb4', 'root', 'tahsin_local_test', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false]);
+$pdo->exec("CREATE DATABASE `{$database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+$pdo->exec("USE `{$database}`");
+$pdo->exec("SET time_zone = '+07:00'");
+$schema = file_get_contents(__DIR__ . '/fixtures/tahsin-schema.sql');
+if (!$schema) throw new RuntimeException('Test fixture schema is missing.');
+$pdo->exec(str_replace('utf8mb4_0900_ai_ci', 'utf8mb4_unicode_ci', $schema));
+$pdo->exec("CREATE TABLE holidays (id INT AUTO_INCREMENT PRIMARY KEY, tanggal DATE NOT NULL UNIQUE, keterangan VARCHAR(255)) ENGINE=InnoDB;
+    CREATE TABLE activity_logs (id INT AUTO_INCREMENT PRIMARY KEY, user_id INT, username VARCHAR(50), action VARCHAR(100), description TEXT, ip_address VARCHAR(45), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB;
+    CREATE TABLE pengumuman (id INT AUTO_INCREMENT PRIMARY KEY, judul VARCHAR(255), isi TEXT, is_aktif TINYINT DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB;
+    CREATE TABLE login_attempts (id INT AUTO_INCREMENT PRIMARY KEY, ip_address VARCHAR(45), username VARCHAR(50), attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB");
+$stamp = static function (string $time) use ($pdo) { $pdo->exec('SET timestamp = ' . (new DateTimeImmutable($time, new DateTimeZone('Asia/Jakarta')))->getTimestamp()); };
+$stamp('2026-10-01 00:00:00');
+$userInsert = $pdo->prepare('INSERT INTO users (id, username, password, nama_lengkap, role, no_hp) VALUES (?, ?, ?, ?, ?, ?)');
+foreach ([[1, 'admin_test', 'Admin Uji', 'admin'], [2, 'guru_test', 'Guru Tahsin Uji', 'ustadz'], [3, 'kepsek_test', 'Kepala Sekolah Uji', 'kepsek'], [4, 'guru_lain', 'Guru Kelompok Lain', 'ustadz']] as [$id, $username, $name, $role]) $userInsert->execute([$id, $username, password_hash('TahsinTest-2026', PASSWORD_DEFAULT), $name, $role, '081234567890']);
+$pdo->exec("INSERT INTO halaqoh (id, nama_halaqoh, ustadz_id) VALUES (1, 'Halaqoh Ahad Pagi', 2), (2, 'Halaqoh Sore', 4)");
+$waliInsert = $pdo->prepare('INSERT INTO wali_santri (id, nama_bapak, kategori, status_aktif) VALUES (?, ?, ?, ?)');
+for ($id = 1; $id <= 60; $id++) $waliInsert->execute([$id, 'Wali Uji ' . str_pad((string) $id, 2, '0', STR_PAD_LEFT), $id === 59 ? 'tahsin_luar' : 'reguler', $id === 60 ? 0 : 1]);
+$pdo->exec("INSERT INTO santri_detail (wali_santri_id, nama_anak, kelas) VALUES (1, 'Santri Uji Pertama', '1A'), (1, 'Santri Uji Kedua', '2A'), (2, 'Santri Uji Ketiga', '1A')");
+for ($id = 1; $id <= 4; $id++) $pdo->prepare('INSERT INTO halaqoh_members (id, halaqoh_id, wali_santri_id) VALUES (?, 1, ?)')->execute([$id, $id]);
+$beforeMigration = (int) $pdo->query('SELECT COUNT(*) FROM wali_santri')->fetchColumn();
+tahsinApplyMigration($pdo);
+expectTahsin($beforeMigration, (int) $pdo->query('SELECT COUNT(*) FROM wali_santri')->fetchColumn(), 'Migration preserves existing parents');
+expectTahsin(4, (int) $pdo->query('SELECT COUNT(*) FROM tahsin_roster_history')->fetchColumn(), 'Migration snapshots eligible current roster');
+$initialTracking = $pdo->query('SELECT tracked_from FROM tahsin_tracking WHERE id = 1')->fetchColumn();
+$stamp('2026-10-12 10:00:00');
+tahsinApplyMigration($pdo);
+expectTahsin($initialTracking, $pdo->query('SELECT tracked_from FROM tahsin_tracking WHERE id = 1')->fetchColumn(), 'Migration retry preserves tracking boundary');
+expectTahsin(4, (int) $pdo->query('SELECT COUNT(*) FROM tahsin_roster_history')->fetchColumn(), 'Migration retry creates no duplicate intervals');
+$pdo->exec("INSERT INTO presensi (id, wali_santri_id, halaqoh_id, tanggal, status, jenis_materi, jilid, halaman, hasil_talaqqi) VALUES (1, 1, 1, '2026-10-11', 'H', 'Iqro', 2, '1-2', 'Lulus'), (2, 2, 1, '2026-10-11', 'A', NULL, NULL, NULL, NULL)");
+$integrationStart = $checks;
+$r = tahsinFetchReport($pdo, $filters, 'admin', 0, $now);
+expectTahsin(50.0, $r['summary']['hadir_percent'], 'PDO report confirms attendance ratio');
+expectTahsin(50.0, $r['summary']['coverage_percent'], 'PDO report confirms completeness ratio');
+expectTahsin(60, $r['summary']['peserta'], 'Database report covers more than 25 parents');
+$pending = tahsinFetchPending($pdo, 'ustadz', 2, [], $now);
+expectTahsin(2, $pending[0]['belum_diisi'], 'Teacher reminder uses canonical report');
+expectTahsin([], tahsinFetchPending($pdo, 'ustadz', 4, [], $now), 'Other teacher cannot read this roster');
+$pdo->beginTransaction(); $pdo->exec('UPDATE users SET no_hp = NULL WHERE id = 2');
+expectTahsin('', tahsinFetchPending($pdo, 'ustadz', 2, [], $now)[0]['ustadz_phone'], 'Reminder never reuses obsolete historical phone');
+$pdo->rollBack();
+$pdo->exec("INSERT INTO presensi (id, wali_santri_id, halaqoh_id, tanggal, status, jenis_materi, jilid, halaman) VALUES (10, 10, 1, '2026-08-23', 'H', 'Iqro', 1, '1-2')");
+expectTahsin([10], attendanceFetchActiveMemberIds($pdo, 1, 2, false, '2026-08-23'), 'Legacy correction lists recorded participants, not today roster');
+$oldPending = array_values(array_filter(tahsinFetchPending($pdo, 'ustadz', 2, ['start_date' => '', 'end_date' => ''], $now), static fn($g) => $g['tanggal_tahsin'] === '2026-08-23'));
+expectTahsin(1, count($oldPending), 'Historical recorded field omission stays in the default backlog');
+expectTahsin(null, $oldPending[0]['coverage_percent'], 'Historic record-only reminder has no guessed class percentage');
+$pdo->exec('DELETE FROM presensi WHERE id = 10');
+$pdo->exec("INSERT INTO presensi (id, wali_santri_id, halaqoh_id, tanggal, status, jenis_materi, jilid, halaman, hasil_talaqqi, created_at) VALUES (9, 4, 1, '2026-10-11', 'H', 'Iqro', 1, '1-2', 'Lulus', '2026-10-11 09:00:00')");
+$pdo->exec("INSERT INTO activity_logs (action, description, created_at) VALUES ('INIT_CAPAIAN', 'Inisialisasi capaian via List Capaian: Wali ID: 4', '2026-10-11 09:00:01')");
+expectTahsin(1, tahsinFetchReport($pdo, $filters, 'admin', 0, $now)['summary']['conflicts'], 'Positive initial-achievement log is held for verification');
+try { attendanceSaveEntries($pdo, 1, 2, '2026-10-11', [4 => ['status' => 'A']]); throw new RuntimeException('Suspected initial record was overwritten'); }
+catch (AttendanceValidationException $e) { $checks++; }
+expectTahsin('H', $pdo->query('SELECT status FROM presensi WHERE id = 9')->fetchColumn(), 'Teacher cannot turn an initial placeholder into Alpha without review');
+$pdo->exec('DELETE FROM presensi WHERE id = 9'); $pdo->exec("DELETE FROM activity_logs WHERE action = 'INIT_CAPAIAN'");
+$pdo->beginTransaction();
+$pdo->exec('UPDATE halaqoh_members SET halaqoh_id = 2 WHERE id = 1');
+expectTahsin(2, (int) $pdo->query('SELECT halaqoh_id FROM tahsin_roster_history WHERE membership_id = 1 AND valid_until IS NULL')->fetchColumn(), 'Membership reassignment opens new ownership interval');
+expectTahsin(1, (int) $pdo->query('SELECT COUNT(*) FROM tahsin_roster_history WHERE membership_id = 1 AND valid_until IS NOT NULL')->fetchColumn(), 'Reassignment closes old interval');
+$r = tahsinFetchReport($pdo, $filters, 'ustadz', 2, $now);
+expectTahsin(1, $r['summary']['hadir'], 'Historical teacher retains the completed session');
+$pdo->rollBack();
+expectTahsin(4, (int) $pdo->query('SELECT COUNT(*) FROM tahsin_roster_history')->fetchColumn(), 'Rollback also rolls back history');
+foreach (["UPDATE wali_santri SET status_aktif = 0 WHERE id = 1", "UPDATE wali_santri SET kategori = 'tahsin_luar' WHERE id = 1", "UPDATE halaqoh_members SET archived_at = NOW() WHERE id = 1"] as $sql) {
+    $pdo->beginTransaction(); $pdo->exec($sql);
+    expectTahsin(0, (int) $pdo->query('SELECT COUNT(*) FROM tahsin_roster_history WHERE membership_id = 1 AND valid_until IS NULL')->fetchColumn(), 'Archive/category change closes obligation');
+    $pdo->rollBack();
+}
+$pdo->beginTransaction();
+$pdo->exec('UPDATE halaqoh SET ustadz_id = 4 WHERE id = 1');
+expectTahsin(4, (int) $pdo->query('SELECT COUNT(*) FROM tahsin_roster_history WHERE ustadz_id = 4 AND valid_until IS NULL')->fetchColumn(), 'Teacher reassignment is captured for every member');
+expectTahsin(true, (bool) attendanceFetchOwnedHalaqoh($pdo, 1, 2, '2026-10-11'), 'Previous teacher can complete their historical session');
+expectTahsin(false, (bool) attendanceFetchOwnedHalaqoh($pdo, 1, 4, '2026-10-11'), 'New teacher cannot edit the previous teacher session');
+$pdo->rollBack();
+$pdo->beginTransaction();
+$pdo->exec('DELETE FROM halaqoh WHERE id = 1');
+expectTahsin(0, (int) $pdo->query('SELECT COUNT(*) FROM tahsin_roster_history WHERE halaqoh_id = 1 AND valid_until IS NULL')->fetchColumn(), 'Parent delete trigger handles cascaded memberships');
+expectTahsin(2, (int) $pdo->query('SELECT COUNT(*) FROM presensi')->fetchColumn(), 'Group removal preserves attendance records');
+$pdo->rollBack();
+$pdo->beginTransaction();
+$pdo->exec('INSERT INTO halaqoh_members (halaqoh_id, wali_santri_id) VALUES (1, 5)');
+expectTahsin(1, (int) $pdo->query('SELECT COUNT(*) FROM tahsin_roster_history WHERE wali_santri_id = 5 AND valid_until IS NULL')->fetchColumn(), 'New/imported membership is captured');
+expectTahsin(4, tahsinFetchReport($pdo, $filters, 'admin', 0, $now)['summary']['expected'], 'New member is not retroactively obligated');
+$pdo->exec('DELETE FROM wali_santri WHERE id = 5');
+expectTahsin(0, (int) $pdo->query('SELECT COUNT(*) FROM tahsin_roster_history WHERE wali_santri_id = 5 AND valid_until IS NULL')->fetchColumn(), 'Guardian cascade closes history');
+$pdo->rollBack();
+$beforeAttendance = (int) $pdo->query('SELECT COUNT(*) FROM presensi')->fetchColumn();
+try { attendanceSaveEntries($pdo, 1, 2, '2026-10-11', [3 => ['status' => 'H', 'jenis_materi' => 'Iqro']]); throw new RuntimeException('Incomplete H was accepted'); }
+catch (AttendanceValidationException $e) { $checks++; }
+expectTahsin($beforeAttendance, (int) $pdo->query('SELECT COUNT(*) FROM presensi')->fetchColumn(), 'Failed save changes no attendance');
+$valid = ['status' => 'H', 'jenis_materi' => 'Iqro', 'jilid' => '2', 'halaman_dari' => '1', 'halaman_sampai' => '2', 'hasil_talaqqi' => 'Lulus'];
+$pdo->exec("INSERT INTO holidays (tanggal, keterangan) VALUES ('2026-10-13', 'Libur pengganti')");
+try { attendanceSaveEntries($pdo, 1, 2, '2026-10-13', [3 => $valid]); throw new RuntimeException('Replacement holiday save was accepted'); }
+catch (AttendanceValidationException $e) { $checks++; }
+$pdo->exec("DELETE FROM holidays WHERE tanggal = '2026-10-13'");
+attendanceSaveEntries($pdo, 1, 2, '2026-10-12', [3 => $valid]);
+attendanceSaveEntries($pdo, 1, 2, '2026-10-13', [3 => $valid]);
+expectTahsin(1, (int) $pdo->query('SELECT COUNT(*) FROM presensi WHERE wali_santri_id = 3')->fetchColumn(), 'Saving another day edits the same weekly session');
+expectTahsin('2026-10-12', $pdo->query('SELECT tanggal FROM presensi WHERE wali_santri_id = 3')->fetchColumn(), 'Original replacement date is preserved');
+expectTahsin(3, count(attendanceFetchSessionAttendance($pdo, 1, 2, '2026-10-11')['entries']), 'Ahad form preloads replacement-day attendance');
+attendanceSaveEntries($pdo, 1, 2, '2026-10-11', [3 => ['intent' => 'reset']]);
+expectTahsin($beforeAttendance, (int) $pdo->query('SELECT COUNT(*) FROM presensi')->fetchColumn(), 'Weekly reset removes the actual replacement entry');
+$pdo->exec("INSERT INTO tahsin_capaian_awal (wali_santri_id, jenis_materi, jilid, halaman, updated_by) VALUES (3, 'Iqro', 1, '1-2', 1)");
+expectTahsin($beforeAttendance, (int) $pdo->query('SELECT COUNT(*) FROM presensi')->fetchColumn(), 'Separate initial achievement leaves attendance intact');
+$pdo->exec("INSERT INTO presensi (id, wali_santri_id, halaqoh_id, tanggal, status) VALUES (3, 1, 1, '2026-10-12', 'A')");
+$source = $pdo->query('SELECT * FROM presensi WHERE wali_santri_id = 1 ORDER BY id')->fetchAll();
+tahsinSaveVerification($pdo, 1, '2026-10-11', tahsinFingerprint($source), 1, 1, 'Konfirmasi guru uji');
+expectTahsin(1, tahsinFetchReport($pdo, $filters, 'admin', 0, $now)['summary']['hadir'], 'Persisted verification resolves conflict');
+expectTahsin(3, (int) $pdo->query('SELECT COUNT(*) FROM presensi')->fetchColumn(), 'Verification preserves all source records');
+$pdo->exec("UPDATE presensi SET halaman = '3-4' WHERE id = 1");
+expectTahsin(1, tahsinFetchReport($pdo, $filters, 'admin', 0, $now)['summary']['conflicts'], 'Edited source invalidates persisted verification');
+try { tahsinSaveVerification($pdo, 1, '2026-10-11', tahsinFingerprint($source), 1, 1, 'Keputusan kedaluwarsa'); throw new RuntimeException('Stale verification was accepted'); }
+catch (RuntimeException $e) { if ($e->getMessage() === 'Stale verification was accepted') throw $e; $checks++; }
+expectTahsin(1, (int) $pdo->query('SELECT COUNT(*) FROM tahsin_verifications')->fetchColumn(), 'Rejected verification writes no audit record');
+$pdo->exec("UPDATE presensi SET halaman = '1-2' WHERE id = 1");
+$source = $pdo->query('SELECT * FROM presensi WHERE wali_santri_id = 1 ORDER BY id')->fetchAll();
+tahsinSaveVerification($pdo, 1, '2026-10-11', tahsinFingerprint($source), 1, 1, 'Konfirmasi final untuk fixture layar');
+$pdo->exec('SET timestamp = DEFAULT');
+echo 'PASS ' . ($checks - $integrationStart) . " MySQL/MariaDB integration assertions\n";
+echo "STAGING_DATABASE={$database}\n";

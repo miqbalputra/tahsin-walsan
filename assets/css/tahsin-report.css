@@ -1,0 +1,91 @@
+.tahsin-report{color:#1e293b;font-size:14px}
+.tahsin-heading{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:24px}
+.tahsin-heading h2{font-size:28px;font-weight:800;line-height:1.25}
+.tahsin-note{color:#64748b;font-size:12px;line-height:1.65;margin:10px 0 18px}
+.tahsin-actions{display:flex;gap:8px;flex-wrap:wrap}
+.tahsin-button{display:inline-flex;align-items:center;justify-content:center;border:1px solid #cbd5e1;background:white;color:#334155;border-radius:10px;padding:10px 14px;font-weight:700;font-size:12px;cursor:pointer;text-decoration:none}
+.tahsin-button.primary{background:#2563eb;color:white;border-color:#2563eb}
+.tahsin-button.whatsapp{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+.tahsin-panel{background:white;border:1px solid #e2e8f0;border-radius:18px;padding:22px;margin-bottom:22px;min-width:0}
+.tahsin-panel h3{font-size:17px;font-weight:800;margin-bottom:16px}
+.tahsin-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.tahsin-report label{font-size:12px;color:#475569;display:block;font-weight:600}
+.tahsin-report input,.tahsin-report select,.tahsin-report textarea{display:block;width:100%;background:white;border:1px solid #cbd5e1;border-radius:9px;padding:9px;margin-top:5px;color:#1e293b;font-size:13px}
+.tahsin-report :focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
+.tahsin-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.tahsin-card{background:white;border:1px solid #e2e8f0;padding:20px;border-radius:16px}
+.tahsin-card span{display:block;font-size:12px;font-weight:600;color:#64748b}
+.tahsin-card strong{display:block;font-size:30px;margin-top:7px}
+.tahsin-card.green strong{color:#047857}
+.tahsin-card.red strong{color:#be123c}
+.tahsin-card.blue strong{color:#1d4ed8}
+.tahsin-card.purple strong{color:#6d28d9}
+.tahsin-card.amber strong{color:#b45309}
+.tahsin-scroll{overflow-x:auto}
+.tahsin-table{border-collapse:collapse;width:100%;font-size:12px;text-align:left}
+.tahsin-table th{background:#f8fafc;color:#475569;font-size:11px;white-space:nowrap;padding:12px;border-bottom:1px solid #cbd5e1}
+.tahsin-table td{padding:12px;vertical-align:top;border-bottom:1px solid #e2e8f0}
+.tahsin-table small{display:block;color:#64748b;font-size:11px;margin-top:5px;line-height:1.6}
+.tahsin-table a{color:#1d4ed8}
+.tahsin-count{text-align:center;font-weight:700}
+.tahsin-badge{display:inline-block;padding:5px 8px;border-radius:8px;background:#f1f5f9;color:#475569;font-size:11px;font-weight:700;line-height:1.5}
+.tahsin-badge.complete{background:#ecfdf5;color:#047857}
+.tahsin-badge.conflict,.tahsin-badge.capaian,.tahsin-badge.partial{background:#fffbeb;color:#92400e}
+.tahsin-badge.unverified,.tahsin-badge.missing{background:#f5f3ff;color:#6d28d9}
+.tahsin-alert{border:1px solid #fde68a;background:#fffbeb;border-radius:12px;padding:14px 18px;margin-bottom:20px;font-size:13px}
+.tahsin-alert.error{border-color:#fecdd3;background:#fff1f2}
+.tahsin-detail{margin:12px 0;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden}
+.tahsin-detail summary{cursor:pointer;padding:16px;font-weight:700;background:#f8fafc}
+.tahsin-detail summary span{font-size:11px;color:#64748b;margin-left:10px}
+.tahsin-detail>p{padding:15px}
+.tahsin-session{padding:18px;border-top:1px solid #e2e8f0}
+.tahsin-session-heading{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.tahsin-verify{margin-top:15px;display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;background:#fffbeb;padding:15px;border-radius:10px}
+.tahsin-verify .tahsin-note{grid-column:1/-1;margin:0}
+.tahsin-chart{height:260px;position:relative}
+.tahsin-pagination{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:15px}
+.tahsin-group-grid{display:grid;grid-template-columns:1fr;gap:0}
+.tahsin-pending{display:grid;gap:16px}
+.tahsin-pending-header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.tahsin-pending-stats{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0;color:#475569;font-size:13px}
+.tahsin-pending-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-bottom:15px}
+.tahsin-pending-list li{background:#f8fafc;border-radius:10px;padding:12px;list-style:none}
+.tahsin-message{min-height:150px}
+.tahsin-widget{padding:20px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:18px;margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;gap:15px}
+.tahsin-widget strong{display:block;color:#5b21b6}
+.tahsin-widget p{font-size:12px;color:#64748b;margin-top:5px}
+.tahsin-meeting [data-sidebar],.tahsin-meeting nav,.tahsin-meeting aside,.tahsin-meeting header,.tahsin-meeting .tahsin-hide-meeting{display:none!important}
+.tahsin-meeting .tahsin-report{font-size:18px}
+.tahsin-meeting .tahsin-heading h2{font-size:36px}
+.tahsin-meeting .tahsin-card strong{font-size:40px}
+.tahsin-meeting .tahsin-table{font-size:16px}
+.tahsin-meeting .tahsin-table th,.tahsin-meeting .tahsin-table small,.tahsin-meeting .tahsin-badge{font-size:13px}
+.tahsin-meeting main{padding:30px}
+.tahsin-print-title{display:none}@media(min-width:1500px){.tahsin-group-grid{grid-template-columns:1fr 1fr;gap:20px}}@media(max-width:700px){.tahsin-heading{flex-direction:column}
+.tahsin-verify{grid-template-columns:1fr}
+.tahsin-panel{padding:15px}
+.tahsin-heading h2{font-size:24px}
+.tahsin-table td,.tahsin-table th{padding:9px}}@media print{@page{size:A4 landscape;margin:12mm}html,body{height:auto!important;overflow:visible!important;background:white!important}body>.flex.h-screen,[data-main-layout],main{height:auto!important;overflow:visible!important;display:block!important}nav,aside,header,[data-sidebar],.no-print{display:none!important}main{padding:0!important}
+.tahsin-print-title{display:block}
+.tahsin-panel{border:none;padding:0;margin:15px 0;border-radius:0}
+.tahsin-cards{display:grid!important;grid-template-columns:repeat(6,1fr)}
+.tahsin-card{padding:9px}
+.tahsin-card strong{font-size:22px}
+.tahsin-scroll{overflow:visible}
+.tahsin-table{font-size:9px}
+.tahsin-table th,.tahsin-table td{padding:6px}
+.tahsin-table small,.tahsin-badge{font-size:8px}
+.tahsin-table thead{display:table-header-group}tr,.tahsin-session-heading{break-inside:avoid}
+.tahsin-detail{border:none}
+.tahsin-detail summary{background:none;padding:10px 0}
+.tahsin-session{padding:10px 0}
+.tahsin-chart{height:180px;break-inside:avoid}
+.tahsin-heading h2{font-size:22px}
+.tahsin-group-grid{display:block!important}
+.tahsin-note{font-size:9px}
+.tahsin-meeting .tahsin-table{font-size:9px}
+.tahsin-meeting .tahsin-table th,.tahsin-meeting .tahsin-table small,.tahsin-meeting .tahsin-badge{font-size:8px}}
+
+@media print{.tahsin-group-grid>.tahsin-panel{break-inside:avoid}
+.tahsin-panel h3{break-after:avoid}
+.tahsin-detail summary{break-after:avoid}}

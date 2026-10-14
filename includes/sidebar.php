@@ -43,6 +43,13 @@ if ($role === 'admin' || $role === 'pj_tahfidz') {
     ];
 }
 
+if (in_array($role, ['admin', 'pj_tahfidz', 'kepsek', 'ustadz'], true)) {
+    $prefix = $role === 'ustadz' ? '../' : '';
+    array_splice($menus, 1, 0, [
+        ['label' => 'Rekap Lengkap', 'icon' => 'M9 17v-2m3 2v-4m3 4v-6M5 21h14V3H5z', 'url' => $prefix . 'rekap-lengkap.php'],
+        ['label' => 'Pemantauan Input', 'icon' => 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', 'url' => $prefix . 'pantau-input.php'],
+    ]);
+}
 $current_page = basename($_SERVER['PHP_SELF']);
 $is_ustadz_path = strpos($_SERVER['REQUEST_URI'], '/ustadz/') !== false;
 
@@ -74,7 +81,7 @@ $base_url = $is_ustadz_path ? '../' : '';
     @click="sidebarOpen = false" x-cloak></div>
 
 <!-- Sidebar -->
-<div :class="sidebarOpen ? 'translate-x-0 ease-out' : '-translate-x-full ease-in'"
+<div data-sidebar x-cloak :class="sidebarOpen ? 'translate-x-0 ease-out' : '-translate-x-full ease-in'"
     class="fixed inset-y-0 left-0 z-30 w-64 overflow-y-auto transition duration-300 transform bg-white lg:translate-x-0 lg:static lg:inset-0 border-r border-slate-100">
     <div class="flex items-center justify-center mt-8">
         <div class="flex items-center">
@@ -186,7 +193,7 @@ $base_url = $is_ustadz_path ? '../' : '';
 </div>
 
 <!-- Main Content Area Wrapper -->
-<div class="flex flex-col flex-1 overflow-hidden">
+<div data-main-layout class="flex flex-col flex-1 overflow-hidden">
     <!-- Top Navbar -->
     <header class="flex items-center justify-between px-6 py-4 bg-white border-b border-slate-100">
         <div class="flex items-center">

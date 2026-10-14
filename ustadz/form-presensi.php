@@ -11,10 +11,9 @@ checkRole(['ustadz']);
 $halaqoh_id = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) ?: null;
 $ustadz_id = $_SESSION['user_id'];
 
-// Verify halaqoh ownership
-$stmt = $pdo->prepare("SELECT * FROM halaqoh WHERE id = ? AND ustadz_id = ?");
-$stmt->execute([$halaqoh_id, $ustadz_id]);
-$halaqoh = $stmt->fetch();
+// Historical sessions remain assigned to the teacher responsible at that time.
+$requestedDate = normalizeDateInput($_GET['tanggal'] ?? date('Y-m-d'), date('Y-m-d'));
+$halaqoh = attendanceFetchOwnedHalaqoh($pdo, $halaqoh_id, $ustadz_id, $requestedDate);
 
 if (!$halaqoh) {
     redirectTo('ustadz/input-presensi.php');
@@ -66,12 +65,8 @@ function jsAttr($value)
 $tanggal = normalizeDateInput($_GET['tanggal'] ?? date('Y-m-d'), date('Y-m-d'));
 
 // Fetch existing attendance for this date and halaqoh to pre-fill
-$existing_attendance = [];
-$stmtExist = $pdo->prepare("SELECT id, halaqoh_id, wali_santri_id, tanggal, status, alasan, jenis_materi, jilid, nama_surat, halaman, hasil_talaqqi FROM presensi WHERE halaqoh_id = ? AND tanggal = ?");
-$stmtExist->execute([$halaqoh_id, $tanggal]);
-while ($row = $stmtExist->fetch()) {
-    $existing_attendance[$row['wali_santri_id']] = $row;
-}
+$sessionAttendance = attendanceFetchSessionAttendance($pdo, $halaqoh_id, $ustadz_id, $tanggal);
+$existing_attendance = $sessionAttendance['entries'];
 
 // Handle Submit
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -88,11 +83,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message .= sprintf(' %d data yang dibatalkan juga dihapus.', $result['deleted']);
             }
 
-            $stmtExist->execute([$halaqoh_id, $tanggal]);
-            $existing_attendance = [];
-            while ($row = $stmtExist->fetch()) {
-                $existing_attendance[$row['wali_santri_id']] = $row;
-            }
+            $sessionAttendance = attendanceFetchSessionAttendance($pdo, $halaqoh_id, $ustadz_id, $tanggal);
+            $existing_attendance = $sessionAttendance['entries'];
         } catch (AttendanceValidationException $e) {
             $error = 'Gagal menyimpan presensi: ' . $e->getMessage();
         } catch (Throwable $e) {
@@ -102,12 +94,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$members = attendanceFetchActiveMembers($pdo, $halaqoh_id, $ustadz_id);
+$members = attendanceFetchActiveMembers($pdo, $halaqoh_id, $ustadz_id, $tanggal);
 
 // Check if today is a holiday
-$stmtHoliday = $pdo->prepare("SELECT keterangan FROM holidays WHERE tanggal = ?");
-$stmtHoliday->execute([$tanggal]);
-$holiday = $stmtHoliday->fetch();
+$holidayMap = tahsinHolidayMap($pdo);
+$holiday = null;
+foreach ([tahsinSessionDate($tanggal), $tanggal] as $holidayDate) {
+    if (array_key_exists($holidayDate, $holidayMap)) { $holiday = ['keterangan' => $holidayMap[$holidayDate]]; break; }
+}
+if ((int) substr(tahsinSessionDate($tanggal), 8, 2) <= 7) $holiday = ['keterangan' => 'Ahad pertama setiap bulan'];
 ?>
 
 <div x-data="{ 
@@ -238,6 +233,14 @@ $holiday = $stmtHoliday->fetch();
     </div>
 <?php endif; ?>
 
+<?php if ($sessionAttendance['conflicts']): ?>
+<div class="mb-5 p-4 rounded-xl bg-amber-50 text-amber-800 text-sm" role="alert">
+    <?= (int) $sessionAttendance['conflicts'] ?> peserta memiliki catatan sesi yang perlu ditinjau. Minta admin/PJ memverifikasi di
+    <a class="underline font-bold" href="../rekap-lengkap.php?<?= htmlspecialchars(http_build_query(['start_date' => tahsinSessionDate($tanggal), 'end_date' => tahsinSessionDate($tanggal), 'halaqoh_id' => $halaqoh_id])) ?>">Rekap Lengkap</a>.
+</div>
+<?php endif; ?>
+<p class="text-xs text-slate-500 mb-4">Sesi Ahad <?= date('d/m/Y', strtotime(tahsinSessionDate($tanggal))) ?>. Data kosong bukan Alfa. Hadir tersimpan setelah capaian lengkap.</p>
+<?php if (attendanceLegacyRecordedSession($pdo, $tanggal)): ?><p class="text-xs text-amber-800 bg-amber-50 p-3 rounded-lg mb-4">Histori roster sesi ini belum tersedia. Hanya peserta yang sudah memiliki catatan sesi ditampilkan untuk perbaikan; daftar peserta lama tidak ditebak dari roster sekarang.</p><?php endif; ?>
 <form method="POST" action="" @submit.prevent="finalizeForm($event)">
     <?php csrfField(); ?>
     <!-- Tanggal Picker -->
@@ -277,6 +280,7 @@ $holiday = $stmtHoliday->fetch();
                 suratSampai: <?php echo jsAttr($nama_surat_sampai); ?>,
                 intent: 'save',
                 isSaving: false,
+                saveError: '',
                 isSaved: <?php echo isset($prev['id']) ? 'true' : 'false'; ?>,
                 trackDraft(request) {
                     if (!window.attendanceDraftRequests) window.attendanceDraftRequests = new Set();
@@ -287,6 +291,7 @@ $holiday = $stmtHoliday->fetch();
                 isValid() {
                     if (!this.status) return false;
                     if (this.status === 'H') {
+                        if (!['Iqro', 'Al Quran'].includes(this.materi)) return false;
                         const card = this.$el;
                         const hasil = card.querySelector('[name*=\'hasil_talaqqi\']:checked');
                         
@@ -331,10 +336,12 @@ $holiday = $stmtHoliday->fetch();
                                 setTimeout(() => { this.isSaved = false; }, 3000);
                             } else {
                                 this.intent = 'save';
+                                this.saveError = data.message || 'Pembatalan belum tersimpan.';
                             }
                         })
                         .catch(() => {
                             this.intent = 'save';
+                            this.saveError = 'Gagal membatalkan. Periksa koneksi lalu coba lagi.';
                         })
                         .finally(() => {
                             this.isSaving = false;
@@ -347,11 +354,13 @@ $holiday = $stmtHoliday->fetch();
                     if (!this.status) return; // Don't save if status is cleared
                     if (!this.isValid()) {
                         this.isSaved = false;
+                        this.saveError = this.status === 'H' ? 'Belum tersimpan: lengkapi materi dan hasil talaqqi untuk Hadir.' : 'Belum tersimpan: alasan sakit/izin wajib diisi.';
                         return;
                     }
                     
                     this.isSaving = true;
                     this.isSaved = false;
+                    this.saveError = '';
                     
                     const card = this.$el;
                     const formData = new FormData();
@@ -390,10 +399,13 @@ $holiday = $stmtHoliday->fetch();
                             this.isSaved = true;
                             // Reset saved indicator after 3s
                             setTimeout(() => { this.isSaved = false; }, 3000);
+                        } else {
+                            this.saveError = data.message || 'Presensi belum berhasil tersimpan.';
                         }
                     })
                     .catch(() => {
                         this.isSaved = false;
+                        this.saveError = 'Presensi belum tersimpan. Periksa koneksi lalu coba lagi.';
                     })
                     .finally(() => {
                         this.isSaving = false;
@@ -426,6 +438,7 @@ $holiday = $stmtHoliday->fetch();
 
                 <!-- Main Member Info & Status -->
                 <div class="p-6">
+                    <p x-show="saveError" x-text="saveError" role="alert" class="mb-4 text-xs text-amber-800 bg-amber-50 rounded-lg p-3"></p>
                     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div class="flex items-center gap-4">
                             <div

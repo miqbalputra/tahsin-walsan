@@ -1,6 +1,7 @@
 <?php
 require_once '../config/database.php';
 require_once '../includes/auth_helper.php';
+require_once '../includes/tahsin_report_helper.php';
 
 $pageTitle = 'Daftar Capaian Peserta';
 checkLogin();
@@ -14,7 +15,7 @@ $halaqoh_filter = $_GET['halaqoh_id'] ?? '';
 $search = $_GET['search'] ?? '';
 
 // Build Query - Show ALL groups, but track ustadz_id for edit permission
-$sql = "SELECT 
+$sql = "SELECT DISTINCT
             w.id as wali_id,
             w.nama_bapak,
             w.no_hp,
@@ -22,8 +23,8 @@ $sql = "SELECT
             h.nama_halaqoh,
             h.ustadz_id,
             u.nama_lengkap as ustadz_name,
-            GROUP_CONCAT(DISTINCT s.nama_anak SEPARATOR ', ') as children_names,
-            GROUP_CONCAT(DISTINCT s.kelas SEPARATOR ', ') as classes,
+            s.children_names,
+            s.classes,
             p.id as presensi_id,
             p.jenis_materi,
             p.jilid,
@@ -34,20 +35,19 @@ $sql = "SELECT
         JOIN halaqoh_members hm ON w.id = hm.wali_santri_id AND hm.archived_at IS NULL
         JOIN halaqoh h ON hm.halaqoh_id = h.id
         JOIN users u ON h.ustadz_id = u.id
-        LEFT JOIN santri_detail s ON w.id = s.wali_santri_id
+        LEFT JOIN (SELECT wali_santri_id, GROUP_CONCAT(DISTINCT nama_anak ORDER BY nama_anak SEPARATOR ', ') AS children_names,
+            GROUP_CONCAT(DISTINCT kelas ORDER BY kelas SEPARATOR ', ') AS classes FROM santri_detail GROUP BY wali_santri_id) s ON w.id = s.wali_santri_id
         LEFT JOIN (
             SELECT p1.*
             FROM presensi p1
-            INNER JOIN (
-                SELECT wali_santri_id, MAX(tanggal) as max_date, MAX(id) as max_id
-                FROM presensi
-                WHERE status = 'H'
-                GROUP BY wali_santri_id
-            ) p2 ON p1.wali_santri_id = p2.wali_santri_id AND p1.tanggal = p2.max_date AND p1.id = p2.max_id
+            WHERE p1.status = 'H' AND p1.tanggal <= CURRENT_DATE AND NOT EXISTS (
+                SELECT 1 FROM presensi p2 WHERE p2.wali_santri_id = p1.wali_santri_id AND p2.status = 'H' AND p2.tanggal <= CURRENT_DATE
+                AND (p2.tanggal > p1.tanggal OR (p2.tanggal = p1.tanggal AND p2.id > p1.id))
+            )
         ) p ON w.id = p.wali_santri_id
-        WHERE 1=1";
+        WHERE h.ustadz_id = ?";
 
-$params = [];
+$params = [$user_id];
 
 if (!empty($halaqoh_filter)) {
     $sql .= " AND h.id = ?";
@@ -62,14 +62,27 @@ if (!empty($search)) {
     $params[] = $term;
 }
 
-$sql .= " GROUP BY w.id, h.id ORDER BY h.nama_halaqoh, w.nama_bapak";
+$sql .= " ORDER BY h.nama_halaqoh, w.nama_bapak";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $results = $stmt->fetchAll();
+if (tahsinSchemaReady($pdo)) {
+    $baselines = [];
+    foreach ($pdo->query('SELECT * FROM tahsin_capaian_awal')->fetchAll() as $baseline) $baselines[(int) $baseline['wali_santri_id']] = $baseline;
+    foreach ($results as &$result) {
+        if (empty($result['presensi_id']) && isset($baselines[(int) $result['wali_id']])) {
+            foreach (['jenis_materi', 'jilid', 'nama_surat', 'halaman'] as $field) $result[$field] = $baselines[(int) $result['wali_id']][$field];
+            $result['last_date'] = null;
+            $result['is_initial'] = true;
+        }
+    }
+    unset($result);
+}
 
 // Fetch ALL Halaqohs for dropdown
-$stmtH = $pdo->query("SELECT id, nama_halaqoh FROM halaqoh ORDER BY nama_halaqoh");
+$stmtH = $pdo->prepare("SELECT id, nama_halaqoh FROM halaqoh WHERE ustadz_id = ? ORDER BY nama_halaqoh");
+$stmtH->execute([$user_id]);
 $halaqohs = $stmtH->fetchAll();
 
 require_once '../includes/header.php';
@@ -182,7 +195,7 @@ require_once '../includes/sidebar.php';
                                         <?php echo ($row['jenis_materi'] === 'Al Quran' ? 'Ayat ' : 'Hal ') . $row['halaman']; ?>
                                     </span>
                                     <span class="text-[9px] mt-1 text-slate-300 italic">Terakhir:
-                                        <?php echo date('d/m/y', strtotime($row['last_date'])); ?>
+                                        <?php echo !empty($row['is_initial']) ? 'Capaian awal (bukan kehadiran)' : date('d/m/y', strtotime($row['last_date'])); ?>
                                     </span>
                                 </div>
                             <?php else: ?>

@@ -6,6 +6,9 @@
     "phpunit/phpunit": "^10.5"
   },
   "scripts": {
-    "test": "phpunit --configuration phpunit.xml"
+    "test": [
+      "phpunit --configuration phpunit.xml",
+      "@php tests/run-tahsin-tests.php"
+    ]
   }
 }

@@ -44,8 +44,20 @@ function tableColumns(PDO $pdo, string $table): array
 
 function tablePrimaryKeyColumns(PDO $pdo, string $table): array
 {
-    $stmt = $pdo->query("SHOW KEYS FROM `$table` WHERE Key_name = 'PRIMARY' ORDER BY Seq_in_index");
-    return $stmt->fetchAll(PDO::FETCH_COLUMN, 4);
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $table)) {
+        throw new InvalidArgumentException('Nama tabel tidak valid.');
+    }
+
+    // MySQL and MariaDB do not accept ORDER BY on SHOW KEYS. Query the
+    // information schema instead so composite keys keep their column order.
+    $stmt = $pdo->prepare("SELECT COLUMN_NAME
+        FROM information_schema.KEY_COLUMN_USAGE
+        WHERE CONSTRAINT_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+          AND CONSTRAINT_NAME = 'PRIMARY'
+        ORDER BY ORDINAL_POSITION");
+    $stmt->execute([$table]);
+    return $stmt->fetchAll(PDO::FETCH_COLUMN);
 }
 
 /**

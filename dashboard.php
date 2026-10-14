@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/includes/tahsin_report_helper.php';
 $pageTitle = 'Dashboard Admin';
 require_once 'includes/header.php';
 require_once 'includes/sidebar.php';
@@ -15,33 +16,25 @@ $countUser = $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
 $countWali = $pdo->query("SELECT COUNT(*) FROM wali_santri")->fetchColumn();
 $countHalaqoh = $pdo->query("SELECT COUNT(*) FROM halaqoh")->fetchColumn();
 
-// 2. Attendance Stats (Last 30 Days)
-$days = 30;
-$stmtAttendance = $pdo->prepare("SELECT status, COUNT(*) as total FROM presensi WHERE tanggal >= DATE_SUB(CURDATE(), INTERVAL ? DAY) GROUP BY status");
-$stmtAttendance->execute([$days]);
-$attendanceStats = $stmtAttendance->fetchAll(PDO::FETCH_KEY_PAIR);
+// 2. Canonical weekly attendance, with missing data kept separate.
+$tahsinDashboard = tahsinDashboardData($pdo, $_SESSION['role'], (int) $_SESSION['user_id']);
+$attendanceStats = ['H' => $tahsinDashboard['recent']['summary']['hadir'], 'S' => $tahsinDashboard['recent']['summary']['sakit'], 'I' => $tahsinDashboard['recent']['summary']['izin'], 'A' => $tahsinDashboard['recent']['summary']['alpha']];
 $totalPresensi = array_sum($attendanceStats);
 
 // 3. Category Breakdown
 $categoryStats = $pdo->query("SELECT kategori, COUNT(*) as total FROM wali_santri GROUP BY kategori")->fetchAll(PDO::FETCH_KEY_PAIR);
 
-// 4. Early Warning: Alpha >= 3
-$warningQuery = "SELECT w.id, w.nama_bapak, COUNT(p.id) as total_alpha, h.nama_halaqoh FROM wali_santri w JOIN presensi p ON w.id = p.wali_santri_id JOIN halaqoh h ON h.id = p.halaqoh_id WHERE p.status = 'A' GROUP BY w.id, w.nama_bapak, h.nama_halaqoh HAVING total_alpha >= 3 ORDER BY total_alpha DESC LIMIT 5";
-$warnings = $pdo->query($warningQuery)->fetchAll();
+// 4. Warnings only from confirmed, deduplicated Alfa sessions.
+$warnings = array_slice($tahsinDashboard['warnings'], 0, 5);
 
 // 5. Recent Activity
 $recentQuery = "SELECT p.*, w.nama_bapak, h.nama_halaqoh FROM presensi p JOIN wali_santri w ON p.wali_santri_id = w.id JOIN halaqoh h ON p.halaqoh_id = h.id ORDER BY p.id DESC LIMIT 5";
 $recentActivities = $pdo->query($recentQuery)->fetchAll();
 
-// 6. Chart Data
-$stmtTrend = $pdo->query("SELECT tanggal, SUM(CASE WHEN status = 'H' THEN 1 ELSE 0 END) as hadir FROM presensi WHERE tanggal >= DATE_SUB(CURDATE(), INTERVAL 14 DAY) GROUP BY tanggal ORDER BY tanggal ASC");
-$trendData = $stmtTrend->fetchAll(PDO::FETCH_ASSOC);
-$labels = [];
-$hadirCount = [];
-foreach ($trendData as $t) {
-    $labels[] = date('d/m', strtotime($t['tanggal']));
-    $hadirCount[] = $t['hadir'];
-}
+// 6. The same weekly totals used by the complete report.
+$trendData = $tahsinDashboard['recent']['trend'];
+$labels = array_map(static fn($t) => date('d/m', strtotime($t['tanggal'])), $trendData);
+$hadirCount = array_column($trendData, 'hadir');
 ?>
 
 <script src="assets/js/chart.umd.min.js"></script>
@@ -52,6 +45,7 @@ foreach ($trendData as $t) {
     <p class="text-slate-500">Ringkasan aktivitas dan statistik Tahsin Bapak.</p>
 </div>
 
+<?php require __DIR__ . '/includes/tahsin_pending_widget.php'; ?>
 <!-- 1. Stats Row -->
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
     <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center">

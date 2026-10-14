@@ -42,6 +42,8 @@ Admin/PJ Tahfidz dapat memantau progress, mencetak rapor, dan mendapatkan pering
 | Fitur | Deskripsi |
 |-------|-----------|
 | 📝 **Input Presensi** | Form interaktif dengan auto-save per peserta |
+| 📋 **Rekap Lengkap** | Seluruh wali, persentase kehadiran dan kelengkapan, status kepesertaan, detail pekanan, Mode Rapat, Excel, dan cetak/PDF |
+| 🔔 **Pemantauan Input Guru** | Kekurangan presensi/capaian dan konflik per guru/halaqoh/sesi; pengingat WhatsApp siap kirim |
 | 📊 **Dashboard Admin** | Statistik, grafik tren, peringatan dini |
 | 👥 **Manajemen Peserta** | CRUD wali santri + data anak + import CSV |
 | 🏫 **Manajemen Halaqoh** | Kelompok belajar dengan ustadz pembimbing |
@@ -507,6 +509,8 @@ Berisi detail setiap endpoint, parameter, contoh request/response, dan panduan t
 ---
 
 ## 🛡️ Operasional Production Aman
+
+Fitur Rekap Lengkap membutuhkan migrasi additive histori roster, capaian awal, dan verifikasi. Ikuti [panduan penerapan dan pengujian](docs/TAHSIN_REPORTING_ROLLOUT.md). Data kosong tidak dianggap Alfa; angka kehadiran yang belum lengkap disertai indikator kualitas data.
 
 Sebelum deployment, ambil baseline read-only dan simpan hasilnya di luar web root:
 

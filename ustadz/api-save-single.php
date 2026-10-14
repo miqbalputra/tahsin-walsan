@@ -36,7 +36,7 @@ if ($halaqohId === false || $waliId === false || $tanggal === '') {
 
 $payload = [
     'intent' => $_POST['intent'] ?? 'save',
-    'status' => $_POST['status'] ?? 'A',
+    'status' => $_POST['status'] ?? '',
     'alasan' => $_POST['alasan'] ?? '',
     'jenis_materi' => $_POST['jenis_materi'] ?? '',
     'jilid' => $_POST['jilid'] ?? '',

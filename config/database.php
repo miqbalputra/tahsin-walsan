@@ -24,6 +24,8 @@ $options = [
 
 try {
     $pdo = new PDO($dsn, $user, $pass, $options);
+    // History and audit timestamps must use the same WIB clock as PHP.
+    $pdo->exec("SET time_zone = '+07:00'");
 } catch (\PDOException $e) {
     // Log error internally
     error_log("Database Connection Error: " . $e->getMessage());

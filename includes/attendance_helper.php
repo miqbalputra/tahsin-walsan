@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/tahsin_report_helper.php';
 /**
  * Shared attendance persistence rules.
  *
@@ -71,8 +72,61 @@ function attendanceCombineRange($start, $end, $delimiter = '-')
  * Returns the roster eligible for attendance input. This is intentionally the
  * sole definition of an active member for the attendance feature.
  */
-function attendanceFetchActiveMembers(PDO $pdo, $halaqohId, $ustadzId)
+function attendanceHistoryBoundary(PDO $pdo, $tanggal): ?string
 {
+    if (!$tanggal || !tahsinSchemaReady($pdo)) return null;
+    $boundary = tahsinSessionDate($tanggal) . ' 00:00:00.000000';
+    $tracked = $pdo->query('SELECT tracked_from FROM tahsin_tracking WHERE id = 1')->fetchColumn();
+    return $tracked && $boundary >= $tracked ? $boundary : null;
+}
+
+function attendanceFetchOwnedHalaqoh(PDO $pdo, $halaqohId, $ustadzId, $tanggal, bool $lock = false)
+{
+    $stmt = $pdo->prepare('SELECT * FROM halaqoh WHERE id = ?' . ($lock ? ' FOR UPDATE' : ''));
+    $stmt->execute([$halaqohId]);
+    $halaqoh = $stmt->fetch();
+    if (!$halaqoh) return false;
+    $boundary = attendanceHistoryBoundary($pdo, $tanggal);
+    if ($boundary) {
+        $stmt = $pdo->prepare('SELECT DISTINCT ustadz_id FROM tahsin_roster_history WHERE halaqoh_id = ? AND valid_from <= ? AND (valid_until IS NULL OR valid_until > ?)');
+        $stmt->execute([$halaqohId, $boundary, $boundary]);
+        $owners = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        if ($owners) return in_array((int) $ustadzId, $owners, true) ? $halaqoh : false;
+    }
+    return (int) $halaqoh['ustadz_id'] === (int) $ustadzId ? $halaqoh : false;
+}
+
+function attendanceLegacyRecordedSession(PDO $pdo, $tanggal): bool
+{
+    if (!$tanggal || attendanceHistoryBoundary($pdo, $tanggal)) return false;
+    $holidays = tahsinHolidayMap($pdo);
+    return tahsinSessionDate($tanggal) !== tahsinLatestSession(tahsinNow()->format('Y-m-d'), $holidays);
+}
+
+function attendanceFetchActiveMembers(PDO $pdo, $halaqohId, $ustadzId, $tanggal = null)
+{
+    $boundary = attendanceHistoryBoundary($pdo, $tanggal);
+    if ($boundary) {
+        $stmt = $pdo->prepare("SELECT w.id, w.nama_bapak, w.no_hp,
+            GROUP_CONCAT(DISTINCT CONCAT(sd.nama_anak, ' [', sd.kelas, ']') SEPARATOR '<br>') AS info_anak
+            FROM tahsin_roster_history rh JOIN wali_santri w ON w.id = rh.wali_santri_id
+            LEFT JOIN santri_detail sd ON sd.wali_santri_id = w.id
+            WHERE rh.halaqoh_id = ? AND rh.ustadz_id = ? AND rh.valid_from <= ? AND (rh.valid_until IS NULL OR rh.valid_until > ?)
+            GROUP BY w.id, w.nama_bapak, w.no_hp ORDER BY w.nama_bapak");
+        $stmt->execute([$halaqohId, $ustadzId, $boundary, $boundary]);
+        return $stmt->fetchAll();
+    }
+    if (attendanceLegacyRecordedSession($pdo, $tanggal)) {
+        $session = tahsinSessionDate($tanggal);
+        $stmt = $pdo->prepare("SELECT w.id, w.nama_bapak, w.no_hp,
+            GROUP_CONCAT(DISTINCT CONCAT(sd.nama_anak, ' [', sd.kelas, ']') SEPARATOR '<br>') AS info_anak
+            FROM presensi p JOIN wali_santri w ON w.id = p.wali_santri_id JOIN halaqoh h ON h.id = p.halaqoh_id
+            LEFT JOIN santri_detail sd ON sd.wali_santri_id = w.id
+            WHERE h.id = ? AND h.ustadz_id = ? AND p.tanggal BETWEEN ? AND ?
+            GROUP BY w.id, w.nama_bapak, w.no_hp ORDER BY w.nama_bapak");
+        $stmt->execute([$halaqohId, $ustadzId, $session, (new DateTimeImmutable($session))->modify('+6 days')->format('Y-m-d')]);
+        return $stmt->fetchAll();
+    }
     $archiveCondition = attendanceActiveMembershipCondition($pdo);
     $stmt = $pdo->prepare("SELECT w.id, w.nama_bapak, w.no_hp,
                                   GROUP_CONCAT(CONCAT(sd.nama_anak, ' [', sd.kelas, ']') SEPARATOR '<br>') AS info_anak
@@ -90,8 +144,23 @@ function attendanceFetchActiveMembers(PDO $pdo, $halaqohId, $ustadzId)
     return $stmt->fetchAll();
 }
 
-function attendanceFetchActiveMemberIds(PDO $pdo, $halaqohId, $ustadzId, $forUpdate = false)
+function attendanceFetchActiveMemberIds(PDO $pdo, $halaqohId, $ustadzId, $forUpdate = false, $tanggal = null)
 {
+    $boundary = attendanceHistoryBoundary($pdo, $tanggal);
+    if ($boundary) {
+        $stmt = $pdo->prepare('SELECT DISTINCT w.id FROM tahsin_roster_history rh JOIN wali_santri w ON w.id = rh.wali_santri_id
+            WHERE rh.halaqoh_id = ? AND rh.ustadz_id = ? AND rh.valid_from <= ? AND (rh.valid_until IS NULL OR rh.valid_until > ?)
+            ORDER BY w.id' . ($forUpdate ? ' FOR UPDATE' : ''));
+        $stmt->execute([$halaqohId, $ustadzId, $boundary, $boundary]);
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+    if (attendanceLegacyRecordedSession($pdo, $tanggal)) {
+        $session = tahsinSessionDate($tanggal);
+        $stmt = $pdo->prepare('SELECT DISTINCT w.id FROM presensi p JOIN wali_santri w ON w.id = p.wali_santri_id
+            JOIN halaqoh h ON h.id = p.halaqoh_id WHERE h.id = ? AND h.ustadz_id = ? AND p.tanggal BETWEEN ? AND ? ORDER BY w.id' . ($forUpdate ? ' FOR UPDATE' : ''));
+        $stmt->execute([$halaqohId, $ustadzId, $session, (new DateTimeImmutable($session))->modify('+6 days')->format('Y-m-d')]);
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
     $archiveCondition = attendanceActiveMembershipCondition($pdo);
     $sql = "SELECT DISTINCT hm.wali_santri_id
             FROM halaqoh h
@@ -112,6 +181,32 @@ function attendanceFetchActiveMemberIds(PDO $pdo, $halaqohId, $ustadzId, $forUpd
     return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
 }
 
+function attendanceFetchSessionAttendance(PDO $pdo, $halaqohId, $ustadzId, string $tanggal): array
+{
+    $ids = attendanceFetchActiveMemberIds($pdo, $halaqohId, $ustadzId, false, $tanggal);
+    if (!$ids) return ['entries' => [], 'conflicts' => 0];
+    $session = tahsinSessionDate($tanggal);
+    $end = (new DateTimeImmutable($session))->modify('+6 days')->format('Y-m-d');
+    $stmt = $pdo->prepare('SELECT * FROM presensi WHERE wali_santri_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ') AND tanggal BETWEEN ? AND ? ORDER BY tanggal, id');
+    $stmt->execute(array_merge($ids, [$session, $end]));
+    $byWali = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $record) $byWali[(int) $record['wali_santri_id']][] = $record;
+    $decisions = [];
+    if (tahsinSchemaReady($pdo)) {
+        $stmt = $pdo->prepare('SELECT * FROM tahsin_verifications WHERE session_date = ? ORDER BY id');
+        $stmt->execute([$session]);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $decision) $decisions[(int) $decision['wali_santri_id']] = $decision;
+    }
+    $entries = []; $conflicts = 0;
+    $holidays = tahsinHolidayMap($pdo);
+    foreach ($byWali as $waliId => $source) {
+        $resolved = tahsinResolveSession($source, $decisions[$waliId] ?? null, tahsinSuspectIds($pdo, $source), $holidays);
+        if (in_array($resolved['state'], ['conflict', 'invalid_date'], true) || ($resolved['record'] && (int) $resolved['record']['halaqoh_id'] !== (int) $halaqohId)) $conflicts++;
+        elseif ($resolved['record']) $entries[$waliId] = $resolved['record'];
+    }
+    return ['entries' => $entries, 'conflicts' => $conflicts];
+}
+
 function attendanceNormalizePayload($data, $allowReset = false)
 {
     if (!is_array($data)) {
@@ -119,7 +214,7 @@ function attendanceNormalizePayload($data, $allowReset = false)
     }
 
     $intent = strtolower(trim((string) ($data['intent'] ?? 'save')));
-    $status = strtoupper(trim((string) ($data['status'] ?? 'A')));
+    $status = strtoupper(trim((string) ($data['status'] ?? '')));
     if ($intent === 'reset' || ($allowReset && $status === 'RESET')) {
         return ['intent' => 'reset'];
     }
@@ -182,6 +277,9 @@ function attendanceNormalizePayload($data, $allowReset = false)
  */
 function attendanceSaveEntries(PDO $pdo, $halaqohId, $ustadzId, $tanggal, $entries, $requireCompleteRoster = false)
 {
+    if (!tahsinDate((string) $tanggal) || $tanggal > tahsinNow()->format('Y-m-d')) {
+        throw new AttendanceValidationException('Tanggal presensi tidak valid atau masih di masa depan.');
+    }
     if (!is_array($entries) || $entries === []) {
         throw new AttendanceValidationException('Tidak ada data presensi untuk disimpan.');
     }
@@ -195,17 +293,22 @@ function attendanceSaveEntries(PDO $pdo, $halaqohId, $ustadzId, $tanggal, $entri
         $normalizedEntries[(int) $waliId] = attendanceNormalizePayload($data, true);
     }
 
+    $weekStart = tahsinSessionDate($tanggal);
+    $weekEnd = (new DateTimeImmutable($weekStart))->modify('+6 days')->format('Y-m-d');
+    $holidays = tahsinHolidayMap($pdo);
+    if ((!tahsinSessionActive($weekStart, $holidays) || array_key_exists($tanggal, $holidays)) && array_filter($normalizedEntries, static fn($e) => $e['intent'] !== 'reset')) {
+        throw new AttendanceValidationException('Sesi Ahad ini libur. Presensi tidak boleh diinput sebagai Alfa atau pertemuan wajib.');
+    }
+
     $pdo->beginTransaction();
     try {
         // The lock makes the read-then-insert path safe against concurrent
         // autosave/finalization requests for the same halaqoh.
-        $lock = $pdo->prepare('SELECT id FROM halaqoh WHERE id = ? AND ustadz_id = ? FOR UPDATE');
-        $lock->execute([$halaqohId, $ustadzId]);
-        if (!$lock->fetch()) {
+        if (!attendanceFetchOwnedHalaqoh($pdo, $halaqohId, $ustadzId, $tanggal, true)) {
             throw new AttendanceValidationException('Halaqoh tidak ditemukan atau bukan milik Anda.');
         }
 
-        $activeIds = attendanceFetchActiveMemberIds($pdo, $halaqohId, $ustadzId, true);
+        $activeIds = attendanceFetchActiveMemberIds($pdo, $halaqohId, $ustadzId, true, $tanggal);
         $activeIdMap = array_fill_keys($activeIds, true);
         $submittedIds = array_keys($normalizedEntries);
         sort($submittedIds, SORT_NUMERIC);
@@ -224,18 +327,19 @@ function attendanceSaveEntries(PDO $pdo, $halaqohId, $ustadzId, $tanggal, $entri
             SET status = :status, alasan = :alasan, jenis_materi = :jenis_materi,
                 jilid = :jilid, nama_surat = :nama_surat, halaman = :halaman,
                 hasil_talaqqi = :hasil_talaqqi
-            WHERE halaqoh_id = :halaqoh_id AND wali_santri_id = :wali_santri_id AND tanggal = :tanggal");
+            WHERE id = :target_id");
         $insert = $pdo->prepare("INSERT INTO presensi
             (halaqoh_id, wali_santri_id, tanggal, status, alasan, jenis_materi, jilid, nama_surat, halaman, hasil_talaqqi)
             VALUES (:halaqoh_id, :wali_santri_id, :tanggal, :status, :alasan, :jenis_materi, :jilid, :nama_surat, :halaman, :hasil_talaqqi)");
-        $delete = $pdo->prepare('DELETE FROM presensi WHERE halaqoh_id = ? AND wali_santri_id = ? AND tanggal = ?');
-        $exists = $pdo->prepare('SELECT 1 FROM presensi WHERE halaqoh_id = ? AND wali_santri_id = ? AND tanggal = ? LIMIT 1');
+        $delete = $pdo->prepare('DELETE FROM presensi WHERE halaqoh_id = ? AND wali_santri_id = ? AND tanggal BETWEEN ? AND ?');
+        $exists = $pdo->prepare('SELECT * FROM presensi WHERE wali_santri_id = ? AND tanggal BETWEEN ? AND ? ORDER BY id FOR UPDATE');
 
         $savedCount = 0;
         $deletedCount = 0;
+        $supportsVerification = tahsinSchemaReady($pdo);
         foreach ($normalizedEntries as $waliId => $entry) {
             if ($entry['intent'] === 'reset') {
-                $delete->execute([$halaqohId, $waliId, $tanggal]);
+                $delete->execute([$halaqohId, $waliId, $weekStart, $weekEnd]);
                 $deletedCount += $delete->rowCount();
                 continue;
             }
@@ -254,9 +358,30 @@ function attendanceSaveEntries(PDO $pdo, $halaqohId, $ustadzId, $tanggal, $entri
             ];
             // rowCount() cannot distinguish an unchanged row from a missing
             // row on MySQL, so check existence explicitly before inserting.
-            $exists->execute([$halaqohId, $waliId, $tanggal]);
-            if ($exists->fetchColumn()) {
-                $update->execute($params);
+            $exists->execute([$waliId, $weekStart, $weekEnd]);
+            $source = $exists->fetchAll(PDO::FETCH_ASSOC);
+            $verification = null;
+            if ($source && $supportsVerification) {
+                $decision = $pdo->prepare('SELECT * FROM tahsin_verifications WHERE wali_santri_id = ? AND session_date = ? ORDER BY id DESC LIMIT 1');
+                $decision->execute([$waliId, $weekStart]);
+                $verification = $decision->fetch(PDO::FETCH_ASSOC) ?: null;
+            }
+            $resolved = tahsinResolveSession($source, $verification, tahsinSuspectIds($pdo, $source), $holidays);
+            if ($resolved['state'] === 'conflict') {
+                throw new AttendanceValidationException('Ada catatan berbeda atau verifikasi kedaluwarsa untuk sesi ini. Admin/PJ perlu memverifikasi melalui Rekap Lengkap.');
+            }
+            if ($resolved['record']) {
+                if ((int) $resolved['record']['halaqoh_id'] !== (int) $halaqohId) throw new AttendanceValidationException('Sesi ini sudah tercatat pada halaqoh lain. Minta admin/PJ meninjau Rekap Lengkap.');
+                $updateParams = $params;
+                unset($updateParams[':halaqoh_id'], $updateParams[':wali_santri_id'], $updateParams[':tanggal']);
+                // Update identical copies together, but preserve verified conflicting sources.
+                $targets = $verification ? [$resolved['record']] : $source;
+                foreach ($targets as $target) {
+                    if ((int) $target['halaqoh_id'] !== (int) $halaqohId) continue;
+                    $updateParams[':target_id'] = (int) $target['id'];
+                    $update->execute($updateParams);
+                }
+                if (function_exists('addLog')) addLog($pdo, 'UPDATE_TAHSIN_ATTENDANCE', json_encode(['wali_id' => $waliId, 'sesi' => $weekStart, 'before' => $source, 'after' => $entry], JSON_UNESCAPED_UNICODE));
             } else {
                 $insert->execute($params);
             }

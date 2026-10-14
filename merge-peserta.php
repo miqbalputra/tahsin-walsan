@@ -5,6 +5,7 @@ require_once 'includes/sidebar.php';
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
 require_once 'includes/alumni_archive_helper.php';
+require_once 'includes/tahsin_report_helper.php';
 
 checkRole(['admin']);
 
@@ -38,6 +39,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception("Salah satu ID peserta tidak ditemukan.");
             }
 
+            // Preserve positive INIT_CAPAIAN evidence when guardian IDs are merged.
+            // The old fingerprint becomes stale after the transfer and requires review.
+            if (tahsinSchemaReady($pdo)) {
+                $evidence = $pdo->prepare('SELECT * FROM presensi WHERE wali_santri_id = ? ORDER BY id FOR UPDATE');
+                $evidence->execute([$delete_id]);
+                $oldRecords = $evidence->fetchAll(PDO::FETCH_ASSOC);
+                $suspects = tahsinSuspectIds($pdo, $oldRecords);
+                $needsReview = [];
+                foreach ($oldRecords as $record) if (isset($suspects[(int) $record['id']])) $needsReview[tahsinSessionDate($record['tanggal'])] = true;
+                $queue = $pdo->prepare('INSERT INTO tahsin_verifications (wali_santri_id, session_date, fingerprint, selected_presensi_id, decided_by, note) VALUES (?, ?, ?, NULL, ?, ?)');
+                foreach (array_keys($needsReview) as $session) {
+                    $source = array_values(array_filter($oldRecords, static fn($r) => tahsinSessionDate($r['tanggal']) === $session));
+                    $queue->execute([$delete_id, $session, tahsinFingerprint($source), (int) $_SESSION['user_id'], 'Dugaan capaian awal ikut digabung; sumber wajib diverifikasi ulang.']);
+                }
+            }
             // 1. Transfer presensi (capaian) from duplicate to kept
             $stmtPresensi = $pdo->prepare("UPDATE presensi SET wali_santri_id = ? WHERE wali_santri_id = ?");
             $stmtPresensi->execute([$keep_id, $delete_id]);
@@ -76,6 +92,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // 4. Delete duplicate's santri_detail
             $pdo->prepare("DELETE FROM santri_detail WHERE wali_santri_id = ?")->execute([$delete_id]);
 
+            // Keep the original intervals and audit evidence under the surviving identity.
+            if (tahsinSchemaReady($pdo)) {
+                $pdo->prepare('UPDATE tahsin_roster_history SET wali_santri_id = ? WHERE wali_santri_id = ?')->execute([$keep_id, $delete_id]);
+                $pdo->prepare('UPDATE tahsin_verifications SET wali_santri_id = ? WHERE wali_santri_id = ?')->execute([$keep_id, $delete_id]);
+                $pdo->prepare('UPDATE tahsin_capaian_awal SET wali_santri_id = ? WHERE wali_santri_id = ? AND NOT EXISTS (SELECT 1 FROM (SELECT wali_santri_id FROM tahsin_capaian_awal WHERE wali_santri_id = ?) existing_baseline)')->execute([$keep_id, $delete_id, $keep_id]);
+            }
             // 5. Delete the duplicate wali_santri
             $pdo->prepare("DELETE FROM wali_santri WHERE id = ?")->execute([$delete_id]);
 

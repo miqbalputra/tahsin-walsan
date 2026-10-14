@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../includes/tahsin_report_helper.php';
 /**
  * ============================================================
  * HERMES API — REST API untuk Hermes Agent
@@ -221,6 +222,7 @@ try {
         PDO::ATTR_EMULATE_PREPARES => false,
         PDO::ATTR_TIMEOUT => max(1, (int) (getenv('DB_CONNECT_TIMEOUT') ?: 5)),
     ]);
+    $pdo->exec("SET time_zone = '+07:00'");
 } catch (\PDOException $e) {
     error_log('Hermes API DB Error: ' . $e->getMessage());
     jsonError(500, 'Gagal terhubung ke database. Periksa konfigurasi koneksi.');
@@ -624,83 +626,12 @@ function handlePresensi($pdo)
 function handleStats($pdo)
 {
     [$start, $end] = getDateRange();
-    $halaqoh_id = $_GET['halaqoh_id'] ?? '';
-
-    $halaqohFilter = '';
-    $params = [':start' => $start, ':end' => $end];
-    if ($halaqoh_id) {
-        $halaqohFilter = "AND p.halaqoh_id = :halaqoh_id";
-        $params[':halaqoh_id'] = $halaqoh_id;
-    }
-
-    // Ringkasan presensi
-    $stmt = $pdo->prepare("
-        SELECT 
-            COUNT(*) as total,
-            COALESCE(SUM(status = 'H'), 0) as hadir,
-            COALESCE(SUM(status = 'S'), 0) as sakit,
-            COALESCE(SUM(status = 'I'), 0) as izin,
-            COALESCE(SUM(status = 'A'), 0) as alpha,
-            COALESCE(SUM(hasil_talaqqi = 'Lulus'), 0) as lulus,
-            COALESCE(SUM(hasil_talaqqi = 'Ulang'), 0) as ulang
-        FROM presensi p
-        WHERE p.tanggal BETWEEN :start AND :end {$halaqohFilter}
-    ");
-    $stmt->execute($params);
-    $ringkasan = $stmt->fetch();
-
-    // Per halaqoh
-    $stmtH = $pdo->prepare("
-        SELECT h.id, h.nama_halaqoh, u.nama_lengkap as nama_ustadz,
-               COUNT(p.id) as total_input,
-               COALESCE(SUM(p.status = 'H'), 0) as hadir,
-               COALESCE(SUM(p.status = 'A'), 0) as alpha,
-               (SELECT COUNT(*) FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id AND hm.archived_at IS NULL AND w.status_aktif = 1) as total_anggota
-        FROM halaqoh h
-        JOIN users u ON h.ustadz_id = u.id
-        LEFT JOIN presensi p ON p.halaqoh_id = h.id AND p.tanggal BETWEEN :start2 AND :end2
-        GROUP BY h.id, h.nama_halaqoh, u.nama_lengkap
-        ORDER BY h.nama_halaqoh
-    ");
-    $stmtH->execute([':start2' => $start, ':end2' => $end]);
-    $perHalaqoh = $stmtH->fetchAll();
-
-    // Tren harian (14 hari terakhir)
-    $stmtTrend = $pdo->prepare("
-        SELECT tanggal,
-               COALESCE(SUM(status = 'H'), 0) as hadir,
-               COALESCE(SUM(status = 'A'), 0) as alpha,
-               COUNT(*) as total
-        FROM presensi
-        WHERE tanggal >= DATE_SUB(:end_date, INTERVAL 13 DAY) AND tanggal <= :end_date2
-        GROUP BY tanggal
-        ORDER BY tanggal ASC
-    ");
-    $stmtTrend->execute([':end_date' => $end, ':end_date2' => $end]);
-    $tren = $stmtTrend->fetchAll();
-
-    // Peringatan dini
-    $stmtWarning = $pdo->prepare("
-        SELECT w.id, w.nama_bapak, h.nama_halaqoh, COUNT(p.id) as total_alpha
-        FROM wali_santri w
-        JOIN presensi p ON w.id = p.wali_santri_id
-        JOIN halaqoh h ON p.halaqoh_id = h.id
-        WHERE p.status = 'A' AND p.tanggal BETWEEN :start3 AND :end3
-        GROUP BY w.id, w.nama_bapak, h.nama_halaqoh
-        HAVING total_alpha >= 3
-        ORDER BY total_alpha DESC
-        LIMIT 10
-    ");
-    $stmtWarning->execute([':start3' => $start, ':end3' => $end]);
-    $peringatan = $stmtWarning->fetchAll();
-
-    jsonOk([
-        'ringkasan' => $ringkasan,
-        'per_halaqoh' => $perHalaqoh,
-        'tren_harian' => $tren,
-        'peringatan_dini' => $peringatan,
-        'periode' => ['start' => $start, 'end' => $end],
-    ]);
+    $report = tahsinFetchReport($pdo, tahsinFilters(array_merge($_GET, ['start_date' => $start, 'end_date' => $end])));
+    $summary = $report['summary']; $summary['total'] = $summary['total_presensi'];
+    $groups = array_map(static function ($g) { $g['id'] = $g['halaqoh_id'] ?? 0; $g['total_input'] = $g['total_presensi']; return $g; }, $report['halaqoh']);
+    $warnings = array_values(array_map(static function ($r) { unset($r['details'], $r['children'], $r['materi_record']); $r['total_alpha'] = $r['alpha']; return $r; }, array_filter($report['rows'], static fn($r) => $r['alpha'] >= 3)));
+    jsonOk(['ringkasan' => $summary, 'per_halaqoh' => $groups, 'tren_harian' => $report['trend'], 'tren_pekanan' => $report['trend'],
+        'peringatan_dini' => $warnings, 'periode' => ['start' => $start, 'end' => $end], 'basis_periode' => 'tanggal_sesi_ahad']);
 }
 
 /**
@@ -711,81 +642,9 @@ function handleProgress($pdo)
 {
     [$page, $limit, $offset] = getPagination();
     [$start, $end] = getDateRange();
-    $halaqoh_id = $_GET['halaqoh_id'] ?? '';
-    $search = $_GET['search'] ?? '';
-    $risk = $_GET['risk'] ?? '';
-
-    $conditions = ["w.status_aktif = 1"];
-    $params = [':start' => $start, ':end' => $end];
-
-    if ($halaqoh_id) {
-        $conditions[] = "h.id = :halaqoh_id";
-        $params[':halaqoh_id'] = $halaqoh_id;
-    }
-
-    if ($search) {
-        $conditions[] = "(w.nama_bapak LIKE :search OR h.nama_halaqoh LIKE :search2)";
-        $params[':search'] = '%' . escapeLike($search) . '%';
-        $params[':search2'] = '%' . escapeLike($search) . '%';
-    }
-
-    $where = 'WHERE ' . implode(' AND ', $conditions);
-
-    $baseSql = "
-        SELECT w.id, w.nama_bapak, w.no_hp, w.kategori,
-               h.nama_halaqoh, u.nama_lengkap as nama_ustadz,
-               (SELECT GROUP_CONCAT(CONCAT(sd.nama_anak, IF(sd.kelas = '', '', CONCAT(' (', sd.kelas, ')'))) SEPARATOR ', ') FROM santri_detail sd WHERE sd.wali_santri_id = w.id) as anak,
-               COUNT(p.id) as total_presensi,
-               COALESCE(SUM(p.status = 'H'), 0) as hadir,
-               COALESCE(SUM(p.status = 'A'), 0) as alpha,
-               COALESCE(SUM(p.hasil_talaqqi = 'Lulus'), 0) as lulus,
-               COALESCE(SUM(p.hasil_talaqqi = 'Ulang'), 0) as ulang,
-               MAX(p.tanggal) as terakhir_hadir,
-               (SELECT CONCAT_WS(' ', lp.jenis_materi, CASE WHEN lp.jenis_materi = 'Iqro' THEN CONCAT('Jilid ', lp.jilid) WHEN lp.jenis_materi = 'Al Quran' THEN lp.nama_surat END, CASE WHEN lp.halaman IS NOT NULL THEN CONCAT('Hal/Ayat ', lp.halaman) END) FROM presensi lp WHERE lp.wali_santri_id = w.id AND lp.status = 'H' ORDER BY lp.tanggal DESC, lp.id DESC LIMIT 1) as materi_terakhir
-        FROM wali_santri w
-        JOIN halaqoh_members hm ON hm.wali_santri_id = w.id AND hm.archived_at IS NULL
-        JOIN halaqoh h ON h.id = hm.halaqoh_id
-        JOIN users u ON u.id = h.ustadz_id
-        LEFT JOIN presensi p ON p.wali_santri_id = w.id AND p.halaqoh_id = h.id AND p.tanggal BETWEEN :start AND :end
-        {$where}
-        GROUP BY w.id, w.nama_bapak, w.no_hp, w.kategori, h.nama_halaqoh, u.nama_lengkap
-        ORDER BY alpha DESC, terakhir_hadir ASC, w.nama_bapak ASC
-    ";
-
-    $total = getTotalCount($pdo, $baseSql, $params);
-
-    $sql = $baseSql . " LIMIT {$limit} OFFSET {$offset}";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $data = $stmt->fetchAll();
-
-    // Hitung risk level
-    foreach ($data as &$row) {
-        $totalPresensi = (int) $row['total_presensi'];
-        $row['hadir_percent'] = $totalPresensi > 0 ? round(((int) $row['hadir'] / $totalPresensi) * 100) : 0;
-        $last = $row['terakhir_hadir'] ? strtotime($row['terakhir_hadir']) : null;
-        $daysSince = $last ? floor((time() - $last) / 86400) : null;
-
-        if ((int) $row['alpha'] >= 3 || $daysSince === null || $daysSince >= 21) {
-            $row['risk_level'] = 'rawan';
-            $row['risk_label'] = 'Butuh Follow-up';
-        } elseif ((int) $row['alpha'] >= 1 || $daysSince >= 14) {
-            $row['risk_level'] = 'pantau';
-            $row['risk_label'] = 'Pantau';
-        } else {
-            $row['risk_level'] = 'stabil';
-            $row['risk_label'] = 'Stabil';
-        }
-    }
-    unset($row);
-
-    // Filter risk jika diminta
-    if ($risk) {
-        $data = array_values(array_filter($data, fn($r) => $r['risk_level'] === $risk));
-        $total = count($data);
-    }
-
-    jsonOk($data, paginationMeta($page, $limit, $total));
+    $report = tahsinFetchReport($pdo, tahsinFilters(array_merge($_GET, ['start_date' => $start, 'end_date' => $end, 'aktif' => '1'])));
+    $data = array_map(static function ($r) { unset($r['details'], $r['children'], $r['materi_record']); return $r; }, array_slice($report['rows'], $offset, $limit));
+    jsonOk($data, paginationMeta($page, $limit, count($report['rows'])));
 }
 
 /**
@@ -794,40 +653,15 @@ function handleProgress($pdo)
  */
 function handlePeringatan($pdo)
 {
-    $halaqoh_id = $_GET['halaqoh_id'] ?? '';
-
-    $conditions = ["p.status = 'A'"];
-    $params = [];
-
-    if ($halaqoh_id) {
-        $conditions[] = "p.halaqoh_id = :halaqoh_id";
-        $params[':halaqoh_id'] = $halaqoh_id;
-    }
-
-    $where = 'WHERE ' . implode(' AND ', $conditions);
-
-    $sql = "SELECT w.id, w.nama_bapak, w.no_hp, h.nama_halaqoh, u.nama_lengkap as nama_ustadz,
-                   COUNT(p.id) as total_alpha,
-                   MAX(p.tanggal) as alpha_terakhir
-            FROM wali_santri w
-            JOIN presensi p ON w.id = p.wali_santri_id
-            JOIN halaqoh h ON p.halaqoh_id = h.id
-            JOIN users u ON h.ustadz_id = u.id
-            {$where}
-            GROUP BY w.id, w.nama_bapak, w.no_hp, h.nama_halaqoh, u.nama_lengkap
-            HAVING total_alpha >= 3
-            ORDER BY total_alpha DESC
-            LIMIT 50";
-
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $data = $stmt->fetchAll();
-
-    jsonOk([
-        'total_peringatan' => count($data),
-        'data' => $data,
-        'keterangan' => 'Peserta dengan alpha >= 3 kali. Butuh follow-up segera.',
-    ]);
+    $end = tahsinDate((string) ($_GET['end'] ?? '')) ?? date('Y-m-d');
+    $data = tahsinLoadDataset($pdo, $end);
+    $start = tahsinDate((string) ($_GET['start'] ?? '')) ?? (!empty($data['records']) ? tahsinSessionDate($data['records'][0]['tanggal']) : date('Y-m-01'));
+    $report = tahsinAssembleReport($data, tahsinFilters(array_merge($_GET, ['start_date' => $start, 'end_date' => $end])));
+    $warnings = array_values(array_map(static function ($r) {
+        unset($r['details'], $r['children'], $r['materi_record']); $r['total_alpha'] = $r['alpha']; return $r;
+    }, array_filter($report['rows'], static fn($r) => $r['alpha'] >= 3)));
+    jsonOk(['total_peringatan' => count($warnings), 'data' => array_slice($warnings, 0, 50),
+        'keterangan' => 'Alfa sah minimal 3 sesi; data kosong dan konflik tidak dianggap Alfa.']);
 }
 
 /**
@@ -950,57 +784,24 @@ function handlePengumuman($pdo)
 function handleCapaian($pdo)
 {
     [$page, $limit, $offset] = getPagination();
-    $halaqoh_id = $_GET['halaqoh_id'] ?? '';
-    $search = $_GET['search'] ?? '';
-
-    $conditions = [];
-    $params = [];
-
-    if ($halaqoh_id) {
-        $conditions[] = "h.id = :halaqoh_id";
-        $params[':halaqoh_id'] = $halaqoh_id;
-    }
-
-    if ($search) {
-        $conditions[] = "(w.nama_bapak LIKE :search OR h.nama_halaqoh LIKE :search2)";
-        $params[':search'] = '%' . escapeLike($search) . '%';
-        $params[':search2'] = '%' . escapeLike($search) . '%';
-    }
-
-    $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
-
-    $baseSql = "
-        SELECT w.id as wali_id, w.nama_bapak, w.no_hp,
-               h.id as halaqoh_id, h.nama_halaqoh, u.nama_lengkap as nama_ustadz,
-               GROUP_CONCAT(DISTINCT s.nama_anak SEPARATOR ', ') as children_names,
-               GROUP_CONCAT(DISTINCT s.kelas SEPARATOR ', ') as classes,
-               p.jenis_materi, p.jilid, p.nama_surat, p.halaman, p.tanggal as last_date, p.hasil_talaqqi
-        FROM wali_santri w
-        JOIN halaqoh_members hm ON w.id = hm.wali_santri_id AND hm.archived_at IS NULL
-        JOIN halaqoh h ON hm.halaqoh_id = h.id
-        JOIN users u ON h.ustadz_id = u.id
-        LEFT JOIN santri_detail s ON w.id = s.wali_santri_id
-        LEFT JOIN (
-            SELECT p1.*
-            FROM presensi p1
-            INNER JOIN (
-                SELECT wali_santri_id, MAX(tanggal) as max_date, MAX(id) as max_id
-                FROM presensi WHERE status = 'H'
-                GROUP BY wali_santri_id
-            ) p2 ON p1.wali_santri_id = p2.wali_santri_id AND p1.tanggal = p2.max_date AND p1.id = p2.max_id
-        ) p ON w.id = p.wali_santri_id
-        {$where}
-        GROUP BY w.id, h.id
-        ORDER BY h.nama_halaqoh, w.nama_bapak
-    ";
-
-    $total = getTotalCount($pdo, $baseSql, $params);
-    $sql = $baseSql . " LIMIT {$limit} OFFSET {$offset}";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $data = $stmt->fetchAll();
-
-    jsonOk($data, paginationMeta($page, $limit, $total));
+    $now = tahsinNow();
+    $end = tahsinDate((string) ($_GET['end'] ?? '')) ?? $now->format('Y-m-d');
+    $dataset = tahsinLoadDataset($pdo, $end, $now);
+    $start = $dataset['records'] ? tahsinSessionDate($dataset['records'][0]['tanggal']) : $now->format('Y-m-01');
+    $report = tahsinAssembleReport($dataset, tahsinFilters(array_merge($_GET, ['start_date' => $start, 'end_date' => $end, 'aktif' => '1']), $now));
+    $rows = array_values(array_filter($report['rows'], static fn($r) => !empty($r['current_halaqoh_id'])));
+    $data = array_map(static function ($r) {
+        $source = $r['materi_record'] ?? $r['baseline_record'];
+        return ['wali_id' => $r['id'], 'nama_bapak' => $r['nama_bapak'], 'no_hp' => $r['no_hp'] ?? null,
+            'halaqoh_id' => $r['halaqoh_id'], 'nama_halaqoh' => $r['nama_halaqoh'], 'nama_ustadz' => $r['nama_ustadz'],
+            'children_names' => implode(', ', array_column($r['children'], 'nama_anak')),
+            'classes' => implode(', ', array_unique(array_filter(array_column($r['children'], 'kelas')))),
+            'jenis_materi' => $source['jenis_materi'] ?? null, 'jilid' => $source['jilid'] ?? null,
+            'nama_surat' => $source['nama_surat'] ?? null, 'halaman' => $source['halaman'] ?? null,
+            'last_date' => $source['tanggal'] ?? null, 'hasil_talaqqi' => $source['hasil_talaqqi'] ?? null,
+            'is_initial' => $r['baseline_record'] !== null, 'quality' => $r['quality'], 'quality_label' => $r['quality_label']];
+    }, array_slice($rows, $offset, $limit));
+    jsonOk($data, paginationMeta($page, $limit, count($rows)));
 }
 
 /**

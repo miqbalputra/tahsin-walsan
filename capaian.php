@@ -1,6 +1,7 @@
 <?php
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
+require_once 'includes/tahsin_report_helper.php';
 
 $pageTitle = 'Daftar Capaian Peserta';
 checkLogin();
@@ -32,18 +33,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($role, ['admin', 'pj_tahfi
     $halaman = $_POST['halaman'] ?? '';
 
     try {
+        if (!in_array($jenis_materi, ['Iqro', 'Al Quran'], true) || trim($halaman) === ''
+            || ($jenis_materi === 'Iqro' && ((int) $jilid < 1 || (int) $jilid > 6))
+            || ($jenis_materi === 'Al Quran' && trim($nama_surat) === '')) {
+            throw new RuntimeException('Jenis materi, jilid/surat, dan halaman/ayat wajib lengkap.');
+        }
+        $waliCheck = $pdo->prepare('SELECT id FROM wali_santri WHERE id = ?');
+        $waliCheck->execute([(int) $wali_id]);
+        if (!$waliCheck->fetchColumn()) throw new RuntimeException('Wali tidak ditemukan.');
         if ($presensi_id) {
-            // Update the existing latest record
-            $stmt = $pdo->prepare("UPDATE presensi SET jenis_materi = ?, jilid = ?, nama_surat = ?, halaman = ? WHERE id = ?");
-            $stmt->execute([$jenis_materi, $jilid, $nama_surat, $halaman, $presensi_id]);
+            $existing = $pdo->prepare("SELECT * FROM presensi WHERE id = ? AND wali_santri_id = ? AND status = 'H'");
+            $existing->execute([(int) $presensi_id, (int) $wali_id]);
+            $previous = $existing->fetch();
+            if (!$previous) throw new RuntimeException('Catatan kehadiran tidak ditemukan untuk wali ini.');
+            $hasil = $_POST['hasil_talaqqi'] ?? $previous['hasil_talaqqi'];
+            if (!in_array($hasil, ['Lulus', 'Ulang'], true)) throw new RuntimeException('Hasil talaqqi wajib dipilih untuk catatan Hadir.');
+            $stmt = $pdo->prepare("UPDATE presensi SET jenis_materi = ?, jilid = ?, nama_surat = ?, halaman = ?, hasil_talaqqi = ? WHERE id = ? AND wali_santri_id = ? AND status = 'H'");
+            $stmt->execute([$jenis_materi, $jilid, $nama_surat, $halaman, $hasil, $presensi_id, $wali_id]);
             addLog($pdo, 'UPDATE_CAPAIAN', "Update capaian via List Capaian: ID $presensi_id");
         } else {
-            // If no previous record, we create a 'dummy' or initial record with current date
-            // This allows initializing progress for someone who has never attended
-            $stmt = $pdo->prepare("INSERT INTO presensi (halaqoh_id, wali_santri_id, tanggal, status, jenis_materi, jilid, nama_surat, halaman, hasil_talaqqi) 
-                                   VALUES (?, ?, CURRENT_DATE, 'H', ?, ?, ?, ?, 'Lulus')");
-            $stmt->execute([$halaqoh_id, $wali_id, $jenis_materi, $jilid, $nama_surat, $halaman]);
-            addLog($pdo, 'INIT_CAPAIAN', "Inisialisasi capaian via List Capaian: Wali ID $wali_id");
+            if (!tahsinSchemaReady($pdo)) throw new RuntimeException('Terapkan migrasi pelaporan sebelum menyimpan capaian awal.');
+            $stmt = $pdo->prepare('INSERT INTO tahsin_capaian_awal (wali_santri_id, jenis_materi, jilid, nama_surat, halaman, updated_by)
+                VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE jenis_materi = VALUES(jenis_materi), jilid = VALUES(jilid), nama_surat = VALUES(nama_surat), halaman = VALUES(halaman), updated_by = VALUES(updated_by), updated_at = NOW(6)');
+            $stmt->execute([(int) $wali_id, $jenis_materi, $jilid, $nama_surat, $halaman, $user_id]);
+            addLog($pdo, 'SAVE_CAPAIAN_AWAL', "Capaian awal tanpa catatan Hadir: Wali ID $wali_id");
         }
         $message = "Capaian berhasil diperbarui!";
     } catch (Exception $e) {
@@ -56,35 +69,35 @@ $halaqoh_filter = $_GET['halaqoh_id'] ?? '';
 $search = $_GET['search'] ?? '';
 
 // Build Query
-$sql = "SELECT 
+$sql = "SELECT DISTINCT
             w.id as wali_id,
             w.nama_bapak,
             w.no_hp,
             h.id as halaqoh_id,
             h.nama_halaqoh,
             u.nama_lengkap as ustadz_name,
-            GROUP_CONCAT(DISTINCT s.nama_anak SEPARATOR ', ') as children_names,
-            GROUP_CONCAT(DISTINCT s.kelas SEPARATOR ', ') as classes,
+            s.children_names,
+            s.classes,
             p.id as presensi_id,
             p.jenis_materi,
             p.jilid,
             p.nama_surat,
             p.halaman,
+            p.hasil_talaqqi,
             p.tanggal as last_date
         FROM wali_santri w
         JOIN halaqoh_members hm ON w.id = hm.wali_santri_id AND hm.archived_at IS NULL
         JOIN halaqoh h ON hm.halaqoh_id = h.id
         JOIN users u ON h.ustadz_id = u.id
-        LEFT JOIN santri_detail s ON w.id = s.wali_santri_id
+        LEFT JOIN (SELECT wali_santri_id, GROUP_CONCAT(DISTINCT nama_anak ORDER BY nama_anak SEPARATOR ', ') AS children_names,
+            GROUP_CONCAT(DISTINCT kelas ORDER BY kelas SEPARATOR ', ') AS classes FROM santri_detail GROUP BY wali_santri_id) s ON w.id = s.wali_santri_id
         LEFT JOIN (
             SELECT p1.*
             FROM presensi p1
-            INNER JOIN (
-                SELECT wali_santri_id, MAX(tanggal) as max_date, MAX(id) as max_id
-                FROM presensi
-                WHERE status = 'H'
-                GROUP BY wali_santri_id
-            ) p2 ON p1.wali_santri_id = p2.wali_santri_id AND p1.tanggal = p2.max_date AND p1.id = p2.max_id
+            WHERE p1.status = 'H' AND p1.tanggal <= CURRENT_DATE AND NOT EXISTS (
+                SELECT 1 FROM presensi p2 WHERE p2.wali_santri_id = p1.wali_santri_id AND p2.status = 'H' AND p2.tanggal <= CURRENT_DATE
+                AND (p2.tanggal > p1.tanggal OR (p2.tanggal = p1.tanggal AND p2.id > p1.id))
+            )
         ) p ON w.id = p.wali_santri_id
         WHERE 1=1";
 
@@ -106,11 +119,24 @@ if (!empty($search)) {
     $params[] = "%$search%";
 }
 
-$sql .= " GROUP BY w.id, h.id ORDER BY h.nama_halaqoh, w.nama_bapak";
+$sql .= " ORDER BY h.nama_halaqoh, w.nama_bapak";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $results = $stmt->fetchAll();
+if (tahsinSchemaReady($pdo)) {
+    $baselineMap = [];
+    foreach ($pdo->query('SELECT * FROM tahsin_capaian_awal')->fetchAll() as $baseline) $baselineMap[(int) $baseline['wali_santri_id']] = $baseline;
+    foreach ($results as &$result) {
+        if (empty($result['presensi_id']) && isset($baselineMap[(int) $result['wali_id']])) {
+            $baseline = $baselineMap[(int) $result['wali_id']];
+            foreach (['jenis_materi', 'jilid', 'nama_surat', 'halaman'] as $field) $result[$field] = $baseline[$field];
+            $result['last_date'] = null;
+            $result['is_initial'] = true;
+        }
+    }
+    unset($result);
+}
 
 // Fetch Halaqohs for dropdown
 if ($role === 'ustadz') {
@@ -132,7 +158,7 @@ require_once 'includes/sidebar.php';
 
 <div x-data="{ 
     showEditModal: false,
-    editData: { presensi_id: '', wali_id: '', halaqoh_id: '', nama_bapak: '', jenis_materi: 'Al Quran', jilid: '', nama_surat: '', halaman: '' },
+    editData: { presensi_id: '', wali_id: '', halaqoh_id: '', nama_bapak: '', jenis_materi: 'Al Quran', jilid: '', nama_surat: '', halaman: '', hasil_talaqqi: '' },
     openEdit(row) {
         this.editData = {
             presensi_id: row.presensi_id || '',
@@ -142,7 +168,8 @@ require_once 'includes/sidebar.php';
             jenis_materi: row.jenis_materi || 'Al Quran',
             jilid: row.jilid || '',
             nama_surat: row.nama_surat || '',
-            halaman: row.halaman || ''
+            halaman: row.halaman || '',
+            hasil_talaqqi: row.hasil_talaqqi || ''
         };
         this.showEditModal = true;
     }
@@ -254,7 +281,7 @@ require_once 'includes/sidebar.php';
                                             <?php echo ($row['jenis_materi'] === 'Al Quran' ? 'Ayat ' : 'Hal ') . $row['halaman']; ?>
                                         </span>
                                         <span class="text-[9px] mt-1 text-slate-300 italic">Update:
-                                            <?php echo date('d/m/y', strtotime($row['last_date'])); ?>
+                                            <?php echo !empty($row['is_initial']) ? 'Capaian awal (bukan kehadiran)' : date('d/m/y', strtotime($row['last_date'])); ?>
                                         </span>
                                     </div>
                                 <?php else: ?>
@@ -325,6 +352,13 @@ require_once 'includes/sidebar.php';
                         placeholder="Contoh: 1-10">
                 </div>
 
+                <div x-show="editData.presensi_id">
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Hasil Talaqqi</label>
+                    <select name="hasil_talaqqi" x-model="editData.hasil_talaqqi" :required="!!editData.presensi_id" class="w-full px-4 py-2 rounded-xl border border-slate-200 text-sm">
+                        <option value="">Pilih hasil</option><option value="Lulus">Lulus</option><option value="Ulang">Ulang</option>
+                    </select>
+                </div>
+                <p x-show="!editData.presensi_id" class="text-xs text-slate-500">Capaian awal disimpan terpisah; tidak menambah Hadir atau Lulus.</p>
                 <div class="flex gap-3 pt-4">
                     <button type="button" @click="showEditModal = false"
                         class="flex-1 px-4 py-3 rounded-2xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 transition text-sm">Batal</button>

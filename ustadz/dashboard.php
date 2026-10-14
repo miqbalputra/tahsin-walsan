@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../includes/tahsin_report_helper.php';
 $pageTitle = 'Dashboard Ustadz';
 require_once '../includes/header.php';
 require_once '../includes/sidebar.php';
@@ -26,28 +27,13 @@ $myMembersCount = $stmtMCount->fetchColumn();
 $stmtHList->execute([$ustadz_id]);
 $myHalaqohList = $stmtHList->fetchAll();
 
-// 3. Attendance Distribution (This Ustadz's groups, last 30 days)
-$stmtAttendance = $pdo->prepare("SELECT p.status, COUNT(*) as total 
-                                 FROM presensi p 
-                                 JOIN halaqoh h ON p.halaqoh_id = h.id
-                                 WHERE h.ustadz_id = ? AND p.tanggal >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-                                 GROUP BY p.status");
-$stmtAttendance->execute([$ustadz_id]);
-$attendanceStats = $stmtAttendance->fetchAll(PDO::FETCH_KEY_PAIR);
+// 3. Only canonical attendance within this teacher's responsibility.
+$tahsinDashboard = tahsinDashboardData($pdo, 'ustadz', (int) $ustadz_id);
+$attendanceStats = ['H' => $tahsinDashboard['recent']['summary']['hadir'], 'S' => $tahsinDashboard['recent']['summary']['sakit'], 'I' => $tahsinDashboard['recent']['summary']['izin'], 'A' => $tahsinDashboard['recent']['summary']['alpha']];
 $totalPresensi = array_sum($attendanceStats);
 
-// 4. Early Warning (Members in THIS Ustadz's halaqoh with Alpha >= 3)
-$warningQuery = "SELECT w.nama_bapak, COUNT(p.id) as total_alpha, h.nama_halaqoh
-                 FROM wali_santri w 
-                 JOIN presensi p ON w.id = p.wali_santri_id 
-                 JOIN halaqoh h ON p.halaqoh_id = h.id
-                 WHERE h.ustadz_id = ? AND p.status = 'A' 
-                 GROUP BY w.id, w.nama_bapak, h.nama_halaqoh
-                 HAVING total_alpha >= 3
-                 ORDER BY total_alpha DESC";
-$stmtWarning = $pdo->prepare($warningQuery);
-$stmtWarning->execute([$ustadz_id]);
-$warnings = $stmtWarning->fetchAll();
+// 4. Missing teacher input never triggers a warning against the parent.
+$warnings = $tahsinDashboard['warnings'];
 
 // 5. Recent Inputs by this Ustadz
 $recentQuery = "SELECT p.*, w.nama_bapak, h.nama_halaqoh 
@@ -65,6 +51,7 @@ $stmtAnnounce = $pdo->query("SELECT * FROM pengumuman WHERE is_aktif = 1 ORDER B
 $latestAnnounce = $stmtAnnounce->fetch();
 ?>
 
+<?php require __DIR__ . '/../includes/tahsin_pending_widget.php'; ?>
 <!-- Announcement Banner (If any) -->
 <?php if ($latestAnnounce): ?>
     <div class="mb-8 overflow-hidden bg-white border border-blue-100 rounded-[2.5rem] shadow-sm shadow-blue-50/50 flex flex-col md:flex-row items-center">
