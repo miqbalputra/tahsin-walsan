@@ -98,6 +98,12 @@ function check(value, message) { assert(value, message); checks++; }
     const wa = new URL(await page.getByRole('link', {name: 'Buka Pengingat WhatsApp', exact: true}).getAttribute('href'));
     check(wa.searchParams.get('text').includes(base + '/ustadz/form-presensi.php'), 'WhatsApp contains a valid absolute form link');
     await page.screenshot({path: path.join(output, 'pantau-desktop.png'), fullPage: true});
+    await page.goto(base + '/pantau-input.php?start_date=2026-09-01&end_date=2026-10-14');
+    check(await page.locator('.tahsin-monitor-session').count() === 4, 'Monitoring range shows every eligible Ahad session');
+    check((await page.locator('.tahsin-monitor-session').first().innerText()).includes('13/09/2026'), 'Sessions are grouped in chronological order');
+    check(await page.locator('.tahsin-monitor-session .tahsin-badge.unverified').count() === 3, 'Pre-tracking sessions remain visible as unverified');
+    check((await page.locator('.tahsin-monitor-session').first().innerText()).includes('Kekosongan presensi tidak dihitung sebagai kekurangan guru'), 'Unverified session explains why teacher debt is not inferred');
+    check(await page.locator('.tahsin-monitor-session').first().getByRole('link', {name: 'Buka Pengingat WhatsApp'}).count() === 0, 'Unverified historical session has no teacher reminder');
     const capaianApi = await context.request.get(base + '/api/hermes.php?action=capaian', {headers: {'X-API-Key': 'tahsin-test-api'}});
     const initialPosition = (await capaianApi.json()).data.find(row => row.wali_id === 3);
     check(initialPosition.is_initial === true && initialPosition.last_date === null && initialPosition.hasil_talaqqi === null, 'Initial material is exposed without fabricated attendance or pass');

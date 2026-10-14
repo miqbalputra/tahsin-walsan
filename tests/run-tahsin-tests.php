@@ -97,7 +97,7 @@ $legacyIncomplete = $incomplete; $legacyIncomplete['tracked_from'] = null; $lega
 $r = tahsinAssembleReport($legacyIncomplete, $filters, 'admin', 0, $now);
 expectTahsin(1, $r['summary']['missing_capaian'], 'Incomplete recorded H remains detectable without a historical roster');
 expectTahsin(0, $r['summary']['missing_presensi'], 'Incomplete recorded H invents no absent historical participants');
-expectTahsin(null, tahsinPendingFromReport($r, $now)[0]['coverage_percent'], 'Historical correction reminder does not claim class coverage');
+expectTahsin([], tahsinPendingFromReport($r, $now), 'Historical correction is not assigned to a teacher without verified roster history');
 $reason = $data; $reason['records'][0] = fixtureRecord(1, 1, 'S'); $reason['records'][0]['alasan'] = null;
 $r = tahsinAssembleReport($reason, $filters, 'admin', 0, $now);
 expectTahsin(1, $r['summary']['missing_keterangan'], 'Sakit without reason requests attendance detail');
@@ -111,7 +111,35 @@ expectTahsin(false, $r['trend'][0]['roster_verified'], 'Pre-tracking meeting ses
 expectTahsin(null, $r['trend'][0]['peserta_roster'], 'Pre-tracking participant count is never inferred');
 expectTahsin(2, $r['summary']['peserta_periode'], 'Historical headcount only includes guardians with recorded sessions');
 $r = tahsinAssembleReport($legacy, $filters, 'admin', 0, $now, '2026-10-11');
-expectTahsin(2, tahsinPendingFromReport($r, $now)[0]['belum_diisi'], 'Operational latest-session fallback uses labeled current roster');
+expectTahsin([], tahsinPendingFromReport($r, $now), 'Unverified latest-session roster does not create teacher debt');
+
+$periodNow = new DateTimeImmutable('2026-10-14 12:00:00', new DateTimeZone('Asia/Jakarta'));
+$periodFilters = tahsinFilters(['start_date' => '2026-09-01', 'end_date' => '2026-10-14'], $periodNow);
+$periodData = tahsinFixture();
+$periodReport = tahsinAssembleReport($periodData, $periodFilters, 'admin', 0, $periodNow, '2026-10-11');
+$periodOverview = tahsinPendingOverviewFromReport($periodReport, $periodNow, 'admin');
+expectTahsin(['2026-09-13', '2026-09-20', '2026-09-27', '2026-10-11'], array_column($periodOverview['sessions'], 'tanggal'), 'Custom range lists every active Sunday in chronological order and omits first Sundays');
+expectTahsin(1, $periodOverview['summary']['verified_sessions'], 'Tracking boundary divides verified and older sessions');
+expectTahsin(3, $periodOverview['summary']['unverified_sessions'], 'Older scheduled sessions remain visible as unverified');
+expectTahsin(1, $periodOverview['summary']['pending_teachers'], 'Only verified roster can identify teachers with missing attendance');
+expectTahsin(4, $periodOverview['summary']['missing_presensi'], 'Confirmed missing attendance counts only verified roster sessions');
+expectTahsin(null, $periodOverview['sessions'][0]['roster_count'], 'Unverified session roster size remains unknown');
+expectTahsin(null, $periodOverview['sessions'][0]['missing_presensi'], 'Unverified session missing attendance remains unknown');
+expectTahsin([], $periodOverview['sessions'][0]['groups'], 'No teacher group is invented for an unverified session');
+$periodData['holidays']['2026-09-20'] = 'Libur';
+$holidayPeriod = tahsinAssembleReport($periodData, $periodFilters, 'admin', 0, $periodNow, '2026-10-11');
+expectTahsin(['2026-09-13', '2026-09-27', '2026-10-11'], array_column($holidayPeriod['trend'], 'tanggal'), 'Session overview omits holiday Sundays');
+
+$historicalIssue = $periodData;
+$historicalIssue['records'] = [fixtureRecord(31, 1, 'H', '2026-09-17')];
+$historicalIssue['records'][0]['hasil_talaqqi'] = null;
+$historicalReport = tahsinAssembleReport($historicalIssue, $periodFilters, 'admin', 0, $periodNow, '2026-10-11');
+$historicalOverview = tahsinPendingOverviewFromReport($historicalReport, $periodNow, 'admin');
+expectTahsin([], $historicalOverview['sessions'][0]['groups'], 'Saved historical issue is not assigned to a current teacher group');
+expectTahsin(1, $historicalOverview['summary']['unverified_record_issues'], 'Saved incomplete historical record remains visible for review');
+expectTahsin('Halaqoh #1 tercatat', $historicalOverview['sessions'][0]['issues'][0]['placement_label'], 'Historical issue retains the halaqoh id recorded on the source row');
+expectTahsin('Guru pada sesi ini belum terverifikasi', $historicalOverview['sessions'][0]['issues'][0]['teacher_label'], 'Historical issue does not infer the current teacher');
+expectTahsin([], tahsinUnverifiedRecordIssuesFromReport($historicalReport, 'ustadz'), 'Teacher view does not expose unattributed historical participant records');
 $suspect = $data; $suspect['suspect_ids'][1] = true;
 $r = tahsinAssembleReport($suspect, $filters, 'admin', 0, $now);
 expectTahsin(1, $r['summary']['conflicts'], 'Initial-achievement suspicion cannot inflate attendance');

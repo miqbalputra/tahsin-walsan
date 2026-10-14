@@ -2,10 +2,13 @@
 require_once __DIR__ . '/tahsin_report_helper.php';
 require_once __DIR__ . '/tahsin_report_view.php';
 try {
-    $widgetGroups = array_values(array_filter(tahsinFetchPending($pdo, $_SESSION['role'], (int) $_SESSION['user_id']), static fn($g) => $g['belum_diisi'] > 0));
-    $widgetTeachers = count(array_unique(array_column($widgetGroups, 'ustadz_id')));
-    $widgetMissing = array_sum(array_column($widgetGroups, 'belum_diisi'));
-    $widgetText = $widgetGroups ? $widgetTeachers . ' guru · ' . count($widgetGroups) . ' halaqoh-sesi · ' . $widgetMissing . ' data peserta perlu dilengkapi' : 'Tidak ada kekurangan pada sesi yang dapat dipantau';
+    $widgetOverview = tahsinFetchPendingOverview($pdo, $_SESSION['role'], (int) $_SESSION['user_id']);
+    $widgetGroups = array_values(array_filter($widgetOverview['groups'], static fn($g) => $g['belum_diisi'] > 0));
+    $widgetTeachers = (int) $widgetOverview['summary']['pending_teachers'];
+    $widgetMissing = (int) $widgetOverview['summary']['pending_participants'];
+    $widgetText = $widgetGroups ? $widgetTeachers . ' guru · ' . count($widgetGroups) . ' halaqoh-sesi · ' . $widgetMissing . ' data peserta perlu dilengkapi' : 'Tidak ada kekurangan pada roster yang terverifikasi';
+    if ($widgetOverview['summary']['unverified_sessions']) $widgetText .= ' · ' . (int) $widgetOverview['summary']['unverified_sessions'] . ' sesi belum terverifikasi';
+    if ($widgetOverview['summary']['unverified_record_issues']) $widgetText .= ' · ' . (int) $widgetOverview['summary']['unverified_record_issues'] . ' catatan lama perlu ditinjau';
 } catch (Throwable $e) {
     reportApplicationError($e, 'tahsin-pending-widget');
     $widgetText = 'Data pemantauan belum dapat diambil; buka halaman pemantauan untuk memeriksa.';

@@ -582,7 +582,10 @@ function tahsinPendingFromReport(array $report, DateTimeImmutable $now): array
     $groups = [];
     foreach ($report['rows'] as $row) {
         foreach ($row['details'] as $cell) {
-            if (!$cell['in_schedule'] || (!$cell['expected'] && !in_array($cell['state'], ['conflict', 'invalid_date', 'capaian', 'presensi_incomplete'], true))) continue;
+            // Teacher reminders must be grounded in a roster captured for this
+            // session. The latest active roster is useful context, but cannot
+            // prove historical obligations before tracking began.
+            if (!$cell['in_schedule'] || !$cell['expected'] || empty($cell['verified_roster'])) continue;
             $owner = $cell['owner'];
             if (empty($owner['halaqoh_id'])) continue;
             $key = $cell['session_date'] . ':' . $owner['halaqoh_id'] . ':' . ($owner['ustadz_id'] ?? 0);
@@ -639,19 +642,126 @@ function tahsinPendingFromReport(array $report, DateTimeImmutable $now): array
     return $result;
 }
 
-function tahsinFetchPending(PDO $pdo, string $role = 'admin', int $userId = 0, array $query = [], ?DateTimeImmutable $now = null): array
+/**
+ * Surface saved historical records that need review without assigning them to
+ * today's teacher. Presensi stores a halaqoh id, but not the responsible teacher
+ * at the time; pre-tracking teacher attribution therefore cannot be inferred.
+ */
+function tahsinUnverifiedRecordIssuesFromReport(array $report, string $role = 'admin'): array
+{
+    if (!in_array($role, ['admin', 'pj_tahfidz', 'kepsek'], true)) return [];
+    $issues = [];
+    $reviewStates = ['conflict', 'invalid_date', 'baseline', 'capaian', 'presensi_incomplete'];
+    foreach ($report['rows'] as $row) {
+        foreach ($row['details'] as $cell) {
+            if (!$cell['in_schedule'] || !empty($cell['verified_roster'])
+                || !in_array($cell['state'], $reviewStates, true) || empty($cell['records'])) continue;
+
+            $halaqohIds = array_values(array_unique(array_filter(array_map(
+                static fn($record) => (int) ($record['halaqoh_id'] ?? 0), $cell['records']
+            ))));
+            sort($halaqohIds);
+            $placementKey = count($halaqohIds) === 1 ? (string) $halaqohIds[0] : (count($halaqohIds) ? 'multiple' : 'unknown');
+            $key = $cell['session_date'] . ':' . $placementKey;
+            if (!isset($issues[$key])) {
+                $placementLabel = count($halaqohIds) === 1
+                    ? 'Halaqoh #' . $halaqohIds[0] . ' tercatat'
+                    : (count($halaqohIds) ? 'Beberapa halaqoh tercatat' : 'Halaqoh tidak tercatat');
+                $issues[$key] = [
+                    'session_date' => $cell['session_date'],
+                    'placement_key' => $placementKey,
+                    'placement_label' => $placementLabel,
+                    'teacher_label' => 'Guru pada sesi ini belum terverifikasi',
+                    'participants' => [],
+                ];
+            }
+            $issues[$key]['participants'][$row['id']] = [
+                'wali_santri_id' => (int) $row['id'],
+                'nama_bapak' => $row['nama_bapak'],
+                'missing_fields' => $cell['missing_fields'],
+                'state' => $cell['state'],
+            ];
+        }
+    }
+    foreach ($issues as &$issue) $issue['participants'] = array_values($issue['participants']);
+    unset($issue);
+    return array_values($issues);
+}
+
+/** Build the date-first monitoring view while preserving the legacy groups list for integrations. */
+function tahsinPendingOverviewFromReport(array $report, DateTimeImmutable $now, string $role = 'admin'): array
+{
+    $groups = tahsinPendingFromReport($report, $now);
+    $issues = tahsinUnverifiedRecordIssuesFromReport($report, $role);
+    $sessions = [];
+    $verifiedCount = 0;
+    $unverifiedCount = 0;
+    foreach ($report['trend'] as $trend) {
+        $date = $trend['tanggal'];
+        $verified = !empty($trend['roster_verified']);
+        if ($verified) $verifiedCount++; else $unverifiedCount++;
+        $sessionGroups = array_values(array_filter($groups, static fn($g) => $g['tanggal_tahsin'] === $date));
+        $sessionIssues = array_values(array_filter($issues, static fn($issue) => $issue['session_date'] === $date));
+        $sessions[] = [
+            'tanggal' => $date,
+            'roster_verified' => $verified,
+            'roster_count' => $verified ? (int) $trend['peserta_roster'] : null,
+            'complete_input' => $verified ? (int) $trend['complete_input'] : null,
+            'missing_presensi' => $verified ? (int) $trend['missing_presensi'] : null,
+            'missing_keterangan' => (int) $trend['missing_keterangan'],
+            'missing_capaian' => (int) $trend['missing_capaian'],
+            'conflicts' => (int) $trend['conflicts'],
+            'groups' => $sessionGroups,
+            'issues' => $sessionIssues,
+        ];
+    }
+    $pending = array_values(array_filter($groups, static fn($g) => $g['belum_diisi'] > 0));
+    $teacherIds = array_unique(array_filter(array_map(static fn($g) => (int) $g['ustadz_id'], $pending)));
+    return [
+        'sessions' => $sessions,
+        'groups' => $groups,
+        'summary' => [
+            'scheduled_sessions' => count($report['trend']),
+            'verified_sessions' => $verifiedCount,
+            'unverified_sessions' => $unverifiedCount,
+            'pending_teachers' => count($teacherIds),
+            'missing_presensi' => array_sum(array_column($pending, 'missing_presensi')),
+            'missing_keterangan' => array_sum(array_column($pending, 'missing_keterangan')),
+            'missing_capaian' => array_sum(array_column($pending, 'missing_capaian')),
+            'conflicts' => array_sum(array_column($pending, 'conflicts')),
+            'pending_participants' => array_sum(array_column($pending, 'belum_diisi')),
+            'unverified_record_issues' => array_sum(array_map(static fn($issue) => count($issue['participants']), $issues)),
+        ],
+        'filters' => $report['filters'],
+        'tracked_from' => $report['tracked_from'],
+    ];
+}
+
+function tahsinFetchPendingOverview(PDO $pdo, string $role = 'admin', int $userId = 0, array $query = [], ?DateTimeImmutable $now = null): array
 {
     $now = $now ?? tahsinNow();
     $data = tahsinLoadDataset($pdo, $now->format('Y-m-d'), $now);
     $latest = tahsinLatestSession($now->format('Y-m-d'), $data['holidays']);
-    if (!$latest) return [];
+    if (!$latest) return ['sessions' => [], 'groups' => [], 'summary' => [
+        'scheduled_sessions' => 0, 'verified_sessions' => 0, 'unverified_sessions' => 0,
+        'pending_teachers' => 0, 'missing_presensi' => 0, 'missing_keterangan' => 0,
+        'missing_capaian' => 0, 'conflicts' => 0, 'pending_participants' => 0,
+        'unverified_record_issues' => 0,
+    ], 'filters' => [], 'tracked_from' => $data['tracked_from']];
     $start = $data['tracked_from'] ? min(substr($data['tracked_from'], 0, 10), $latest) : $latest;
     // Include positively identified historical conflicts/incomplete records.
     // The assembler still generates no missing historical roster entries.
     if ($data['records']) $start = min($start, tahsinSessionDate($data['records'][0]['tanggal']));
     foreach (['start_date', 'end_date'] as $key) if (isset($query[$key]) && trim((string) $query[$key]) === '') unset($query[$key]);
     $filters = tahsinFilters(array_merge(['start_date' => $start, 'end_date' => $now->format('Y-m-d')], $query), $now);
-    return tahsinPendingFromReport(tahsinAssembleReport($data, $filters, $role, $userId, $now, $latest), $now);
+    $report = tahsinAssembleReport($data, $filters, $role, $userId, $now, $latest);
+    return tahsinPendingOverviewFromReport($report, $now, $role);
+}
+
+/** Kept as the flat array consumed by the existing dashboard and n8n reminder API. */
+function tahsinFetchPending(PDO $pdo, string $role = 'admin', int $userId = 0, array $query = [], ?DateTimeImmutable $now = null): array
+{
+    return tahsinFetchPendingOverview($pdo, $role, $userId, $query, $now)['groups'];
 }
 
 function tahsinSaveVerification(PDO $pdo, int $waliId, string $session, string $fingerprint, ?int $selectedId, int $userId, string $note): void
