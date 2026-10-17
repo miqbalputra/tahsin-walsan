@@ -7,6 +7,7 @@ checkRole(['admin', 'pj_tahfidz', 'kepsek', 'ustadz']);
 $role = $_SESSION['role'];
 $userId = (int) $_SESSION['user_id'];
 $activityView = !empty($tahsinActivityView);
+$activitySummary = $activityView && ($_GET['view'] ?? '') === 'ringkasan';
 $canVerify = in_array($role, ['admin', 'pj_tahfidz'], true);
 $error = '';
 $message = '';
@@ -27,6 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 try {
     $filters = tahsinFilters($_GET);
+    if ($activitySummary) $filters = array_replace($filters, ['wali_santri_id' => 0, 'kelas' => '', 'search' => '', 'kelengkapan' => '', 'risk' => '']);
 } catch (InvalidArgumentException $e) {
     http_response_code(400); $error = $e->getMessage(); $filters = tahsinFilters();
 }
@@ -105,6 +107,7 @@ require __DIR__ . '/includes/sidebar.php';
 <div class="tahsin-report">
 <div class="tahsin-heading"><div><h2><?= tahsinH($pageTitle) ?> Tahsin Wali Santri</h2><p class="tahsin-note">Periode sesi <?= tahsinH($filters['start_date']) ?> s/d <?= tahsinH($filters['end_date']) ?> · Dibuat <?= tahsinNow()->format('d/m/Y H:i') ?> WIB<br>Hadir dan Alfa berdasarkan catatan guru. Data kosong tidak dinilai sebagai ketidakhadiran.</p></div>
 <div class="tahsin-actions no-print">
+<a class="tahsin-button primary" href="persentase-keaktifan.php?<?= tahsinH(tahsinQuery($filters, ['view' => 'ringkasan'])) ?>">Ringkasan Total Periode</a>
 <a class="tahsin-button primary" href="persentase-keaktifan.php?<?= tahsinH(tahsinQuery($filters)) ?>">Persentase &amp; Keaktifan</a>
 <a class="tahsin-button" href="?<?= tahsinH(tahsinQuery($filters, ['mode' => $meeting ? '' : 'rapat', 'page' => $page])) ?>"><?= $meeting ? 'Keluar Mode Rapat' : 'Mode Rapat' ?></a>
 <a class="tahsin-button" href="?<?= tahsinH(tahsinQuery($summaryFilters, ['summary_only' => '1'])) ?>">Ringkasan Pertemuan</a>

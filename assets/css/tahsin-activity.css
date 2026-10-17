@@ -2,6 +2,17 @@
 .tahsin-activity-eyebrow{font-size:11px;letter-spacing:.15em;color:#2563eb;font-weight:800;margin:0 0 8px}
 .tahsin-activity-formula{padding:14px 18px;border:1px solid #dbeafe;border-radius:12px;background:#eff6ff;color:#1e40af;font-size:12px;line-height:1.7;margin:0 0 22px}
 .tahsin-activity-presets{margin-top:14px}
+.tahsin-period-headline{display:flex;justify-content:space-between;gap:24px;align-items:center;border-radius:14px;background:#ecfdf5;padding:24px;margin-bottom:20px;color:#065f46}
+.tahsin-period-headline span{font-size:16px;font-weight:700;display:block}
+.tahsin-period-headline>div>strong{display:block;font-size:64px;font-weight:800;line-height:1.2;margin:6px 0}
+.tahsin-period-headline p{font-size:13px;line-height:1.6;margin:6px 0}
+.tahsin-period-headline .tahsin-period-basis>strong{font-size:22px}
+.tahsin-period-basis{max-width:420px}
+.tahsin-period-totals{margin-top:20px}
+.tahsin-period-totals td:not(:first-child){font-size:16px;font-variant-numeric:tabular-nums}
+.tahsin-period-total{font-weight:800;background:#f8fafc}
+.tahsin-period-page .tahsin-activity-formula{font-size:11px}
+@media(max-width:600px){.tahsin-period-headline{flex-direction:column;align-items:flex-start;padding:18px}.tahsin-period-headline>div>strong{font-size:52px}.tahsin-period-totals th{white-space:normal}}
 .tahsin-activity-sections{margin-bottom:18px}
 .tahsin-activity-cards{grid-template-columns:repeat(6,minmax(0,1fr))}
 .tahsin-activity-cards .tahsin-card{padding:16px}
@@ -38,6 +49,20 @@
 @media(max-width:1000px){.tahsin-activity-cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:600px){.tahsin-activity-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.tahsin-activity-cards .tahsin-card{padding:12px}.tahsin-activity-cards .tahsin-card strong{font-size:27px}.tahsin-activity-page .tahsin-pagination{flex-direction:column;align-items:flex-start}.tahsin-activity-formula{font-size:11px}}
 @media print{
+.tahsin-period-page .tahsin-heading{margin-bottom:6px}
+.tahsin-period-page .tahsin-heading .tahsin-note{margin:4px 0 8px}
+.tahsin-period-page .tahsin-panel h3{font-size:14px;margin-bottom:8px}
+.tahsin-period-page .tahsin-activity-overview{margin:8px 0}
+.tahsin-period-page .tahsin-note{font-size:8px;line-height:1.4;margin:6px 0}
+.tahsin-period-page .tahsin-period-notice{font-size:9px;padding:8px;margin-bottom:8px}
+.tahsin-period-page .tahsin-period-headline{padding:10px;margin-bottom:6px}
+.tahsin-period-page .tahsin-activity-formula{font-size:8px;line-height:1.4;padding:7px;margin-bottom:0}
+.tahsin-period-headline{padding:12px;margin-bottom:12px;break-inside:avoid}
+.tahsin-period-headline>div>strong{font-size:36px}
+.tahsin-period-headline span,.tahsin-period-headline p{font-size:9px}
+.tahsin-period-headline .tahsin-period-basis>strong{font-size:14px}
+.tahsin-period-totals{margin-top:10px}
+.tahsin-period-totals td:not(:first-child){font-size:11px}
 .tahsin-activity-page{max-width:none}
 .tahsin-activity-page *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .tahsin-activity-cards{grid-template-columns:repeat(6,minmax(0,1fr))!important}
