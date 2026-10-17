@@ -17,6 +17,8 @@ Sebelum migrasi, rekap masih dapat dibaca; kelengkapan historis berstatus belum 
 
 ## Aturan laporan
 
+- Menu **Persentase & Keaktifan** (`persentase-keaktifan.php`) menampilkan persentase Hadir, Izin, Alfa, dan Sakit untuk sekolah, setiap wali, halaqoh, dan guru. Keaktifan mengikuti persentase Hadir, tanpa skor atau kategori keaktifan buatan. Semua persentase memakai H+S+I+A terkonfirmasi sebagai pembagi. Tanpa presensi, hasil `—`; kekurangan input dan konflik tetap terpisah. Mode Rapat menampilkan 12 wali per halaman, sedangkan Excel dan cetak/PDF mencakup seluruh wali hasil filter. Nama anak, nomor telepon, dan alamat tidak dimuat pada tabel presentasi/ekspor. Pembaruan ini tidak memerlukan migrasi tambahan dan tidak menulis data presensi.
+
 - Sesi menggunakan tanggal Ahad; Senin–Sabtu memenuhi sesi Ahad sebelumnya. Ahad pertama dan Ahad yang tercatat libur dikecualikan. Catatan pada tanggal pengganti yang libur tidak dihitung sebagai kehadiran/Alfa. Tanggal pelaksanaan yang salah perlu diperbaiki. Pertemuan mendatang tidak dihitung.
 - Filter tanggal mengikuti **tanggal sesi**, termasuk ketika pelaksanaan pengganti melewati pergantian bulan. Tanggal pelaksanaan asli tetap tampil. Materi terakhir hanya memakai catatan hingga akhir sesi dalam periode, bukan capaian masa depan.
 - Kehadiran = H/(H+S+I+A), sementara kelengkapan = peserta-sesi lengkap/kewajiban peserta-sesi yang diketahui. Jumlah wali berbeda dari jumlah peserta-sesi. Rasio ringkasan menggunakan pembilang/penyebut total.

@@ -3,6 +3,7 @@ if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 /** Standalone regression suite: php tests/run-tahsin-tests.php (no external services needed). */
 require_once __DIR__ . '/../includes/tahsin_report_helper.php';
 require_once __DIR__ . '/../includes/tahsin_report_view.php';
+require_once __DIR__ . '/../includes/tahsin_activity_view.php';
 require_once __DIR__ . '/../includes/attendance_helper.php';
 date_default_timezone_set('Asia/Jakarta');
 $checks = 0;
@@ -196,6 +197,44 @@ $allDone = $data; $allDone['records'][] = fixtureRecord(3, 3, 'I'); $allDone['re
 $r = tahsinAssembleReport($allDone, $filters, 'admin', 0, $now);
 expectTahsin(100.0, $r['summary']['coverage_percent'], 'Complete session reaches 100 percent');
 expectTahsin(0, tahsinPendingFromReport($r, $now)[0]['belum_diisi'], 'Reminder ends when every entry is complete');
+// The presentation uses the same denominator for H/I/A/S at every scope.
+foreach (['hadir', 'izin', 'alpha', 'sakit'] as $key) {
+    expectTahsin(25.0, $r['summary'][$key . '_percent'], 'School ' . $key . ' percentage uses confirmed sessions');
+    expectTahsin(25.0, $r['halaqoh'][0][$key . '_percent'], 'Halaqoh ' . $key . ' percentage matches school');
+    expectTahsin(25.0, $r['guru'][0][$key . '_percent'], 'Teacher ' . $key . ' percentage matches school');
+    expectTahsin(25.0, $r['trend'][0][$key . '_percent'], 'Session ' . $key . ' percentage matches school');
+}
+$activityNow = new DateTimeImmutable('2026-10-17 15:00:00', new DateTimeZone('Asia/Jakarta'));
+$activityData = tahsinFixture();
+$activityData['tracked_from'] = '2026-09-01 00:00:00';
+foreach ($activityData['history'] as &$member) $member['valid_from'] = '2026-09-01 00:00:00';
+unset($member);
+$activityData['records'] = [fixtureRecord(1, 1, 'H', '2026-09-13'), fixtureRecord(2, 1, 'A', '2026-09-20')];
+$activityFilters = tahsinFilters(['start_date' => '2026-09-01', 'end_date' => '2026-10-17', 'wali_santri_id' => 1], $activityNow);
+$activityReport = tahsinAssembleReport($activityData, $activityFilters, 'admin', 0, $activityNow);
+expectTahsin(50.0, $activityReport['rows'][0]['hadir_percent'], 'Per-wali activity is 50% for one H and one A');
+expectTahsin(50.0, $activityReport['rows'][0]['alpha_percent'], 'Per-wali Alfa is 50% and does not absorb two empty sessions');
+expectTahsin(50.0, $activityReport['rows'][0]['coverage_percent'], 'Per-wali input completeness is separate at 50%');
+expectTahsin(2, $activityReport['rows'][0]['missing_presensi'], 'Two empty sessions remain pending');
+expectTahsin(1, count($activityReport['rows']), 'Multiple children produce one activity row');
+ob_start(); tahsinRenderActivityWali($activityReport['rows'], $activityFilters); $activityHtml = ob_get_clean();
+ob_start(); tahsinRenderActivityWali($activityReport['rows'], $activityFilters, true); $activityExcel = ob_get_clean();
+expectTahsin(true, str_contains($activityHtml, '50%') && str_contains($activityExcel, '50%'), 'Screen and Excel share percentage rendering');
+expectTahsin(false, str_contains($activityHtml . $activityExcel, 'Anak Satu'), 'Presentation table excludes child identities');
+expectTahsin(true, str_contains($activityHtml, 'Belum diinput: 2') && str_contains($activityHtml, 'Data sementara'), 'Presentation explains missing input without false Alfa');
+$activityData['records'][] = fixtureRecord(3, 1, 'H', '2026-09-27');
+$activityData['records'][] = fixtureRecord(4, 2, 'A', '2026-10-11');
+$activityFilters['wali_santri_id'] = 0;
+$weightedActivity = tahsinAssembleReport($activityData, $activityFilters, 'admin', 0, $activityNow);
+expectTahsin(50.0, $weightedActivity['summary']['hadir_percent'], 'Activity total is weighted by four confirmed sessions, not parent percentages');
+expectTahsin(50.0, $weightedActivity['summary']['alpha_percent'], 'Alfa total shares weighted denominator');
+$sortedActivity = tahsinActivitySort($weightedActivity['rows'], 'hadir_asc');
+expectTahsin(2, $sortedActivity[0]['id'], 'Ascending activity puts actual zero first');
+expectTahsin(3, $sortedActivity[2]['id'], 'Missing activity remains below numeric percentages');
+expectTahsin(null, $sortedActivity[2]['alpha_percent'], 'Missing Alfa percentage is unknown, not zero');
+$unsafeActivity = $activityReport['rows']; $unsafeActivity[0]['nama_bapak'] = '=SUM(1,2)<script>alert(1)</script>';
+ob_start(); tahsinRenderActivityWali($unsafeActivity, $activityFilters, true); $safeActivityExcel = ob_get_clean();
+expectTahsin(true, str_contains($safeActivityExcel, '&#039;=SUM(1,2)&lt;script&gt;'), 'Activity export escapes HTML and protects spreadsheet formula prefixes');
 expectTahsin(1, count(tahsinAssembleReport($data, tahsinFilters(['start_date' => '2026-10-11', 'end_date' => '2026-10-12', 'search' => 'Anak Dua'], $now), 'admin', 0, $now)['rows']), 'Child search does not multiply parents');
 foreach ([[], ['status' => ''], ['status' => 'H', 'jenis_materi' => 'Iqro']] as $invalid) {
     try { attendanceNormalizePayload($invalid); throw new RuntimeException('Invalid payload was accepted'); }

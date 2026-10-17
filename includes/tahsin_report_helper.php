@@ -340,7 +340,9 @@ function tahsinAddCell(array &$totals, array $cell): void
 
 function tahsinFinalizeTotals(array $totals): array
 {
-    $totals['hadir_percent'] = $totals['total_presensi'] ? round(100 * $totals['hadir'] / $totals['total_presensi'], 1) : null;
+    foreach (['hadir', 'sakit', 'izin', 'alpha'] as $status) {
+        $totals[$status . '_percent'] = $totals['total_presensi'] ? round(100 * $totals[$status] / $totals['total_presensi'], 1) : null;
+    }
     $totals['coverage_percent'] = !$totals['unverified'] && $totals['expected'] ? round(100 * $totals['complete_input'] / $totals['expected'], 1) : null;
     $totals['provisional'] = $totals['unverified'] > 0 || $totals['conflicts'] > 0 || $totals['missing_capaian'] > 0 || $totals['missing_keterangan'] > 0 || $totals['complete_input'] < $totals['expected'];
     return $totals;

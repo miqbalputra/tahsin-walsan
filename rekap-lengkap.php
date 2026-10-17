@@ -6,6 +6,7 @@ require_once __DIR__ . '/includes/tahsin_report_view.php';
 checkRole(['admin', 'pj_tahfidz', 'kepsek', 'ustadz']);
 $role = $_SESSION['role'];
 $userId = (int) $_SESSION['user_id'];
+$activityView = !empty($tahsinActivityView);
 $canVerify = in_array($role, ['admin', 'pj_tahfidz'], true);
 $error = '';
 $message = '';
@@ -33,14 +34,18 @@ try {
     $dataset = tahsinLoadDataset($pdo, $filters['end_date']);
     $report = tahsinAssembleReport($dataset, $filters, $role, $userId);
     $summaryFilters = array_replace($filters, ['wali_santri_id' => 0, 'kelas' => '', 'search' => '', 'kategori' => '', 'aktif' => '', 'kelengkapan' => '', 'risk' => '']);
-    $meetingReport = tahsinAssembleReport($dataset, $summaryFilters, $role, $userId);
+    if (!$activityView) $meetingReport = tahsinAssembleReport($dataset, $summaryFilters, $role, $userId);
 } catch (Throwable $e) {
     reportApplicationError($e, 'rekap-lengkap');
     http_response_code(500);
-    $pageTitle = 'Rekap Lengkap';
+    $pageTitle = $activityView ? 'Persentase & Keaktifan' : 'Rekap Lengkap';
     require __DIR__ . '/includes/header.php'; require __DIR__ . '/includes/sidebar.php';
     echo '<div role="alert" class="p-6 rounded-xl bg-amber-50 text-amber-900">Rekap belum dapat dimuat. Silakan muat ulang atau hubungi admin. Angka kehadiran belum tersedia.</div>';
     require __DIR__ . '/includes/footer.php';
+    exit;
+}
+if ($activityView) {
+    require __DIR__ . '/includes/tahsin_activity_page.php';
     exit;
 }
 $print = ($_GET['print'] ?? '') === '1';
@@ -100,6 +105,7 @@ require __DIR__ . '/includes/sidebar.php';
 <div class="tahsin-report">
 <div class="tahsin-heading"><div><h2><?= tahsinH($pageTitle) ?> Tahsin Wali Santri</h2><p class="tahsin-note">Periode sesi <?= tahsinH($filters['start_date']) ?> s/d <?= tahsinH($filters['end_date']) ?> · Dibuat <?= tahsinNow()->format('d/m/Y H:i') ?> WIB<br>Hadir dan Alfa berdasarkan catatan guru. Data kosong tidak dinilai sebagai ketidakhadiran.</p></div>
 <div class="tahsin-actions no-print">
+<a class="tahsin-button primary" href="persentase-keaktifan.php?<?= tahsinH(tahsinQuery($filters)) ?>">Persentase &amp; Keaktifan</a>
 <a class="tahsin-button" href="?<?= tahsinH(tahsinQuery($filters, ['mode' => $meeting ? '' : 'rapat', 'page' => $page])) ?>"><?= $meeting ? 'Keluar Mode Rapat' : 'Mode Rapat' ?></a>
 <a class="tahsin-button" href="?<?= tahsinH(tahsinQuery($summaryFilters, ['summary_only' => '1'])) ?>">Ringkasan Pertemuan</a>
 <a class="tahsin-button" href="?<?= tahsinH(tahsinQuery($filters, ['export' => 'excel'])) ?>">Unduh Excel</a>

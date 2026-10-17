@@ -1,0 +1,59 @@
+.tahsin-activity-page{max-width:1800px;margin:0 auto}
+.tahsin-activity-eyebrow{font-size:11px;letter-spacing:.15em;color:#2563eb;font-weight:800;margin:0 0 8px}
+.tahsin-activity-formula{padding:14px 18px;border:1px solid #dbeafe;border-radius:12px;background:#eff6ff;color:#1e40af;font-size:12px;line-height:1.7;margin:0 0 22px}
+.tahsin-activity-presets{margin-top:14px}
+.tahsin-activity-sections{margin-bottom:18px}
+.tahsin-activity-cards{grid-template-columns:repeat(6,minmax(0,1fr))}
+.tahsin-activity-cards .tahsin-card{padding:16px}
+.tahsin-activity-cards .tahsin-card strong{font-size:32px}
+.tahsin-activity-bar{display:flex;height:18px;width:100%;border-radius:6px;overflow:hidden;background:#e2e8f0}
+.tahsin-activity-bar .hadir,.tahsin-activity-legend .hadir{background:#059669}
+.tahsin-activity-bar .izin,.tahsin-activity-legend .izin{background:#d97706}
+.tahsin-activity-bar .alpha,.tahsin-activity-legend .alpha{background:#e11d48}
+.tahsin-activity-bar .sakit,.tahsin-activity-legend .sakit{background:#0284c7}
+.tahsin-activity-legend{display:flex;flex-wrap:wrap;gap:12px 24px;margin:14px 0;font-size:13px}
+.tahsin-activity-legend span{display:inline-flex;align-items:center;gap:6px}
+.tahsin-activity-legend i{display:inline-block;width:10px;height:10px;border-radius:3px}
+.tahsin-activity-empty{padding:6px 0;color:#64748b;font-size:11px}
+.tahsin-activity-wali{min-width:1060px}
+.tahsin-activity-wali td:nth-child(2){min-width:155px}
+.tahsin-activity-status{text-align:center;white-space:nowrap}
+.tahsin-activity-status strong{font-size:17px;display:block;font-variant-numeric:tabular-nums}
+.tahsin-activity-status.hadir strong,.tahsin-activity-score>strong{color:#047857}
+.tahsin-activity-status.izin strong{color:#b45309}
+.tahsin-activity-status.alpha strong{color:#be123c}
+.tahsin-activity-status.sakit strong{color:#0369a1}
+.tahsin-activity-score{min-width:130px}
+.tahsin-activity-score>strong{font-size:22px;display:block;margin-bottom:8px;font-variant-numeric:tabular-nums}
+.tahsin-activity-score .tahsin-activity-bar{height:8px}
+.tahsin-activity-quality{min-width:150px;max-width:220px}
+.tahsin-activity-quality>strong{font-size:11px;color:#475569}
+.tahsin-activity-page [id]{scroll-margin-top:20px}
+.tahsin-meeting .tahsin-activity-page .tahsin-activity-sections{display:flex!important}
+.tahsin-meeting .tahsin-activity-formula{font-size:14px}
+.tahsin-meeting .tahsin-activity-status strong{font-size:22px}
+.tahsin-meeting .tahsin-activity-score>strong{font-size:25px}
+.tahsin-meeting .tahsin-activity-legend{font-size:17px}
+.tahsin-meeting .tahsin-activity-quality>strong{font-size:13px}
+@media(max-width:1000px){.tahsin-activity-cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:600px){.tahsin-activity-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.tahsin-activity-cards .tahsin-card{padding:12px}.tahsin-activity-cards .tahsin-card strong{font-size:27px}.tahsin-activity-page .tahsin-pagination{flex-direction:column;align-items:flex-start}.tahsin-activity-formula{font-size:11px}}
+@media print{
+.tahsin-activity-page{max-width:none}
+.tahsin-activity-page *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.tahsin-activity-cards{grid-template-columns:repeat(6,minmax(0,1fr))!important}
+.tahsin-activity-cards .tahsin-card{padding:8px}
+.tahsin-activity-cards .tahsin-card strong{font-size:22px}
+.tahsin-activity-formula{font-size:9px;padding:8px;margin-bottom:10px}
+.tahsin-activity-wali{min-width:0;width:100%}
+.tahsin-activity-wali td:nth-child(2){min-width:0}
+.tahsin-activity-score{min-width:65px}
+.tahsin-activity-quality{min-width:80px;max-width:120px}
+.tahsin-activity-quality>strong{font-size:8px}
+.tahsin-activity-status strong{font-size:12px}
+.tahsin-activity-score>strong{font-size:14px;margin-bottom:4px}
+.tahsin-activity-bar{height:10px}
+.tahsin-activity-legend{font-size:9px;gap:6px 15px}
+.tahsin-activity-overview{break-inside:avoid}
+.tahsin-activity-page .tahsin-heading{margin-bottom:12px}
+.tahsin-activity-page .tahsin-table th{white-space:normal}
+}

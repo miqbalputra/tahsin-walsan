@@ -47,6 +47,7 @@ if (in_array($role, ['admin', 'pj_tahfidz', 'kepsek', 'ustadz'], true)) {
     $prefix = $role === 'ustadz' ? '../' : '';
     array_splice($menus, 1, 0, [
         ['label' => 'Rekap Lengkap', 'icon' => 'M9 17v-2m3 2v-4m3 4v-6M5 21h14V3H5z', 'url' => $prefix . 'rekap-lengkap.php'],
+        ['label' => 'Persentase & Keaktifan', 'icon' => 'M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z', 'url' => $prefix . 'persentase-keaktifan.php'],
         ['label' => 'Pemantauan Input', 'icon' => 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', 'url' => $prefix . 'pantau-input.php'],
     ]);
 }
