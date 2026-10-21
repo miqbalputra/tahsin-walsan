@@ -1,4 +1,13 @@
 <?php
+// Select the new flow before emitting HTML; older databases keep their existing form.
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/auth_helper.php';
+require_once __DIR__ . '/../includes/autosave_helper.php';
+checkRole(['ustadz']);
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && autosaveEnabled($pdo, (int) ($_GET['id'] ?? 0)) && !isset($_GET['legacy'])) {
+    require __DIR__ . '/autosave-page.php';
+    return;
+}
 $pageTitle = 'Form Input Presensi';
 require_once '../includes/header.php';
 require_once '../includes/sidebar.php';

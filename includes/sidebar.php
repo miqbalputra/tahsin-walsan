@@ -52,6 +52,14 @@ if (in_array($role, ['admin', 'pj_tahfidz', 'kepsek', 'ustadz'], true)) {
     ]);
 }
 $current_page = basename($_SERVER['PHP_SELF']);
+// Teacher navigation stays focused; detailed reports remain reachable from Akun.
+if ($role === 'ustadz') {
+    $menus = [
+        ['label' => 'Hari Ini', 'icon' => 'M3 12l9-9 9 9M5 10v11h14V10', 'url' => 'hari-ini.php'],
+        ['label' => 'Riwayat', 'icon' => 'M12 8v4l3 3M3 12a9 9 0 1118 0 9 9 0 01-18 0', 'url' => 'riwayat.php'],
+        ['label' => 'Akun', 'icon' => 'M12 12a4 4 0 100-8 4 4 0 000 8M4 21a8 8 0 0116 0', 'url' => 'akun.php'],
+    ];
+}
 $is_ustadz_path = strpos($_SERVER['REQUEST_URI'], '/ustadz/') !== false;
 
 // Correction for menu URLs based on role and current location
@@ -165,14 +173,14 @@ $base_url = $is_ustadz_path ? '../' : '';
                 </svg>
             </div>
 
-            <h3 class="text-xl font-black text-slate-800 tracking-tight uppercase">Presensi Bapak <br><span
+            <h3 class="text-xl font-black text-slate-800 tracking-tight uppercase">Presensi Tahsin <br><span
                     class="text-blue-600">Tahsin Wali Santri</span></h3>
             <p class="text-[11px] font-bold text-slate-400 mt-2 uppercase tracking-widest italic">v1.0 (Build 2026)</p>
 
             <div class="my-6 border-t border-slate-100/50"></div>
 
             <p class="text-sm text-slate-600 leading-relaxed px-4">
-                Program Peningkatan Kualitas Bacaan Al-Qur'an untuk Bapak/Wali Santri Griya Qur'an.
+                Program Peningkatan Kualitas Bacaan Al-Qur'an untuk Bapak dan Ibu Wali Santri Griya Qur'an.
             </p>
 
             <div class="mt-8 space-y-3">

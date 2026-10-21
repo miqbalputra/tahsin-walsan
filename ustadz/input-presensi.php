@@ -52,7 +52,7 @@ $halaqohs = $stmt->fetchAll();
             <h3 class="text-xl font-bold text-slate-800 mb-1 group-hover:text-blue-600 transition-colors">
                 <?php echo htmlspecialchars($h['nama_halaqoh']); ?>
             </h3>
-            <p class="text-slate-500 text-sm mb-4">Mulai input presensi bapak-bapak hari ini.</p>
+            <p class="text-slate-500 text-sm mb-4">Mulai atau lanjutkan presensi dan capaian peserta.</p>
             <div class="mt-4 flex items-center text-blue-600 font-bold text-sm">
                 Buka Form Presensi
                 <svg class="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor"

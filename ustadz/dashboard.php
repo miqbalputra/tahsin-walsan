@@ -1,4 +1,8 @@
 <?php
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/auth_helper.php';
+require_once __DIR__ . '/../includes/autosave_helper.php';
+if (($_SESSION['role'] ?? '') === 'ustadz' && autosaveEnabled($pdo) && !isset($_GET['legacy'])) redirectTo('ustadz/hari-ini.php');
 require_once __DIR__ . '/../includes/tahsin_report_helper.php';
 $pageTitle = 'Dashboard Ustadz';
 require_once '../includes/header.php';

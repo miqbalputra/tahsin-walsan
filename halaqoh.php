@@ -4,11 +4,13 @@ require_once 'includes/header.php';
 require_once 'includes/sidebar.php';
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
+require_once 'includes/autosave_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
 $message = '';
 $error = '';
+$programSchema = autosaveSchemaReady($pdo);
 
 // Handle Create/Update/Delete
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -21,15 +23,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $id = $_POST['id'] ?? null;
     $nama_halaqoh = $_POST['nama_halaqoh'] ?? '';
     $ustadz_id = $_POST['ustadz_id'] ?? '';
+    $program_code = in_array($_POST['program_code'] ?? '', ['bapak', 'ibu'], true) ? $_POST['program_code'] : 'bapak';
 
     if ($action === 'save') {
-        if ($id) {
-            $stmt = $pdo->prepare("UPDATE halaqoh SET nama_halaqoh=?, ustadz_id=? WHERE id=?");
-            $stmt->execute([$nama_halaqoh, $ustadz_id, $id]);
+        if ($programSchema && $id) {
+            $existingProgram = $pdo->prepare('SELECT program_code FROM halaqoh WHERE id=?');
+            $existingProgram->execute([$id]);
+            if ($existingProgram->fetchColumn() !== $program_code) {
+                $history = $pdo->prepare('SELECT COUNT(*) FROM presensi WHERE halaqoh_id=?');
+                $history->execute([$id]);
+                $drafts = $pdo->prepare('SELECT COUNT(*) FROM tahsin_autosave_drafts WHERE halaqoh_id=?');
+                $drafts->execute([$id]);
+                if ($history->fetchColumn() || $drafts->fetchColumn()) $error = 'Program kelompok dengan riwayat pencatatan tidak dapat diganti. Buat kelompok baru agar riwayat Bapak dan Ibu tetap benar.';
+            }
+        }
+        if ($error !== '') {
+            // Keep the form and its error visible; no identity/history is rewritten.
+        } elseif ($id) {
+            $stmt = $pdo->prepare($programSchema ? "UPDATE halaqoh SET nama_halaqoh=?, ustadz_id=?, program_code=? WHERE id=?" : "UPDATE halaqoh SET nama_halaqoh=?, ustadz_id=? WHERE id=?");
+            $stmt->execute($programSchema ? [$nama_halaqoh, $ustadz_id, $program_code, $id] : [$nama_halaqoh, $ustadz_id, $id]);
             $message = "Halaqoh diperbarui!";
         } else {
-            $stmt = $pdo->prepare("INSERT INTO halaqoh (nama_halaqoh, ustadz_id) VALUES (?, ?)");
-            $stmt->execute([$nama_halaqoh, $ustadz_id]);
+            $stmt = $pdo->prepare($programSchema ? "INSERT INTO halaqoh (nama_halaqoh, ustadz_id, program_code) VALUES (?, ?, ?)" : "INSERT INTO halaqoh (nama_halaqoh, ustadz_id) VALUES (?, ?)");
+            $stmt->execute($programSchema ? [$nama_halaqoh, $ustadz_id, $program_code] : [$nama_halaqoh, $ustadz_id]);
             $message = "Halaqoh baru dibuat!";
         }
     } elseif ($action === 'delete' && $id) {
@@ -82,10 +98,10 @@ $ustadz_list = $pdo->query("SELECT id, nama_lengkap FROM users WHERE role = 'ust
     deleteId: null,
     deleteName: '',
     editMode: false,
-    formData: { id: '', nama_halaqoh: '', ustadz_id: '' },
+    formData: { id: '', nama_halaqoh: '', ustadz_id: '', program_code: 'bapak' },
     openAdd() {
         this.editMode = false;
-        this.formData = { id: '', nama_halaqoh: '', ustadz_id: '' };
+        this.formData = { id: '', nama_halaqoh: '', ustadz_id: '', program_code: 'bapak' };
         this.showModal = true;
     },
     openEdit(item) {
@@ -157,7 +173,8 @@ $ustadz_list = $pdo->query("SELECT id, nama_lengkap FROM users WHERE role = 'ust
                 <h3 class="text-xl font-bold text-slate-800 mb-1">
                     <?php echo htmlspecialchars($h['nama_halaqoh']); ?>
                 </h3>
-                <p class="text-slate-500 text-sm mb-4">Ustadz: <span class="text-slate-700 font-semibold">
+                <p class="text-sm text-blue-600">Tahsin <?= htmlspecialchars(ucfirst($h['program_code'] ?? 'bapak')) ?></p>
+                <p class="text-slate-500 text-sm mb-4">Pengajar: <span class="text-slate-700 font-semibold">
                         <?php echo htmlspecialchars($h['nama_ustadz']); ?>
                     </span></p>
 
@@ -183,6 +200,7 @@ $ustadz_list = $pdo->query("SELECT id, nama_lengkap FROM users WHERE role = 'ust
                 <input type="hidden" name="action" value="save">
                 <input type="hidden" name="id" x-model="formData.id">
                 <div class="space-y-4">
+                    <?php if ($programSchema): ?><div><label class="block text-sm font-semibold text-slate-700 mb-1">Program Tahsin</label><select name="program_code" x-model="formData.program_code" class="w-full px-4 py-2 rounded-xl border border-slate-200"><option value="bapak">Bapak</option><option value="ibu">Ibu</option></select></div><?php endif; ?>
                     <div>
                         <label class="block text-sm font-semibold text-slate-700 mb-1">Nama Halaqoh</label>
                         <input type="text" name="nama_halaqoh" x-model="formData.nama_halaqoh" required
@@ -190,10 +208,10 @@ $ustadz_list = $pdo->query("SELECT id, nama_lengkap FROM users WHERE role = 'ust
                             placeholder="Contoh: Abu Bakar Ash-Shiddiq">
                     </div>
                     <div>
-                        <label class="block text-sm font-semibold text-slate-700 mb-1">Pilih Ustadz</label>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">Pilih Pengajar</label>
                         <select name="ustadz_id" x-model="formData.ustadz_id" required
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
-                            <option value="">-- Pilih Ustadz --</option>
+                            <option value="">-- Pilih Pengajar --</option>
                             <?php foreach ($ustadz_list as $u): ?>
                                 <option value="<?php echo $u['id']; ?>">
                                     <?php echo htmlspecialchars($u['nama_lengkap']); ?>

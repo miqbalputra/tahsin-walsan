@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tahsin-presensi-v5';
+const CACHE_NAME = 'tahsin-presensi-v6';
 
 // Hanya cache aset STATIS — JANGAN cache file PHP
 const STATIC_ASSETS = [
@@ -6,7 +6,9 @@ const STATIC_ASSETS = [
     'icon-512.png',
     'assets/css/app.css',
     'assets/js/alpine.min.js',
-    'assets/js/chart.umd.min.js'
+    'assets/js/chart.umd.min.js',
+    'assets/js/tahsin-autosave.js?v=1',
+    'assets/css/tahsin-autosave.css?v=1'
 ];
 
 // Install: cache aset statis saja
@@ -14,7 +16,7 @@ self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => cache.addAll(STATIC_ASSETS))
-            .then(() => self.skipWaiting())
+            // Wait for existing tabs to close: never replace an active draft editor.
     );
 });
 
@@ -26,7 +28,7 @@ self.addEventListener('activate', event => {
                 keys.filter(key => key !== CACHE_NAME)
                     .map(key => caches.delete(key))
             )
-        ).then(() => self.clients.claim())
+        )
     );
 });
 

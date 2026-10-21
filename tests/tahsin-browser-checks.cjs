@@ -14,6 +14,18 @@ function check(value, message) { assert(value, message); checks++; }
   const errors = [];
   async function login(username, viewport = {width: 1600, height: 1000}) {
     const context = await browser.newContext({viewport});
+    // Historical fixtures must not gain additional empty weeks as the real date advances.
+    // Opt in to a fixed reporting period; explicit custom-period scenarios stay unchanged.
+    if (process.env.TAHSIN_TEST_REPORT_END) {
+      await context.route('**/*.php*', async route => {
+        const url = new URL(route.request().url());
+        if (route.request().method() === 'GET' && /\/(rekap-lengkap|persentase-keaktifan|pantau-input|progress-wali|rekap-halaqoh|laporan-bulanan)\.php$/.test(url.pathname) && !url.searchParams.has('end_date')) {
+          url.searchParams.set('start_date', '2026-10-01');
+          url.searchParams.set('end_date', process.env.TAHSIN_TEST_REPORT_END);
+          await route.continue({url: url.toString()});
+        } else await route.continue();
+      });
+    }
     const page = await context.newPage();
     page.on('pageerror', e => errors.push(e.message));
     await page.goto(base + '/login.php');
@@ -164,7 +176,8 @@ function check(value, message) { assert(value, message); checks++; }
     check(apiFail.status() === 401, 'Reminder data requires API key');
     const api = await context.request.get(base + '/api/daily-reminder.php', {headers: {'X-API-Key': 'tahsin-test-api'}});
     const pending = await api.json();
-    check(pending.status === 'success' && pending.data[0].missing_presensi === 2, 'Reminder API shares report counts');
+    const expectedCurrentMissing = pending.tanggal_tahsin === '2026-10-11' ? 2 : 4;
+    check(pending.status === 'success' && pending.data[0].missing_presensi === expectedCurrentMissing, 'Reminder API follows the fixture roster for the current session');
     const stats = await context.request.get(base + '/api/hermes.php?action=stats', {headers: {'X-API-Key': 'tahsin-test-api'}});
     check((await stats.json()).data.ringkasan.hadir_percent === 50, 'Hermes shares official ratios');
     for (const route of ['progress-wali.php', 'rekap-halaqoh.php', 'laporan-bulanan.php']) {

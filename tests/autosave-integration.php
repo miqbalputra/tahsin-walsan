@@ -1,0 +1,87 @@
+<?php
+/** Run only against an isolated localhost test database. Never loads app DB env. */
+if (PHP_SAPI !== 'cli') exit;
+require_once __DIR__ . '/../includes/autosave_helper.php';
+require_once __DIR__ . '/../includes/autosave_migration_helper.php';
+require_once __DIR__ . '/../includes/tahsin_migration_helper.php';
+$database = $argv[1] ?? 'tahsin_test_autosave_' . getmypid();
+if (!preg_match('/^tahsin_test_autosave_[a-z0-9_]+$/D', $database)) throw new RuntimeException('Isolated autosave database name required.');
+$pdo = new PDO('mysql:host=127.0.0.1;port=13317;charset=utf8mb4', 'root', 'tahsin_local_test', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false]);
+$pdo->exec("CREATE DATABASE `{$database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+$pdo->exec("USE `{$database}`");
+$pdo->exec("SET time_zone = '+07:00'");
+$pdo->exec(file_get_contents(__DIR__ . '/fixtures/tahsin-schema.sql'));
+$pdo->exec("CREATE TABLE holidays (id INT AUTO_INCREMENT PRIMARY KEY,tanggal DATE NOT NULL UNIQUE,keterangan VARCHAR(255));
+CREATE TABLE activity_logs (id INT AUTO_INCREMENT PRIMARY KEY,user_id INT,username VARCHAR(50),action VARCHAR(100),description TEXT,ip_address VARCHAR(45),created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE login_attempts (id INT AUTO_INCREMENT PRIMARY KEY,ip_address VARCHAR(45),username VARCHAR(50),attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE pengumuman (id INT AUTO_INCREMENT PRIMARY KEY,judul VARCHAR(255),isi TEXT,is_aktif TINYINT DEFAULT 1,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+$insert = $pdo->prepare('INSERT INTO users(id,username,password,nama_lengkap,role) VALUES(?,?,?,?,?)');
+foreach ([[1,'admin_test','Admin','admin'],[2,'guru_test','Guru Ibu','ustadz'],[4,'guru_lain','Guru Lain','ustadz'],[5,'kepsek_test','Kepala Sekolah','kepsek']] as [$id,$user,$name,$role]) $insert->execute([$id,$user,password_hash('TahsinTest-2026', PASSWORD_DEFAULT),$name,$role]);
+$pdo->exec("INSERT INTO halaqoh(id,nama_halaqoh,ustadz_id) VALUES(1,'Bapak Uji',2),(2,'Kelompok Lain',4),(3,'Ibu Uji',2)");
+$pdo->exec("INSERT INTO wali_santri(id,nama_bapak) VALUES(1,'Bapak Ahmad'),(2,'Bapak Hasan'),(3,'Bapak Yusuf'),(4,'Bapak Ali'),(10,'Ibu Aminah'),(11,'Ibu Fatimah'),(12,'Ibu Khadijah'),(13,'Ibu Maryam')");
+$pdo->exec("INSERT INTO santri_detail(wali_santri_id,nama_anak,kelas) VALUES(10,'Ahmad','2A'),(11,'Hasan','1A')");
+foreach ([1,2,3,4] as $id) $pdo->exec("INSERT INTO halaqoh_members(halaqoh_id,wali_santri_id) VALUES(1,{$id})");
+foreach ([10,11,12,13] as $id) $pdo->exec("INSERT INTO halaqoh_members(halaqoh_id,wali_santri_id) VALUES(3,{$id})");
+$pdo->exec('SET timestamp=' . (time() - 60 * 86400));
+tahsinApplyMigration($pdo);
+autosaveApplyMigration($pdo);
+autosaveApplyMigration($pdo);
+$pdo->exec("UPDATE halaqoh SET program_code='ibu' WHERE id=3");
+$pdo->exec('SET timestamp=0');
+$date = tahsinLatestSession(tahsinNow()->format('Y-m-d'));
+$checks = 0;
+function avCheck(bool $ok, string $message): void { global $checks; if (!$ok) throw new RuntimeException($message); $checks++; }
+function avFails(callable $fn, int $status, string $message): void { try { $fn(); } catch (AutosaveException $e) { avCheck($e->httpStatus === $status, $message); return; } throw new RuntimeException($message); }
+function avRequest(array $entry, array $payload, string $operation = ''): array {
+    return ['operation_id' => $operation ?: bin2hex(random_bytes(16)), 'program' => 'bapak', 'wali_id' => $entry['wali_id'], 'payload' => $payload,
+        'context_revision' => $entry['context_revision'], 'official_revision' => $entry['official_revision'], 'draft_revision' => $entry['draft_revision']];
+}
+$state = autosaveSessionState($pdo,2,1,$date);
+avCheck(count($state['entries']) === 4 && $state['entries'][0]['state'] === 'empty', 'Fresh roster is empty, never Alfa');
+avFails(fn() => autosaveSessionState($pdo,4,1,$date),403,'Other teacher denied');
+$entry = $state['entries'][0]; $partial = $entry['payload']; $partial['status'] = 'H'; $partial['jenis_materi'] = 'Iqro'; $partial['jilid'] = '2';
+$request = avRequest($entry,$partial);
+$draft = autosaveWrite($pdo,2,1,$date,$request);
+avCheck($draft['state'] === 'draft' && $draft['draft_revision'] === 1,'Incomplete H saved as server draft');
+avCheck((int)$pdo->query('SELECT COUNT(*) FROM presensi')->fetchColumn() === 0,'Draft excluded from attendance');
+avCheck(autosaveSessionState($pdo,2,1,$date)['entries'][0]['payload'] === $partial,'Draft recovered on another device');
+avCheck(autosaveWrite($pdo,2,1,$date,$request) === $draft,'Lost response retry returns same receipt');
+$changedRequest = $request; $changedRequest['payload']['jilid'] = '3';
+avFails(fn() => autosaveWrite($pdo,2,1,$date,$changedRequest),409,'Operation cannot be reused with different payload');
+$rotatedToken = $request; $rotatedToken['csrf_token'] = 'rotated';
+avCheck(autosaveWrite($pdo,2,1,$date,$rotatedToken) === $draft,'Token rotation does not change operation identity');
+$complete = array_replace($partial,['halaman_dari'=>'4','halaman_sampai'=>'5','hasil_talaqqi'=>'Lulus']);
+$officialRequest = avRequest($draft,$complete);
+$official = autosaveWrite($pdo,2,1,$date,$officialRequest);
+avCheck($official['state'] === 'official' && $official['official_complete'],'Complete H promoted atomically');
+avCheck((int)$pdo->query('SELECT COUNT(*) FROM presensi')->fetchColumn() === 1,'One official record only');
+avCheck(autosaveWrite($pdo,2,1,$date,$officialRequest) === $official,'Complete request retry idempotent');
+$incompleteEdit = $complete; $incompleteEdit['halaman_sampai'] = '';
+$pendingEdit = autosaveWrite($pdo,2,1,$date,avRequest($official,$incompleteEdit));
+avCheck($pendingEdit['state'] === 'draft' && $pendingEdit['official_complete'],'Editing complete attendance keeps official version');
+avCheck($pdo->query('SELECT halaman FROM presensi WHERE wali_santri_id=1')->fetchColumn() === '4-5','Partial edit cannot overwrite official material');
+avFails(fn() => autosaveWrite($pdo,2,1,$date,avRequest($official,$complete)),409,'Concurrent stale device rejected');
+$pdo->exec("UPDATE presensi SET halaman='6-7' WHERE wali_santri_id=1");
+$adminChanged = autosaveSessionState($pdo,2,1,$date)['entries'][0];
+avCheck($adminChanged['state'] === 'conflict' && $adminChanged['official_revision'] !== $pendingEdit['official_revision'],'Direct admin changes invalidate draft');
+avFails(fn() => autosaveWrite($pdo,2,1,$date,avRequest($pendingEdit,$complete)),409,'Old queued edit cannot overwrite admin');
+$accepted = autosaveWrite($pdo,2,1,$date,avRequest($adminChanged,$complete));
+avCheck($accepted['state'] === 'official','Explicitly reviewed revision can save');
+$revisions = ['1'=>$accepted['official_revision']];
+avFails(fn() => autosaveFinalize($pdo,2,1,$date,['context_revision'=>$state['context_revision'],'revisions'=>$revisions]),409,'Finalization cannot invent remaining Alfa');
+foreach (array_slice(autosaveSessionState($pdo,2,1,$date)['entries'],1) as $other) autosaveWrite($pdo,2,1,$date,avRequest($other,array_replace($other['payload'],['status'=>'A'])));
+$all = autosaveSessionState($pdo,2,1,$date);
+$revisions = array_column($all['entries'],'official_revision','wali_id');
+avCheck(autosaveFinalize($pdo,2,1,$date,['context_revision'=>$all['context_revision'],'revisions'=>$revisions])['completed'],'All complete finalizes');
+avCheck(autosaveSessionState($pdo,2,1,$date)['completed_at'] !== null,'Completion state survives reload');
+$pdo->exec("UPDATE presensi SET status='I',alasan='Keperluan keluarga' WHERE wali_santri_id=2");
+avCheck(autosaveSessionState($pdo,2,1,$date)['completed_at'] === null,'Admin correction invalidates completion');
+$mother = autosaveSessionState($pdo,2,3,$date);
+avCheck($mother['program'] === 'ibu' && count($mother['entries']) === 4,'Ibu uses same flow with separate program context');
+$cross = avRequest($mother['entries'][0],array_replace($mother['entries'][0]['payload'],['status'=>'A']));
+avFails(fn() => autosaveWrite($pdo,2,3,$date,$cross),409,'Program spoofing rejected');
+$pdo->prepare('INSERT INTO holidays(tanggal,keterangan) VALUES(?,?)')->execute([$date,'Libur uji']);
+avFails(fn() => autosaveWrite($pdo,2,1,$date,avRequest($accepted,$complete)),409,'Holiday change rejects queued mutation');
+$pdo->exec('DELETE FROM holidays');
+avCheck(autosaveMissing(array_replace($complete,['halaman_dari'=>'9','halaman_sampai'=>'2'])) !== [],'Invalid ranges stay drafts');
+echo "PASS {$checks} autosave database assertions\nSTAGING_DATABASE={$database}\nSTAGING_DATE={$date}\n";

@@ -313,7 +313,8 @@ function attendanceSaveEntries(PDO $pdo, $halaqohId, $ustadzId, $tanggal, $entri
         throw new AttendanceValidationException('Sesi Ahad ini libur. Presensi tidak boleh diinput sebagai Alfa atau pertemuan wajib.');
     }
 
-    $pdo->beginTransaction();
+    $ownsTransaction = !$pdo->inTransaction();
+    if ($ownsTransaction) $pdo->beginTransaction();
     try {
         // The lock makes the read-then-insert path safe against concurrent
         // autosave/finalization requests for the same halaqoh.
@@ -410,10 +411,10 @@ function attendanceSaveEntries(PDO $pdo, $halaqohId, $ustadzId, $tanggal, $entri
             $savedCount++;
         }
 
-        $pdo->commit();
+        if ($ownsTransaction) $pdo->commit();
         return ['saved' => $savedCount, 'deleted' => $deletedCount, 'auto_alpha' => $autoAlphaCount];
     } catch (Throwable $e) {
-        if ($pdo->inTransaction()) {
+        if ($ownsTransaction && $pdo->inTransaction()) {
             $pdo->rollBack();
         }
         throw $e;
