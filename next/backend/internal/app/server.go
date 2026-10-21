@@ -41,6 +41,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/auth/logout", s.authenticate(http.HandlerFunc(s.handleLogout)))
 	mux.Handle("GET /api/v1/teacher/groups", s.requireRoles(http.HandlerFunc(s.handleGroups), "admin", "pj_tahfidz", "kepsek", "ustadz"))
 	mux.Handle("GET /api/v1/families", s.requireRoles(http.HandlerFunc(s.handleFamilies), "admin", "pj_tahfidz"))
+	mux.Handle("GET /api/v1/reports/attendance", s.requireRoles(http.HandlerFunc(s.handleAttendanceReport), "admin", "pj_tahfidz", "kepsek"))
+	mux.Handle("GET /api/v1/reports/attendance/options", s.requireRoles(http.HandlerFunc(s.handleAttendanceReportOptions), "admin", "pj_tahfidz", "kepsek"))
+	mux.Handle("DELETE /api/v1/attendance/records/{id}", s.requireRoles(http.HandlerFunc(s.handleDeleteAttendance), "admin", "pj_tahfidz"))
 	mux.Handle("GET /api/v1/attendance/state", s.requireRoles(http.HandlerFunc(s.handleAttendanceState), "ustadz"))
 	mux.Handle("POST /api/v1/attendance/snapshot", s.requireRoles(http.HandlerFunc(s.handleAttendanceSnapshot), "ustadz"))
 	mux.Handle("POST /api/v1/attendance/finalize", s.requireRoles(http.HandlerFunc(s.handleAttendanceSnapshot), "ustadz"))
@@ -377,6 +380,9 @@ func (s *Server) staticOrSPA() http.Handler {
 			return
 		}
 		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+			if filepath.Ext(candidate) == ".webmanifest" {
+				w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
+			}
 			assetName := r.URL.Path
 			if slash := strings.LastIndex(assetName, "/"); slash >= 0 {
 				assetName = assetName[slash+1:]

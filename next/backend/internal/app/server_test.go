@@ -63,6 +63,9 @@ func TestStaticRouterServesLegacyPageFallbackButNotAPIsOrMissingAssets(t *testin
 	if err := os.WriteFile(filepath.Join(dir, "assets", "app-a1b2c3d4.js"), []byte("hashed-bundle"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "app.webmanifest"), []byte(`{"name":"Tahsin"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	cfg := Config{StaticDir: dir, Environment: "development", CookieName: "tahsin_session", SessionDays: 30}
 	server := NewServer(cfg, nil)
 	handler := server.Handler()
@@ -70,7 +73,7 @@ func TestStaticRouterServesLegacyPageFallbackButNotAPIsOrMissingAssets(t *testin
 		path string
 		code int
 		body string
-	}{{"/", 200, "portal-index"}, {"/dashboard.php", 200, "portal-index"}, {"/assets/app.js", 200, "bundle"}, {"/assets/app-a1b2c3d4.js", 200, "hashed-bundle"}, {"/assets/missing.js", 404, ""}, {"/api/v1/missing", 404, "Endpoint API tidak ditemukan."}} {
+	}{{"/", 200, "portal-index"}, {"/dashboard.php", 200, "portal-index"}, {"/assets/app.js", 200, "bundle"}, {"/assets/app-a1b2c3d4.js", 200, "hashed-bundle"}, {"/app.webmanifest", 200, `{"name":"Tahsin"}`}, {"/assets/missing.js", 404, ""}, {"/api/v1/missing", 404, "Endpoint API tidak ditemukan."}} {
 		t.Run(test.path, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, httptest.NewRequest("GET", test.path, nil))
@@ -85,6 +88,9 @@ func TestStaticRouterServesLegacyPageFallbackButNotAPIsOrMissingAssets(t *testin
 			}
 			if test.path == "/assets/app.js" && !contains(recorder.Header().Get("Cache-Control"), "no-store") {
 				t.Fatal("unhashed asset was cached indefinitely")
+			}
+			if test.path == "/app.webmanifest" && recorder.Header().Get("Content-Type") != "application/manifest+json; charset=utf-8" {
+				t.Fatalf("web manifest content type = %q", recorder.Header().Get("Content-Type"))
 			}
 		})
 	}

@@ -12,6 +12,7 @@ Paket produksi terpisah dari paket staging: `docker/Dockerfile.go-vue-production
 - Perintah eksplisit `tahsin-migrate` hanya membuat tabel aditif `tahsin_app_sessions`; `CREATE TABLE IF NOT EXISTS` aman diulang dan tidak mengubah tabel/data lama.
 - Endpoint Go membaca sesi guru memakai reader yang sudah diuji terhadap kontrak PHP autosave. Endpoint `/ustadz/api-autosave.php` tetap tersedia sebagai alias dan mempertahankan hash tanda terima untuk antrean operasi IndexedDB lama.
 - Penulis runtime Go tidak memakai tabel writer staging. Ia memakai tabel revision per peserta untuk mengunci penyimpanan satu peserta pada satu sesi; mode staging dan guard synthetic database tetap terpisah.
+- Laporan presensi dasar telah dipindahkan sebagai API berfilter dan berhalaman, dengan batas role serta penghapusan yang mencatat audit, menaikkan revisi autosave, dan membatalkan status sesi.
 - Roster guru memakai `family_children` jika view integrasi keluarga tersedia, lalu fallback ke `santri_detail`.
 - File versi PHP, Compose staging, migration lama, ID, dan data tidak diubah oleh pekerjaan ini.
 
@@ -21,8 +22,17 @@ Lihat [.env.go-vue.example](../.env.go-vue.example). `DB_HOST`, `DB_PORT`, `DB_D
 
 `MIGRATION_DB_USERNAME` dan `MIGRATION_DB_PASSWORD` diperlukan sementara ketika operator menjalankan `tahsin-migrate`, dan harus memakai akun yang boleh membuat tabel. Jangan memasukkannya ke environment runtime app. `TAHSIN_NEXT_*` tidak digunakan oleh runtime produksi.
 
+Akun runtime dibuat terpisah oleh operator database dan dibatasi ke host/jaringan container aplikasi. Pola grant yang diperlukan pada schema lama:
+
+```sql
+CREATE USER 'tahsin_go_app'@'<host-atau-subnet-aplikasi>' IDENTIFIED BY '<secret-di-Coolify>';
+GRANT SELECT, INSERT, UPDATE, DELETE ON `db_tahsinbpk`.* TO 'tahsin_go_app'@'<host-atau-subnet-aplikasi>';
+```
+
+Ganti nama schema dan host sesuai resource lama; jangan memakai `*.*`, `WITH GRANT OPTION`, atau kredensial migrasi untuk runtime. Jika MySQL mewajibkan TLS, pasang CA sebagai file read-only di container dan isi `DB_TLS_CA_FILE` dengan path file tersebut.
+
 ## Batas kesiapan
 
-Image ini **belum memenuhi syarat redeploy produksi**. Login, fondasi sesi guru, autosave, dan serving Vue sudah ada, tetapi port modul admin/PJ/kepsek, CRUD anak/keluarga/kelompok/pengguna, laporan/rapor/ekspor, backup-restore merge-only, Hermes, reminder, Data Induk, dan semua kontrak API lama masih harus dipindahkan serta diuji paritasnya. Handler untuk modul yang belum dipindahkan tidak boleh dianggap pengganti aplikasi PHP.
+Image ini **belum memenuhi syarat redeploy produksi**. Login, fondasi sesi guru, autosave, laporan presensi dasar, dan serving Vue sudah ada, tetapi port dashboard dan pemantauan Tahsin penuh, CRUD anak/keluarga/kelompok/pengguna, capaian/rapor/ekspor, backup-restore merge-only, Hermes, reminder, Data Induk, dan kontrak API lama masih harus dipindahkan serta diuji paritasnya. Handler untuk modul yang belum dipindahkan tidak boleh dianggap pengganti aplikasi PHP.
 
 Jangan pilih Compose produksi untuk mengganti traffic aplikasi aktif sampai seluruh modul dan integrasi itu selesai, pemeriksaan kesamaan data/laporan pada clone lulus, kredensial DML diverifikasi, antrean perangkat ditangani, serta backup independen dan latihan restore/replay binlog memenuhi gerbang di [runbook keselamatan migrasi](MIGRATION_SAFETY_RUNBOOK.md). Belum ada koneksi atau perubahan ke database produksi dari build ini.

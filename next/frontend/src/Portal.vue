@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Teacher from './Teacher.vue'
+import AttendanceReport from './AttendanceReport.vue'
 import FamilyPreview from './App.vue'
 import type { TeacherBoot } from './teacher'
 import { loadLegacyAutosave } from './autosave-loader'
@@ -103,6 +104,14 @@ async function signOut() {
   await router.replace('/login')
 }
 
+function expireLogin() {
+  user.value = null
+  csrf.value = ''
+  boot.value = null
+  groups.value = []
+  void router.replace('/login')
+}
+
 async function openSession(groupID = selectedGroup.value) {
   if (!groupID) { error.value = 'Pilih kelompok terlebih dahulu.'; return }
   selectedGroup.value = groupID
@@ -159,6 +168,7 @@ function localDate() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia
     <div v-if="error" class="global-error" role="alert"><span>{{ error }}</span><button @click="error = ''">Tutup</button></div>
     <section v-if="isTeacherSession && boot" class="content teacher-content"><Teacher :key="boot.halaqoh_id + ':' + boot.tanggal" :boot="boot"></Teacher></section>
     <section v-else-if="screen === 'keluarga'" class="content"><div id="go-vue-preview"><FamilyPreview endpoint="/api/v1/families" :hide-back-link="true" /></div></section>
+    <section v-else-if="screen === 'laporan'" class="content"><AttendanceReport :csrf="csrf" :role="user.role" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'hari-ini' || screen === 'sesi'" class="content">
       <div class="page-heading"><p class="eyebrow">{{ user.role === 'ustadz' ? 'HARI INI' : 'TAHSIN' }}</p><h1>{{ user.role === 'ustadz' ? 'Sesi mengajar' : 'Ringkasan Tahsin' }}</h1><p class="muted">Pilih kelompok dan tanggal untuk membuka daftar peserta.</p></div>
       <div v-if="busy" class="panel">Memuat peserta dan capaian…</div>
