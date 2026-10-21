@@ -148,6 +148,31 @@ func TestUserAdministrationEndpointsRequireAuthentication(t *testing.T) {
 	}
 }
 
+func TestAdministrationReadEndpointsRequireAuthentication(t *testing.T) {
+	server := NewServer(Config{Environment: "development", CookieName: "tahsin_session", SessionDays: 30}, nil)
+	for _, path := range []string{"/api/v1/dashboard", "/api/v1/logs", "/api/v1/settings/report"} {
+		t.Run(path, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, httptest.NewRequest("GET", path, nil))
+			if recorder.Code != 401 {
+				t.Fatalf("status = %d, want 401; body=%s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+	for _, method := range []string{"PATCH"} {
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(method, "/api/v1/settings/report", nil))
+		if recorder.Code != 401 {
+			t.Fatalf("status = %d, want 401; body=%s", recorder.Code, recorder.Body.String())
+		}
+	}
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest("GET", "/export-excel.php", nil))
+	if recorder.Code != 401 {
+		t.Fatalf("spreadsheet export status = %d, want 401; body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestOperationsEndpointsRequireAuthentication(t *testing.T) {
 	server := NewServer(Config{Environment: "development", CookieName: "tahsin_session", SessionDays: 30}, nil)
 	for _, test := range []struct{ method, path string }{

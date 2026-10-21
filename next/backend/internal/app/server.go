@@ -53,6 +53,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/users", s.requireRoles(http.HandlerFunc(s.handleUsers), "admin", "pj_tahfidz"))
 	mux.Handle("POST /api/v1/users", s.requireRoles(http.HandlerFunc(s.handleUsers), "admin", "pj_tahfidz"))
 	mux.Handle("PATCH /api/v1/users/{id}", s.requireRoles(http.HandlerFunc(s.handleUser), "admin", "pj_tahfidz"))
+	mux.Handle("GET /api/v1/dashboard", s.requireRoles(http.HandlerFunc(s.handleDashboard), "admin", "pj_tahfidz", "kepsek"))
+	mux.Handle("GET /api/v1/logs", s.requireRoles(http.HandlerFunc(s.handleActivityLogs), "admin"))
+	mux.Handle("GET /api/v1/settings/report", s.requireRoles(http.HandlerFunc(s.handleReportSettings), "admin"))
+	mux.Handle("PATCH /api/v1/settings/report", s.requireRoles(http.HandlerFunc(s.handleReportSettings), "admin"))
 	mux.Handle("GET /api/v1/holidays", s.requireRoles(http.HandlerFunc(s.handleHolidays), "admin", "pj_tahfidz", "kepsek", "ustadz"))
 	mux.Handle("POST /api/v1/holidays", s.requireRoles(http.HandlerFunc(s.handleHolidays), "admin", "pj_tahfidz"))
 	mux.Handle("DELETE /api/v1/holidays/{id}", s.requireRoles(http.HandlerFunc(s.handleHoliday), "admin", "pj_tahfidz"))
@@ -63,6 +67,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/families", s.requireRoles(http.HandlerFunc(s.handleFamilies), "admin", "pj_tahfidz"))
 	mux.Handle("GET /api/v1/reports/attendance", s.requireRoles(http.HandlerFunc(s.handleAttendanceReport), "admin", "pj_tahfidz", "kepsek", "ustadz"))
 	mux.Handle("GET /api/v1/reports/attendance/options", s.requireRoles(http.HandlerFunc(s.handleAttendanceReportOptions), "admin", "pj_tahfidz", "kepsek", "ustadz"))
+	mux.Handle("GET /export-excel.php", s.requireRoles(http.HandlerFunc(s.handleAttendanceExport), "admin", "pj_tahfidz", "kepsek", "ustadz"))
 	mux.Handle("DELETE /api/v1/attendance/records/{id}", s.requireRoles(http.HandlerFunc(s.handleDeleteAttendance), "admin", "pj_tahfidz", "ustadz"))
 	mux.Handle("GET /api/v1/attendance/state", s.requireRoles(http.HandlerFunc(s.handleAttendanceState), "ustadz"))
 	mux.Handle("POST /api/v1/attendance/snapshot", s.requireRoles(http.HandlerFunc(s.handleAttendanceSnapshot), "ustadz"))
@@ -103,7 +108,7 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var missing []string
-	for _, table := range []string{"users", "halaqoh", "halaqoh_members", "wali_santri", "santri_detail", "presensi", "activity_logs", "login_attempts", "holidays", "pengumuman", "tahsin_tracking", "tahsin_roster_history", "tahsin_verifications", "tahsin_autosave_drafts", "tahsin_autosave_operations", "tahsin_autosave_revisions", "tahsin_autosave_sessions", "tahsin_app_sessions"} {
+	for _, table := range []string{"users", "halaqoh", "halaqoh_members", "wali_santri", "santri_detail", "presensi", "activity_logs", "login_attempts", "holidays", "pengumuman", "settings", "tahsin_tracking", "tahsin_roster_history", "tahsin_verifications", "tahsin_autosave_drafts", "tahsin_autosave_operations", "tahsin_autosave_revisions", "tahsin_autosave_sessions", "tahsin_app_sessions"} {
 		var exists int
 		if err := s.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?", table).Scan(&exists); err != nil || exists != 1 {
 			missing = append(missing, table)

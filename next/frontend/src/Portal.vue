@@ -8,6 +8,9 @@ import Participants from './Participants.vue'
 import UserManagement from './UserManagement.vue'
 import HolidayManagement from './HolidayManagement.vue'
 import AnnouncementManagement from './AnnouncementManagement.vue'
+import Dashboard from './Dashboard.vue'
+import ActivityLogs from './ActivityLogs.vue'
+import ReportSettings from './ReportSettings.vue'
 import FamilyPreview from './App.vue'
 import type { TeacherBoot } from './teacher'
 import { loadLegacyAutosave } from './autosave-loader'
@@ -40,6 +43,9 @@ const menus = computed(() => {
   ]
   if (role === 'kepsek') return [
     { path: '/dashboard', label: 'Dashboard' }, { path: '/progress', label: 'Progress' }, { path: '/rekap', label: 'Rekap' }, { path: '/laporan', label: 'Laporan' },
+  ]
+  if (role === 'admin') return [
+    { path: '/dashboard', label: 'Dashboard' }, { path: '/peserta', label: 'Peserta' }, { path: '/keluarga', label: 'Keluarga' }, { path: '/halaqoh', label: 'Kelompok' }, { path: '/users', label: 'Pengguna' }, { path: '/libur', label: 'Hari Libur' }, { path: '/pengumuman', label: 'Pengumuman' }, { path: '/laporan', label: 'Laporan' }, { path: '/logs', label: 'Log' }, { path: '/pengaturan-rapor', label: 'Pengaturan Rapor' }, { path: '/akun', label: 'Akun' },
   ]
   return [
     { path: '/dashboard', label: 'Dashboard' }, { path: '/peserta', label: 'Peserta' }, { path: '/keluarga', label: 'Keluarga' }, { path: '/halaqoh', label: 'Kelompok' }, { path: '/users', label: 'Pengguna' }, { path: '/libur', label: 'Hari Libur' }, { path: '/pengumuman', label: 'Pengumuman' }, { path: '/laporan', label: 'Laporan' }, { path: '/akun', label: 'Akun' },
@@ -161,7 +167,7 @@ watch(() => [route.path, route.query.id, route.query.tanggal], async ([path, gro
 onMounted(loadIdentity)
 
 const moduleLabel: Record<string, string> = {
-  dashboard: 'Dashboard', peserta: 'Data Peserta', keluarga: 'Keluarga Anak–Bapak–Ibu', halaqoh: 'Data Kelompok', users: 'Data User', riwayat: 'Riwayat Presensi', laporan: 'Laporan', progress: 'Progress', rekap: 'Rekap', akun: 'Akun', capaian: 'Capaian', libur: 'Hari Libur', pengumuman: 'Pengumuman', 'data-induk': 'Sinkronisasi Data Induk', backup: 'Backup & Restore',
+  dashboard: 'Dashboard', peserta: 'Data Peserta', keluarga: 'Keluarga Anak–Bapak–Ibu', halaqoh: 'Data Kelompok', users: 'Data User', riwayat: 'Riwayat Presensi', laporan: 'Laporan', progress: 'Progress', rekap: 'Rekap', akun: 'Akun', capaian: 'Capaian', libur: 'Hari Libur', pengumuman: 'Pengumuman', logs: 'Log Aktivitas', 'pengaturan-rapor': 'Pengaturan Rapor', 'data-induk': 'Sinkronisasi Data Induk', backup: 'Backup & Restore',
 }
 const surahNames = ['Al-Fatihah','Al-Baqarah',"Ali 'Imran",'An-Nisa',"Al-Ma’idah",'Al-An’am','Al-A’raf','Al-Anfal','At-Taubah','Yunus','Hud','Yusuf','Ar-Ra’d','Ibrahim','Al-Hijr','An-Nahl','Al-Isra','Al-Kahf','Maryam','Taha','Al-Anbiya','Al-Hajj','Al-Mu’minun','An-Nur','Al-Furqan','Ash-Shu’ara','An-Naml','Al-Qasas','Al-Ankabut','Ar-Rum','Luqman','As-Sajdah','Al-Ahzab','Saba','Fatir','Yasin','As-Saffat','Sad','Az-Zumar','Ghafir','Fussilat','Ash-Shura','Az-Zukhruf','Ad-Dukhan','Al-Jathiyah','Al-Ahqaf','Muhammad','Al-Fath','Al-Hujurat','Qaf','Adh-Dhariyat','At-Tur','An-Najm','Al-Qamar','Ar-Rahman','Al-Waqi’ah','Al-Hadid','Al-Mujadilah','Al-Hashr','Al-Mumtahanah','As-Saff','Al-Jumu’ah','Al-Munafiqun','At-Taghabun','At-Talaq','At-Tahrim','Al-Mulk','Al-Qalam','Al-Haqqah','Al-Ma’arij','Nuh','Al-Jinn','Al-Muzzammil','Al-Muddaththir','Al-Qiyamah','Al-Insan','Al-Mursalat','An-Naba','An-Nazi’at','Abasa','At-Takwir','Al-Infitar','Al-Mutaffifin','Al-Inshiqaq','Al-Buruj','At-Tariq','Al-A’la','Al-Ghashiyah','Al-Fajr','Al-Balad','Ash-Shams','Al-Lail','Ad-Duha','Ash-Sharh','At-Tin','Al-Alaq','Al-Qadr','Al-Bayyinah','Az-Zalzalah','Al-Adiyat','Al-Qari’ah','At-Takathur','Al-Asr','Al-Humazah','Al-Fil','Quraysh','Al-Ma’un','Al-Kawthar','Al-Kafirun','An-Nasr','Al-Masad','Al-Ikhlas','Al-Falaq','An-Nas']
 function localDate() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) }
@@ -182,6 +188,9 @@ function localDate() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia
     <div v-if="error" class="global-error" role="alert"><span>{{ error }}</span><button @click="error = ''">Tutup</button></div>
     <aside v-if="user.role === 'ustadz' && activeAnnouncement" class="teacher-announcement" aria-label="Pengumuman aktif"><strong>{{ activeAnnouncement.judul }}</strong><p>{{ activeAnnouncement.isi }}</p></aside>
     <section v-if="isTeacherSession && boot" class="content teacher-content"><Teacher :key="boot.halaqoh_id + ':' + boot.tanggal" :boot="boot"></Teacher></section>
+    <section v-else-if="screen === 'dashboard' && (user.role === 'admin' || user.role === 'pj_tahfidz' || user.role === 'kepsek')" class="content"><Dashboard :role="user.role" /></section>
+    <section v-else-if="screen === 'logs' && user.role === 'admin'" class="content"><ActivityLogs /></section>
+    <section v-else-if="screen === 'pengaturan-rapor' && user.role === 'admin'" class="content"><ReportSettings :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'halaqoh' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><GroupManagement :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'peserta' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><Participants :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'users' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><UserManagement :csrf="csrf" @unauthorized="expireLogin" /></section>

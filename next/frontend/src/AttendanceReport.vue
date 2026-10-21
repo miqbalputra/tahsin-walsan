@@ -53,6 +53,10 @@ async function remove(row: ReportRow) {
 }
 
 function submit() { page.value = 1; void load() }
+function exportReport() {
+  const query = new URLSearchParams(Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== '')))
+  window.location.assign(`/export-excel.php?${query.toString()}`)
+}
 function movePage(delta: number) { page.value = Math.min(pages.value, Math.max(1, page.value + delta)); void load() }
 function material(row: ReportRow) {
   if (row.status !== 'H') return row.alasan ? `${statusLabel[row.status] || row.status} · ${row.alasan}` : statusLabel[row.status] || row.status
@@ -85,6 +89,7 @@ onMounted(() => { void initialize().catch(e => { error.value = (e as Error).mess
       <label>Kelas anak<select v-model="filters.kelas"><option value="">Semua kelas</option><option v-for="item in options.classes" :key="item" :value="item">{{ item }}</option></select></label>
       <label class="search-filter">Cari wali/anak<input v-model="filters.search" maxlength="100" placeholder="Nama wali atau anak"></label>
       <button class="primary" :disabled="busy">{{ busy ? 'Memuat…' : 'Terapkan filter' }}</button>
+      <button type="button" class="secondary" :disabled="busy" @click="exportReport">Unduh Excel</button>
     </form>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <div class="report-summary"><span>{{ total.toLocaleString('id-ID') }} catatan</span><span>Halaman {{ page }} dari {{ pages }}</span></div>

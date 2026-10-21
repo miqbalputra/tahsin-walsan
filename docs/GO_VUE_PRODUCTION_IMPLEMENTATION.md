@@ -22,6 +22,9 @@ Paket produksi terpisah dari paket staging: `docker/Dockerfile.go-vue-production
 - Halaman Riwayat guru memakai laporan presensi berfilter yang sama, tetapi server membatasi hasil dan pilihan filter ke kelompok guru yang sedang login. Guru hanya dapat menghapus catatan dari kelompoknya; perubahan menaikkan revisi autosave dan mencatat audit.
 - Modul libur memakai tabel lama: tanggal ganda memperbarui keterangan, dan menghapus penanda libur tidak menghapus catatan presensi. Operasi “bersihkan Alfa” tidak tersedia di Go.
 - Pengumuman dapat dibuat, diaktifkan, atau diarsipkan tanpa menghapus riwayat; pengumuman aktif ditampilkan pada akun guru.
+- Dashboard admin/PJ/kepala sekolah, log audit berpaginasi, dan baca/simpan pengaturan tanda tangan/template rapor kini tersedia pada API Go. Dashboard memberi label jelas bahwa hitungan Alfa adalah catatan mentah; laporan canonical Tahsin masih perlu dipindahkan.
+- Nilai template rapor PHP lama dibaca dan disimpan tanpa dieksekusi. Hasil cetak Go dan migrasi template ke renderer aman belum tersedia; halaman pengaturan menampilkan batas ini.
+- Ekspor daftar presensi dasar pada path lama `export-excel.php` menghasilkan tabel Excel HTML `.xls` dengan filter role yang sama, batas 50.000 baris, escaping HTML, dan perlindungan formula. Ekspor rekap canonical Tahsin masih belum dipindahkan.
 - File versi PHP, Compose staging, migration lama, ID, dan data tidak diubah oleh pekerjaan ini.
 
 ## Environment
@@ -53,9 +56,9 @@ Status modul agar keputusan cutover terukur:
 | Kelompok dan anggota | Daftar, tambah/edit, tambah anggota, dan arsip keanggotaan tersedia; hapus kelompok belum ada | Uji pada clone dengan histori/draft, alumni, dan perubahan roster serentak |
 | Peserta/anak | Daftar, tambah, ubah, penempatan kelompok, dan arsip lunak tersedia; tidak ada hapus fisik anak | Uji pada clone untuk keluarga legacy/Data Induk, alumni, relasi, dan membership; port import serta manajemen arsip lanjutan |
 | Pengguna | Daftar, tambah, dan ubah akun/role tersedia; penghapusan akun belum dipindahkan | Uji hash/password/role serta relasi user pada clone; implementasikan penghapusan atau penonaktifan yang aman |
-| Dashboard, histori, capaian, rapor, rekap, ekspor | Laporan presensi berfilter untuk admin/PJ/kepsek dan histori berlingkup guru tersedia; dashboard/progress/rapor/ekspor belum dipindahkan | Cocokkan hasil PHP dan Go untuk periode/filter yang sama dan port modul yang tersisa |
+| Dashboard, histori, capaian, rapor, rekap, ekspor | Dashboard hitungan mentah, laporan presensi berfilter, histori guru, dan ekspor daftar presensi tersedia; progress/rekap canonical, capaian, rapor/print, dan ekspor rekap belum tersedia | Port algoritme canonical tanpa mengubah definisi Alfa/kelengkapan; cocokkan hasil PHP dan Go pada clone |
 | Libur dan pengumuman | Tambah/daftar/hapus penanda libur dan buat/aktif/arsip pengumuman tersedia; penghapusan Alfa massal belum dipindahkan | Uji efek tanggal libur pada sesi/laporan dan paritas pesan aktif di clone |
-| Log dan pengaturan | Belum dipindahkan | Port operasi dan audit yang saat ini dipakai |
+| Log dan pengaturan | Log audit berpaginasi serta baca/simpan pengaturan rapor tersedia; renderer template PHP belum dipindahkan | Uji audit pada clone dan migrasikan template rapor ke renderer aman sebelum mengganti fungsi print |
 | Backup dan restore | Belum dipindahkan | Implementasikan pratinjau dan merge-only, lalu latihan restore di clone |
 | Hermes, n8n, pengingat, Data Induk | Belum dipindahkan | Pertahankan kontrak, rahasia, retry, dan uji endpoint lama |
 | Backup produksi dan pemulihan | Gerbang operasional | Salinan di luar home server, restore drill, dan replay delta/binlog yang teruji |

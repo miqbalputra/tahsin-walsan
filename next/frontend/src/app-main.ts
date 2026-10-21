@@ -8,6 +8,8 @@ const router = createRouter({
   routes: [
     { path: '/', redirect: '/hari-ini' },
     { path: '/dashboard.php', redirect: '/dashboard' },
+    { path: '/logs.php', redirect: '/logs' },
+    { path: '/pengaturan-rapor.php', redirect: '/pengaturan-rapor' },
     { path: '/ustadz/dashboard.php', redirect: '/hari-ini' },
     { path: '/ustadz/hari-ini.php', redirect: '/hari-ini' },
     { path: '/ustadz/input-presensi.php', redirect: '/sesi' },
