@@ -34,7 +34,7 @@ Ganti nama schema dan host sesuai resource lama; jangan memakai `*.*`, `WITH GRA
 
 ## Batas kesiapan
 
-Image ini **belum memenuhi syarat redeploy produksi**. Login, fondasi sesi guru, autosave, laporan presensi dasar, dan serving Vue sudah ada, tetapi port dashboard dan pemantauan Tahsin penuh, CRUD anak/keluarga/kelompok/pengguna, capaian/rapor/ekspor, backup-restore merge-only, Hermes, reminder, Data Induk, dan kontrak API lama masih harus dipindahkan serta diuji paritasnya. Handler untuk modul yang belum dipindahkan tidak boleh dianggap pengganti aplikasi PHP.
+Image ini **belum memenuhi syarat redeploy produksi**. Login, fondasi sesi guru, autosave, laporan presensi dasar, baca keluarga, serta tambah/edit dasar kelompok sudah ada, tetapi port dashboard dan pemantauan Tahsin penuh, CRUD anak/keluarga/anggota/pengguna, capaian/rapor/ekspor, backup-restore merge-only, Hermes, reminder, Data Induk, dan kontrak API lama masih harus dipindahkan serta diuji paritasnya. Handler untuk modul yang belum dipindahkan tidak boleh dianggap pengganti aplikasi PHP.
 
 Status modul agar keputusan cutover terukur:
 
@@ -43,7 +43,8 @@ Status modul agar keputusan cutover terukur:
 | Login dan role | Dasar tersedia | Uji semua role, hash password PHP, sesi, CSRF, dan akses endpoint pada clone |
 | Input guru dan autosave | Adapter lama dan writer Go tersedia | Uji antrean IndexedDB lama, offline, konflik, dua perangkat, serta laporan pada clone |
 | Daftar keluarga | Baca saja | Port tambah/edit/arsip keluarga-anak dan aturan Data Induk |
-| Peserta, kelompok, anggota, pengguna | Belum dipindahkan | Port CRUD/import/arsip dengan histori dan hak akses tetap |
+| Kelompok | Daftar dan tambah/edit dasar tersedia; hapus dan kelola anggota belum ada | Uji program Bapak/Ibu, pengajar, konflik histori/draft, serta port keanggotaan |
+| Peserta/anak dan pengguna | Belum dipindahkan | Port CRUD/import/arsip dengan histori, ID, dan hak akses tetap |
 | Dashboard, histori, capaian, rapor, rekap, ekspor | Laporan presensi dasar saja | Cocokkan hasil PHP dan Go untuk periode/filter yang sama |
 | Libur, pengumuman, log, pengaturan | Belum dipindahkan | Port operasi dan audit yang saat ini dipakai |
 | Backup dan restore | Belum dipindahkan | Implementasikan pratinjau dan merge-only, lalu latihan restore di clone |
