@@ -5,6 +5,7 @@ import Teacher from './Teacher.vue'
 import AttendanceReport from './AttendanceReport.vue'
 import GroupManagement from './GroupManagement.vue'
 import Participants from './Participants.vue'
+import UserManagement from './UserManagement.vue'
 import FamilyPreview from './App.vue'
 import type { TeacherBoot } from './teacher'
 import { loadLegacyAutosave } from './autosave-loader'
@@ -37,7 +38,7 @@ const menus = computed(() => {
     { path: '/dashboard', label: 'Dashboard' }, { path: '/progress', label: 'Progress' }, { path: '/rekap', label: 'Rekap' }, { path: '/laporan', label: 'Laporan' },
   ]
   return [
-    { path: '/dashboard', label: 'Dashboard' }, { path: '/peserta', label: 'Peserta' }, { path: '/keluarga', label: 'Keluarga' }, { path: '/halaqoh', label: 'Kelompok' }, { path: '/laporan', label: 'Laporan' }, { path: '/akun', label: 'Akun' },
+    { path: '/dashboard', label: 'Dashboard' }, { path: '/peserta', label: 'Peserta' }, { path: '/keluarga', label: 'Keluarga' }, { path: '/halaqoh', label: 'Kelompok' }, { path: '/users', label: 'Pengguna' }, { path: '/laporan', label: 'Laporan' }, { path: '/akun', label: 'Akun' },
   ]
 })
 const screen = computed(() => route.path.replace(/^\//, '') || 'hari-ini')
@@ -171,6 +172,7 @@ function localDate() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia
     <section v-if="isTeacherSession && boot" class="content teacher-content"><Teacher :key="boot.halaqoh_id + ':' + boot.tanggal" :boot="boot"></Teacher></section>
     <section v-else-if="screen === 'halaqoh' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><GroupManagement :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'peserta' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><Participants :csrf="csrf" @unauthorized="expireLogin" /></section>
+    <section v-else-if="screen === 'users' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><UserManagement :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'keluarga'" class="content"><div id="go-vue-preview"><FamilyPreview endpoint="/api/v1/families" :hide-back-link="true" /></div></section>
     <section v-else-if="screen === 'laporan'" class="content"><AttendanceReport :csrf="csrf" :role="user.role" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'hari-ini' || screen === 'sesi'" class="content">

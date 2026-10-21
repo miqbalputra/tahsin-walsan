@@ -18,6 +18,7 @@ Paket produksi terpisah dari paket staging: `docker/Dockerfile.go-vue-production
 - Manajemen peserta Go+Vue kini memuat daftar berhalaman, pencarian, filter aktif/arsip, tambah peserta lokal, ubah pengaturan Tahsin, koreksi biodata lokal, penempatan kelompok, serta arsip lunak. Arsip tidak menghapus baris anak, membership, atau presensi.
 - Identitas wali yang terhubung ke Data Induk/master keluarga dikunci di server. Kelas anak yang dikelola view keluarga tidak dapat ditulis melalui form peserta; ID `santri_detail` lama dipertahankan saat koreksi dan endpoint tidak menghapus anak yang tidak dikirim.
 - Status alumni dihitung ulang dari kelas/status anak di dalam transaksi: wali hanya diarsipkan otomatis jika semua anak terdata berstatus Lulus; anak tanpa kelas atau status yang belum jelas mempertahankan wali tetap aktif.
+- Administrasi user kini mendukung daftar, tambah, dan ubah akun/role. Password menggunakan bcrypt yang kompatibel dengan hash PHP; perubahan password bersifat opsional saat edit, hash tidak pernah dikirim ke browser, identitas guru Data Induk terkunci, dan admin terakhir tidak dapat diturunkan rolenya.
 - File versi PHP, Compose staging, migration lama, ID, dan data tidak diubah oleh pekerjaan ini.
 
 ## Environment
@@ -48,7 +49,7 @@ Status modul agar keputusan cutover terukur:
 | Daftar keluarga | Baca saja | Port tambah/edit/arsip master keluarga dan hubungan orang tua-anak |
 | Kelompok dan anggota | Daftar, tambah/edit, tambah anggota, dan arsip keanggotaan tersedia; hapus kelompok belum ada | Uji pada clone dengan histori/draft, alumni, dan perubahan roster serentak |
 | Peserta/anak | Daftar, tambah, ubah, penempatan kelompok, dan arsip lunak tersedia; tidak ada hapus fisik anak | Uji pada clone untuk keluarga legacy/Data Induk, alumni, relasi, dan membership; port import serta manajemen arsip lanjutan |
-| Pengguna | Belum dipindahkan | Port CRUD dan uji role/hak akses |
+| Pengguna | Daftar, tambah, dan ubah akun/role tersedia; penghapusan akun belum dipindahkan | Uji hash/password/role serta relasi user pada clone; implementasikan penghapusan atau penonaktifan yang aman |
 | Dashboard, histori, capaian, rapor, rekap, ekspor | Laporan presensi dasar saja | Cocokkan hasil PHP dan Go untuk periode/filter yang sama |
 | Libur, pengumuman, log, pengaturan | Belum dipindahkan | Port operasi dan audit yang saat ini dipakai |
 | Backup dan restore | Belum dipindahkan | Implementasikan pratinjau dan merge-only, lalu latihan restore di clone |
