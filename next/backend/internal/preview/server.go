@@ -6,20 +6,27 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"tahsin.local/next/internal/sessionread"
 	"time"
 	"unicode/utf8"
 )
 
 type Server struct {
-	Enabled bool
-	Secret  []byte
-	Store   Store
-	Mode    string
-	Now     func() time.Time
+	Enabled        bool
+	Secret         []byte
+	Store          Store
+	Mode           string
+	Now            func() time.Time
+	TeacherEnabled bool
+	TeacherGroups  map[int64]bool
+	TeacherReader  interface {
+		Read(context.Context, int64, int64, string, time.Time) (sessionread.State, error)
+	}
 }
 
 func Signature(secret []byte, method, path, query, user, role, stamp string) string {
@@ -28,9 +35,16 @@ func Signature(secret []byte, method, path, query, user, role, stamp string) str
 	return hex.EncodeToString(mac.Sum(nil))
 }
 func (s Server) authorized(r *http.Request) bool {
+	return s.authorizedRoles(r, "admin", "pj_tahfidz")
+}
+func (s Server) authorizedRoles(r *http.Request, roles ...string) bool {
 	user, role, stamp := r.Header.Get("X-Tahsin-User"), r.Header.Get("X-Tahsin-Role"), r.Header.Get("X-Tahsin-Time")
+	allowed := false
+	for _, v := range roles {
+		allowed = allowed || v == role
+	}
 	uid, err := strconv.ParseInt(user, 10, 64)
-	if err != nil || uid < 1 || strconv.FormatInt(uid, 10) != user || (role != "admin" && role != "pj_tahfidz") || len(s.Secret) < 32 {
+	if err != nil || uid < 1 || strconv.FormatInt(uid, 10) != user || !allowed || len(s.Secret) < 32 {
 		return false
 	}
 	ts, err := strconv.ParseInt(stamp, 10, 64)
@@ -94,6 +108,49 @@ func (s Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" && r.Method == http.MethodGet {
 			writeJSON(w, 200, map[string]any{"status": "ok", "service": "tahsin-next", "read_only": true, "enabled": s.Enabled})
+			return
+		}
+		if r.URL.Path == "/api/v1/teacher-session" {
+			if !s.Enabled || !s.TeacherEnabled || s.TeacherReader == nil || s.Mode != "mysql" {
+				apiError(w, 404, "Tidak ditemukan.")
+				return
+			}
+			if r.Method != "GET" {
+				w.Header().Set("Allow", "GET")
+				apiError(w, 405, "Pratinjau hanya menerima pembacaan data.")
+				return
+			}
+			if !s.authorizedRoles(r, "ustadz") {
+				apiError(w, 401, "Akses pratinjau tidak valid.")
+				return
+			}
+			group, date, err := sessionread.ParseQuery(r.URL.Query())
+			if err != nil {
+				apiError(w, 422, "Kelompok atau tanggal tidak valid.")
+				return
+			}
+			if !s.TeacherGroups[group] {
+				apiError(w, 404, "Tidak ditemukan.")
+				return
+			}
+			user, _ := strconv.ParseInt(r.Header.Get("X-Tahsin-User"), 10, 64)
+			now := time.Now()
+			if s.Now != nil {
+				now = s.Now()
+			}
+			ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+			defer cancel()
+			state, err := s.TeacherReader.Read(ctx, user, group, date, now)
+			if err != nil {
+				var domain *sessionread.Error
+				if errors.As(err, &domain) {
+					apiError(w, domain.Status, domain.Message)
+				} else {
+					apiError(w, 503, "Data sesi belum dapat dibaca. Aplikasi utama tetap tersedia.")
+				}
+				return
+			}
+			writeJSON(w, 200, map[string]any{"status": "success", "data": state})
 			return
 		}
 		if r.URL.Path != "/api/v1/families" || !s.Enabled {

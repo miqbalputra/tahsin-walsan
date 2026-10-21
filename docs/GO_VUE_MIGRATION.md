@@ -2,6 +2,8 @@
 
 Rencana tahapan, perlindungan data, syarat pengalihan, dan pemulihan ada di [Rencana migrasi Go + Vue](RENCANA_MIGRASI_GO_VUE.md). Implementasi pilot Vue memakai autosave PHP, hasil backup/restore produksi terisolasi, dan build image home server dicatat di [runbook pelaksanaan](MIGRATION_SAFETY_RUNBOOK.md). Dokumen ini menjelaskan layanan pratinjau baca; cara mematikannya di bawah tidak berlaku sebagai prosedur rollback setelah Go mulai menulis data.
 
+Kode berikutnya menyediakan [kontrak baca sesi guru Go](GO_SESSION_READ.md), terpisah dari pratinjau keluarga admin/PJ dan mati secara default. Editor masih membaca serta menyimpan melalui PHP.
+
 Tahap pertama menambahkan pratinjau **baca data keluarga** untuk admin/PJ Tahfidz. PHP tetap melayani aplikasi utama, login, semua penulisan presensi/capaian, draft, finalisasi, impor, serta laporan. Tidak ada migrasi skema atau impor data produksi untuk tahap ini.
 
 ## Yang sudah tersedia

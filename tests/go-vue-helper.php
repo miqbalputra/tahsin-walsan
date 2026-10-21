@@ -19,4 +19,10 @@ putenv('TAHSIN_VUE_TEACHER_ENABLED=1');putenv('TAHSIN_VUE_TEACHER_HALAQOH_IDS=')
 putenv('TAHSIN_VUE_TEACHER_HALAQOH_IDS=3, 5');nvCheck(goVueTeacherEnabled(3)&&goVueTeacherEnabled(5)&&!goVueTeacherEnabled(1),'Pilot is isolated per group');
 putenv('TAHSIN_VUE_TEACHER_HALAQOH_IDS=3,wrong');nvCheck(!goVueTeacherEnabled(3),'Malformed pilot configuration fails closed');
 $surahs=tahsinSurahNames();nvCheck(count($surahs)===114&&count(array_unique($surahs))===114&&$surahs[113]==='An-Nas','Both renderers retain all 114 surah suggestions');
+putenv('TAHSIN_NEXT_TEACHER_READ_ENABLED=0');putenv('TAHSIN_NEXT_TEACHER_READ_HALAQOH_IDS=3');nvCheck(!goVueTeacherReadEnabled(3),'Teacher read requires independent opt in');
+putenv('TAHSIN_NEXT_TEACHER_READ_ENABLED=1');putenv('TAHSIN_NEXT_TEACHER_READ_HALAQOH_IDS=');nvCheck(!goVueTeacherReadEnabled(3),'Teacher read requires explicit pilot list');
+putenv('TAHSIN_NEXT_TEACHER_READ_HALAQOH_IDS=3, 5');nvCheck(goVueTeacherReadEnabled(3)&&!goVueTeacherReadEnabled(1),'Teacher read group isolation');
+$teacherQuery=goVueTeacherQuery(['tanggal'=>'2026-10-18','halaqoh_id'=>'3']);nvCheck($teacherQuery==='halaqoh_id=3&tanggal=2026-10-18','Canonical teacher query');
+nvCheck(goVueSignature('0123456789abcdef0123456789abcdef',$teacherQuery,7,'ustadz',1700000000,'/api/v1/teacher-session')!==goVueSignature('0123456789abcdef0123456789abcdef',$teacherQuery,7,'ustadz',1700000000),'Signature cannot move to another endpoint');
+foreach([['halaqoh_id'=>3,'tanggal'=>'2026-02-30'],['halaqoh_id'=>'03','tanggal'=>'2026-10-18'],['halaqoh_id'=>[3],'tanggal'=>'2026-10-18'],['halaqoh_id'=>3,'tanggal'=>'2026-10-18','user_id'=>9]] as $bad){try{goVueTeacherQuery($bad);throw new LogicException('Invalid session query accepted');}catch(InvalidArgumentException $e){$checks++;}}
 echo "PASS $checks Go/Vue PHP gateway assertions\n";

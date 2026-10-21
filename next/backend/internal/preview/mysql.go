@@ -47,6 +47,8 @@ func OpenMySQL(ctx context.Context) (*MySQLStore, error) {
 	cfg.User = user
 	cfg.Passwd = os.Getenv("TAHSIN_NEXT_DB_PASSWORD")
 	cfg.DBName = name
+	// Match PHP SET time_zone on every pooled connection, including TIMESTAMP reads.
+	cfg.Params = map[string]string{"time_zone": "'+07:00'"}
 	cfg.Net = "tcp"
 	host := os.Getenv("TAHSIN_NEXT_DB_HOST")
 	if host == "" {

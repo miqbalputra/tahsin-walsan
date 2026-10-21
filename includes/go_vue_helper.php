@@ -22,12 +22,13 @@ function goVueQuery(array $input): string
     return http_build_query(['page'=>$page,'limit'=>$limit,'search'=>$search,'scope'=>$scope], '', '&', PHP_QUERY_RFC3986);
 }
 
-function goVueSignature(string $secret, string $query, int $user, string $role, int $timestamp): string
+function goVueSignature(string $secret, string $query, int $user, string $role, int $timestamp, string $path = '/api/v1/families'): string
 {
-    return hash_hmac('sha256', implode("\n", ['v1','GET','/api/v1/families',$query,(string)$user,$role,(string)$timestamp]), $secret);
+    if (!in_array($path, ['/api/v1/families', '/api/v1/teacher-session'], true)) throw new InvalidArgumentException('Jalur pratinjau tidak valid.');
+    return hash_hmac('sha256', implode("\n", ['v1','GET',$path,$query,(string)$user,$role,(string)$timestamp]), $secret);
 }
 
-function goVueReadFamilies(string $query, int $user, string $role): array
+function goVueReadSignedResponse(string $path, string $query, int $user, string $role): array
 {
     $secret = (string) getenv('TAHSIN_NEXT_SHARED_SECRET');
     if (strlen($secret)<32) throw new RuntimeException('Pratinjau belum dikonfigurasi.');
@@ -36,11 +37,11 @@ function goVueReadFamilies(string $query, int $user, string $role): array
     if (!$url || !in_array($url['scheme'] ?? '', ['http','https'], true) || empty($url['host']) || isset($url['user']) || isset($url['pass']) || isset($url['query']) || isset($url['fragment']) || ($url['path'] ?? '') !== '') throw new RuntimeException('Alamat layanan pratinjau tidak valid.');
     $timestamp = time();
     $headers = ['Accept: application/json', 'X-Tahsin-User: '.$user, 'X-Tahsin-Role: '.$role,
-        'X-Tahsin-Time: '.$timestamp, 'X-Tahsin-Signature: '.goVueSignature($secret,$query,$user,$role,$timestamp)];
+        'X-Tahsin-Time: '.$timestamp, 'X-Tahsin-Signature: '.goVueSignature($secret,$query,$user,$role,$timestamp,$path)];
     // Do not forward PHP cookies or follow redirects to another service.
     $context = stream_context_create(['http'=>['method'=>'GET','header'=>implode("\r\n",$headers),'timeout'=>5,'ignore_errors'=>true,'follow_location'=>0,'max_redirects'=>0],
         'ssl'=>['verify_peer'=>true,'verify_peer_name'=>true]]);
-    $handle = @fopen($base.'/api/v1/families?'.$query,'rb',false,$context);
+    $handle = @fopen($base.$path.'?'.$query,'rb',false,$context);
     if (!$handle) throw new RuntimeException('Layanan pratinjau belum dapat dihubungi.');
     try {
         $metadata = stream_get_meta_data($handle);
@@ -49,9 +50,33 @@ function goVueReadFamilies(string $query, int $user, string $role): array
         $body = stream_get_contents($handle, 2*1024*1024+1);
         if ($status!==200 || $body===false || strlen($body)>2*1024*1024 || !empty(stream_get_meta_data($handle)['timed_out'])) throw new RuntimeException('Data pratinjau belum dapat dibaca.');
         $data = json_decode($body,true,64,JSON_THROW_ON_ERROR);
-        if (($data['status'] ?? '')!=='ok' || ($data['meta']['read_only'] ?? null)!==true || !is_array($data['data'] ?? null)) throw new RuntimeException('Respons pratinjau tidak valid.');
+        if (!is_array($data) || !is_array($data['data'] ?? null)) throw new RuntimeException('Respons pratinjau tidak valid.');
         return $data;
     } finally { fclose($handle); }
+}
+
+function goVueReadFamilies(string $query, int $user, string $role): array
+{
+    $data = goVueReadSignedResponse('/api/v1/families', $query, $user, $role);
+    if (($data['status'] ?? '') !== 'ok' || ($data['meta']['read_only'] ?? null) !== true) throw new RuntimeException('Respons pratinjau tidak valid.');
+    return $data;
+}
+
+function goVueTeacherReadEnabled(int $groupId): bool
+{
+    if (!goVueEnabled() || getenv('TAHSIN_NEXT_TEACHER_READ_ENABLED') !== '1' || $groupId < 1) return false;
+    $ids = trim((string)getenv('TAHSIN_NEXT_TEACHER_READ_HALAQOH_IDS'));
+    return preg_match('/^[1-9][0-9]*(?:\s*,\s*[1-9][0-9]*)*$/D', $ids)
+        && in_array($groupId, array_map('intval', explode(',', $ids)), true);
+}
+
+function goVueTeacherQuery(array $input): string
+{
+    if (count($input) !== 2 || !isset($input['halaqoh_id'], $input['tanggal']) || !is_scalar($input['halaqoh_id']) || !is_string($input['tanggal'])) throw new InvalidArgumentException('Parameter sesi tidak valid.');
+    $id = filter_var($input['halaqoh_id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    $date = DateTimeImmutable::createFromFormat('!Y-m-d', $input['tanggal'], new DateTimeZone('Asia/Jakarta'));
+    if (!$id || (string)$id !== (string)$input['halaqoh_id'] || !$date || $date->format('Y-m-d') !== $input['tanggal']) throw new InvalidArgumentException('Parameter sesi tidak valid.');
+    return http_build_query(['halaqoh_id' => $id, 'tanggal' => $input['tanggal']], '', '&', PHP_QUERY_RFC3986);
 }
 
 function goVueAssets(string $source = 'src/main.ts'): ?array
