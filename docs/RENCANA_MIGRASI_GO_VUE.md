@@ -170,7 +170,7 @@ Untuk pusat laporan mendatang, Tahsin tetap menjadi sumber data resminya. Pusat 
 
 ## 12. Urutan pekerjaan terdekat
 
-1. Simpan salinan backup produksi terenkripsi di tujuan independen dari home server, lalu verifikasi hash dan lakukan restore drill dari salinan tersebut. Tujuan penyimpanan masih perlu ditetapkan.
+1. Simpan salinan backup produksi terenkripsi di tujuan independen dari home server, lalu verifikasi hash dan lakukan restore drill dari salinan tersebut. Backup dan clone restore lokal sudah dibatasi dengan izin Unix (`700` untuk direktori dan `600` untuk berkas yang diperiksa), tetapi keduanya masih berada di host yang sama. Tujuan offsite masih perlu ditetapkan.
 2. Lengkapi bukti pemulihan titik-waktu dari binlog produksi dan buktikan koordinat/log yang dipulihkan pada clone terisolasi. Uji sintetik MySQL 8.4.11 sudah mencakup transaksi sesudah backup; bukti sumber produksi belum.
 3. Verifikasi konfigurasi jadwal/retensi Coolify yang benar-benar tersimpan; form backup sebelumnya masih menunjukkan perubahan belum disimpan. Selesaikan inventaris antrean/perangkat dan pilih kelompok pilot.
 4. Deploy paket Compose hanya ke clone staging sintetis, lalu aktifkan satu fitur baca demi satu dan cocokkan laporan dengan PHP. Go writer tetap off.
