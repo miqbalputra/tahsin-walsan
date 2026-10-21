@@ -7,6 +7,8 @@ require_once 'includes/auth_helper.php';
 require_once 'includes/alumni_archive_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
+require_once __DIR__ . '/includes/family_helper.php';
+$childTable = familyChildrenTable($pdo);
 
 $halaqoh_id = $_GET['id'] ?? null;
 if (!$halaqoh_id) {
@@ -62,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Fetch current members with children details
 $stmt = $pdo->prepare("SELECT w.*, 
                       (SELECT GROUP_CONCAT(CONCAT(nama_anak, ' [', kelas, ']') SEPARATOR ' | ') 
-                       FROM santri_detail WHERE wali_santri_id = w.id) as daftar_anak
+                       FROM {$childTable} WHERE wali_santri_id = w.id) as daftar_anak
                       FROM wali_santri w 
                       JOIN halaqoh_members hm ON w.id = hm.wali_santri_id 
                       WHERE hm.halaqoh_id = ? AND hm.archived_at IS NULL AND w.status_aktif = 1
@@ -73,11 +75,11 @@ $members = $stmt->fetchAll();
 // Fetch available wali santri with children details
 $stmt = $pdo->prepare("SELECT w.id, w.nama_bapak, 
                       (SELECT GROUP_CONCAT(CONCAT(nama_anak, ' (', kelas, ')') SEPARATOR ', ') 
-                       FROM santri_detail WHERE wali_santri_id = w.id) as daftar_anak
+                       FROM {$childTable} WHERE wali_santri_id = w.id) as daftar_anak
                       FROM wali_santri w 
                       WHERE w.status_aktif = 1
                         AND EXISTS (
-                            SELECT 1 FROM santri_detail sd_active
+                            SELECT 1 FROM {$childTable} sd_active
                             WHERE sd_active.wali_santri_id = w.id
                               AND TRIM(COALESCE(sd_active.kelas, '')) <> ''
                               AND LOWER(TRIM(sd_active.kelas)) <> 'lulus'

@@ -242,6 +242,12 @@ try {
         case 'peserta':
             handlePeserta($pdo);
             break;
+        case 'keluarga':
+            if (!familySchemaReady($pdo)) jsonError(503, 'Migrasi keluarga belum diterapkan.');
+            [$page, $limit, $offset] = getPagination();
+            $familyData = familyFetchStudents($pdo, $limit, $offset, substr(trim((string) ($_GET['search'] ?? '')), 0, 100));
+            jsonOk($familyData['students'], ['page' => $page, 'limit' => $limit, 'total' => $familyData['total']]);
+            break;
         case 'halaqoh':
             handleHalaqoh($pdo);
             break;
@@ -346,7 +352,7 @@ function handleStatus($pdo)
         'endpoints' => [
             'status', 'peserta', 'halaqoh', 'presensi', 'stats',
             'progress', 'peringatan', 'ustadz', 'libur', 'pengumuman',
-            'capaian', 'search', 'schema', 'logs', 'users',
+            'capaian', 'search', 'schema', 'logs', 'users', 'keluarga',
         ],
     ]);
 }
@@ -383,9 +389,14 @@ function handlePeserta($pdo)
         }
 
         // Ambil data anak-anak
-        $stmtAnak = $pdo->prepare("SELECT id, nama_anak, kelas FROM santri_detail WHERE wali_santri_id = ?");
+        $stmtAnak = $pdo->prepare('SELECT id,nama_anak,kelas FROM santri_detail WHERE wali_santri_id=?');
         $stmtAnak->execute([$id]);
         $peserta['anak'] = $stmtAnak->fetchAll();
+        if (familySchemaReady($pdo)) {
+            $sharedChildren = $pdo->prepare('SELECT nama_anak,kelas,source_namespace,source_student_id FROM family_children WHERE wali_santri_id=?');
+            $sharedChildren->execute([$id]);
+            $peserta['anak_terpadu'] = $sharedChildren->fetchAll();
+        }
 
         // Ambil riwayat presensi (5 terakhir)
         $stmtRiwayat = $pdo->prepare("

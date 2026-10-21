@@ -5,6 +5,8 @@ require_once 'includes/report_helper.php';
 
 // Must be at the very top
 checkRole(['admin', 'pj_tahfidz', 'kepsek']);
+require_once __DIR__ . '/includes/family_helper.php';
+$childTable = familyChildrenTable($pdo);
 
 $filters = getReportFilters();
 $start_date = $filters['start_date'];
@@ -49,7 +51,7 @@ try {
     // 2. Fetch Filter Options
     $halaqohs = $pdo->query("SELECT id, nama_halaqoh FROM halaqoh ORDER BY nama_halaqoh")->fetchAll();
     $all_wali = $pdo->query("SELECT id, nama_bapak FROM wali_santri ORDER BY nama_bapak")->fetchAll();
-    $daftar_kelas = $pdo->query("SELECT DISTINCT kelas FROM santri_detail WHERE kelas IS NOT NULL AND kelas != '' ORDER BY kelas")->fetchAll(PDO::FETCH_COLUMN);
+    $daftar_kelas = $pdo->query("SELECT DISTINCT kelas FROM {$childTable} WHERE kelas IS NOT NULL AND kelas != '' ORDER BY kelas")->fetchAll(PDO::FETCH_COLUMN);
 } catch (Exception $e) {
     reportApplicationError($e, 'laporan');
     $error = "Kesalahan saat mengambil laporan. Silakan coba lagi.";

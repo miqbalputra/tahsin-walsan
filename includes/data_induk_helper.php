@@ -229,6 +229,10 @@ function dataIndukClassNames(PDO $pdo): array
 
 function dataIndukSyncRoster(PDO $pdo): array
 {
+    require_once __DIR__ . '/family_helper.php';
+    if (familySchemaReady($pdo) && (int) $pdo->query('SELECT COUNT(*) FROM family_guardians')->fetchColumn() > 0) {
+        throw new DataIndukException('Master keluarga sudah terhubung. Pemetaan ID ekspor sekolah ke UUID Data Induk diperlukan sebelum sinkronisasi roster diaktifkan.');
+    }
     $unitId = dataIndukConfig()['unit_id'];
     $students = dataIndukFetchAll('students', ['unitId' => $unitId]);
     $guardians = dataIndukFetchAll('guardians', ['unitId' => $unitId]);

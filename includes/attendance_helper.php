@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/tahsin_report_helper.php';
+require_once __DIR__ . '/family_helper.php';
 /**
  * Shared attendance persistence rules.
  *
@@ -105,12 +106,13 @@ function attendanceLegacyRecordedSession(PDO $pdo, $tanggal): bool
 
 function attendanceFetchActiveMembers(PDO $pdo, $halaqohId, $ustadzId, $tanggal = null)
 {
+    $childTable = familyChildrenTable($pdo);
     $boundary = attendanceHistoryBoundary($pdo, $tanggal);
     if ($boundary) {
         $stmt = $pdo->prepare("SELECT w.id, w.nama_bapak, w.no_hp,
             GROUP_CONCAT(DISTINCT CONCAT(sd.nama_anak, ' [', sd.kelas, ']') SEPARATOR '<br>') AS info_anak
             FROM tahsin_roster_history rh JOIN wali_santri w ON w.id = rh.wali_santri_id
-            LEFT JOIN santri_detail sd ON sd.wali_santri_id = w.id
+            LEFT JOIN {$childTable} sd ON sd.wali_santri_id = w.id
             WHERE rh.halaqoh_id = ? AND rh.ustadz_id = ? AND rh.valid_from <= ? AND (rh.valid_until IS NULL OR rh.valid_until > ?)
             GROUP BY w.id, w.nama_bapak, w.no_hp ORDER BY w.nama_bapak");
         $stmt->execute([$halaqohId, $ustadzId, $boundary, $boundary]);
@@ -121,7 +123,7 @@ function attendanceFetchActiveMembers(PDO $pdo, $halaqohId, $ustadzId, $tanggal 
         $stmt = $pdo->prepare("SELECT w.id, w.nama_bapak, w.no_hp,
             GROUP_CONCAT(DISTINCT CONCAT(sd.nama_anak, ' [', sd.kelas, ']') SEPARATOR '<br>') AS info_anak
             FROM presensi p JOIN wali_santri w ON w.id = p.wali_santri_id JOIN halaqoh h ON h.id = p.halaqoh_id
-            LEFT JOIN santri_detail sd ON sd.wali_santri_id = w.id
+            LEFT JOIN {$childTable} sd ON sd.wali_santri_id = w.id
             WHERE h.id = ? AND h.ustadz_id = ? AND p.tanggal BETWEEN ? AND ?
             GROUP BY w.id, w.nama_bapak, w.no_hp ORDER BY w.nama_bapak");
         $stmt->execute([$halaqohId, $ustadzId, $session, (new DateTimeImmutable($session))->modify('+6 days')->format('Y-m-d')]);
@@ -133,7 +135,7 @@ function attendanceFetchActiveMembers(PDO $pdo, $halaqohId, $ustadzId, $tanggal 
                            FROM halaqoh h
                            JOIN halaqoh_members hm ON hm.halaqoh_id = h.id
                            JOIN wali_santri w ON w.id = hm.wali_santri_id
-                           LEFT JOIN santri_detail sd ON sd.wali_santri_id = w.id
+                           LEFT JOIN {$childTable} sd ON sd.wali_santri_id = w.id
                            WHERE h.id = ? AND h.ustadz_id = ?{$archiveCondition}
                              AND w.status_aktif = 1
                              AND w.kategori IN ('reguler', 'askar')

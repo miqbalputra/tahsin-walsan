@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/family_helper.php';
 /**
  * Weekly attendance is calculated here, never by treating an absent row as A.
  * The pure assembler is shared by HTML, exports, dashboards and integrations.
@@ -157,7 +158,7 @@ function tahsinLoadDataset(PDO $pdo, string $endDate, ?DateTimeImmutable $now = 
     $now = $now ?? tahsinNow();
     $end = min((new DateTimeImmutable(tahsinSessionDate($endDate)))->modify('+6 days')->format('Y-m-d'), $now->format('Y-m-d'));
     $data = ['wali' => $pdo->query('SELECT * FROM wali_santri ORDER BY nama_bapak, id')->fetchAll(PDO::FETCH_ASSOC),
-        'children' => $pdo->query('SELECT wali_santri_id, nama_anak, kelas FROM santri_detail ORDER BY nama_anak')->fetchAll(PDO::FETCH_ASSOC),
+        'children' => $pdo->query('SELECT wali_santri_id, nama_anak, kelas FROM ' . familyChildrenTable($pdo) . ' ORDER BY nama_anak')->fetchAll(PDO::FETCH_ASSOC),
         'halaqoh' => $pdo->query('SELECT h.*, u.nama_lengkap AS nama_ustadz, u.no_hp AS ustadz_phone FROM halaqoh h LEFT JOIN users u ON u.id = h.ustadz_id ORDER BY h.nama_halaqoh')->fetchAll(PDO::FETCH_ASSOC),
         'records' => [], 'roster' => [], 'history' => [], 'verifications' => [], 'baselines' => [],
         'holidays' => [], 'suspect_ids' => [], 'tracked_from' => null, 'schema_ready' => tahsinSchemaReady($pdo)];

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/family_helper.php';
 /**
  * Aturan lifecycle wali alumni.
  *
@@ -23,6 +24,11 @@ function isAlumniClass($kelas): bool
  */
 function waliHasActiveSchoolChild(PDO $pdo, int $waliId): bool
 {
+    if (familySchemaReady($pdo)) {
+        $stmt = $pdo->prepare("SELECT 1 FROM family_children WHERE wali_santri_id=? AND school_status='active' AND TRIM(kelas)<>'' LIMIT 1");
+        $stmt->execute([$waliId]);
+        return (bool) $stmt->fetchColumn();
+    }
     $stmt = $pdo->prepare("
         SELECT 1
         FROM santri_detail
@@ -58,17 +64,21 @@ function waliCanJoinActiveHalaqoh(PDO $pdo, int $waliId): bool
  */
 function findEligibleAlumniWaliIds(PDO $pdo, ?array $waliIds = null, bool $forUpdate = false): array
 {
+    $childTable = familyChildrenTable($pdo);
+    $graduatedCondition = $childTable === 'family_children'
+        ? "sd_active.school_status <> 'graduated'"
+        : "LOWER(TRIM(COALESCE(sd_active.kelas, ''))) <> 'lulus'";
     $conditions = [
         'w.status_aktif = 1',
         "EXISTS (
-            SELECT 1 FROM santri_detail sd_exists
+            SELECT 1 FROM {$childTable} sd_exists
             WHERE sd_exists.wali_santri_id = w.id
         )",
         "NOT EXISTS (
             SELECT 1
-            FROM santri_detail sd_active
+            FROM {$childTable} sd_active
             WHERE sd_active.wali_santri_id = w.id
-              AND LOWER(TRIM(COALESCE(sd_active.kelas, ''))) <> 'lulus'
+              AND {$graduatedCondition}
         )",
     ];
     $params = [];

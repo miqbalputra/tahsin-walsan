@@ -52,6 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $wali = $stmt->fetch();
 
                 if ($wali) {
+                    if (familyIsManaged($pdo, (int) $wali['id'])) throw new RuntimeException('Wali ini dikelola master keluarga. Gunakan menu Keluarga untuk pembaruan identitas dan anak.');
                     $wali_id = $wali['id'];
                     // Update external info if it's Tahsin Luar
                     if ($kategori === 'tahsin_luar') {

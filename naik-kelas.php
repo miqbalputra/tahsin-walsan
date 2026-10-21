@@ -81,6 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $pdo->beginTransaction();
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            familyAssertLocalChildrenWritable($pdo, $ids);
             $stmt = $pdo->prepare("SELECT id, kelas FROM santri_detail WHERE id IN ($placeholders) FOR UPDATE");
             $stmt->execute($ids);
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -136,6 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->beginTransaction();
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
             $waliStmt = $pdo->prepare("SELECT DISTINCT wali_santri_id FROM santri_detail WHERE id IN ($placeholders) FOR UPDATE");
+            familyAssertLocalChildrenWritable($pdo, $ids);
             $waliStmt->execute($ids);
             $affectedWaliIds = array_map('intval', $waliStmt->fetchAll(PDO::FETCH_COLUMN));
             $stmt = $pdo->prepare("UPDATE santri_detail SET kelas = 'Lulus' WHERE id IN ($placeholders)");
@@ -170,6 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Pilih kelas pengganti yang valid (bukan Lulus).'));
         }
         try {
+            familyAssertLocalChildrenWritable($pdo, [$sid]);
             $pdo->prepare("UPDATE santri_detail SET kelas = ? WHERE id = ?")->execute([$kelas, $sid]);
             addLog($pdo, 'SET_KELAS_SANTRI', "santri $sid -> kelas '$kelas'");
             redirectTo('naik-kelas.php?tab=naik&msg=' . rawurlencode("Kelas santri dikembalikan ke '$kelas'."));

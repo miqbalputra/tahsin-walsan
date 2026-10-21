@@ -6,6 +6,8 @@ require_once '../includes/tahsin_report_helper.php';
 $pageTitle = 'Daftar Capaian Peserta';
 checkLogin();
 checkRole(['ustadz']);
+require_once __DIR__ . '/../includes/family_helper.php';
+$childTable = familyChildrenTable($pdo);
 
 $role = $_SESSION['role'];
 $user_id = $_SESSION['user_id'];
@@ -36,7 +38,7 @@ $sql = "SELECT DISTINCT
         JOIN halaqoh h ON hm.halaqoh_id = h.id
         JOIN users u ON h.ustadz_id = u.id
         LEFT JOIN (SELECT wali_santri_id, GROUP_CONCAT(DISTINCT nama_anak ORDER BY nama_anak SEPARATOR ', ') AS children_names,
-            GROUP_CONCAT(DISTINCT kelas ORDER BY kelas SEPARATOR ', ') AS classes FROM santri_detail GROUP BY wali_santri_id) s ON w.id = s.wali_santri_id
+            GROUP_CONCAT(DISTINCT kelas ORDER BY kelas SEPARATOR ', ') AS classes FROM {$childTable} GROUP BY wali_santri_id) s ON w.id = s.wali_santri_id
         LEFT JOIN (
             SELECT p1.*
             FROM presensi p1

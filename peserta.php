@@ -6,6 +6,7 @@ require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
 require_once 'includes/alumni_archive_helper.php';
 require_once 'includes/data_induk_helper.php';
+require_once 'includes/family_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
@@ -36,11 +37,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $identityLocked = false;
             if ($id) {
-                $identityLocked = false;
+                $identityLocked = familyIsManaged($pdo, (int) $id);
                 if (dataIndukIdentityMode($pdo)) {
                     $mapping = $pdo->prepare('SELECT data_induk_guardian_id FROM wali_santri WHERE id=?');
                     $mapping->execute([$id]);
-                    $identityLocked = (string) $mapping->fetchColumn() !== '';
+                    $identityLocked = $identityLocked || (string) $mapping->fetchColumn() !== '';
                 }
                 if ($identityLocked) {
                     // Identitas pusat tidak boleh tertimpa oleh nilai form lama.
@@ -168,12 +169,13 @@ $kategori_filter = $_GET['kategori'] ?? '';
 $halaqoh_filter = $_GET['halaqoh'] ?? '';
 
 // Build Query with multiple filters
+$childTable = familyChildrenTable($pdo);
 $sql = "SELECT w.*, GROUP_CONCAT(CONCAT(s.nama_anak, ' (', s.kelas, ')') SEPARATOR ', ') as daftar_anak,
         (SELECT hm.halaqoh_id FROM halaqoh_members hm WHERE hm.wali_santri_id = w.id AND hm.archived_at IS NULL LIMIT 1) as current_halaqoh_id,
         (SELECT h.nama_halaqoh FROM halaqoh_members hm JOIN halaqoh h ON hm.halaqoh_id = h.id WHERE hm.wali_santri_id = w.id AND hm.archived_at IS NULL LIMIT 1) as nama_halaqoh,
         (SELECT u.nama_lengkap FROM halaqoh_members hm JOIN halaqoh h ON hm.halaqoh_id = h.id JOIN users u ON h.ustadz_id = u.id WHERE hm.wali_santri_id = w.id AND hm.archived_at IS NULL LIMIT 1) as nama_ustadz_halaqoh
         FROM wali_santri w 
-        LEFT JOIN santri_detail s ON w.id = s.wali_santri_id ";
+        LEFT JOIN {$childTable} s ON w.id = s.wali_santri_id ";
 
 $conditions = [];
 $params = [];
@@ -186,13 +188,13 @@ if (!empty($nama_ayah_filter)) {
 
 // Filter: Nama Anak (text search via subquery)
 if (!empty($nama_anak_filter)) {
-    $conditions[] = "w.id IN (SELECT wali_santri_id FROM santri_detail WHERE nama_anak LIKE :nama_anak)";
+    $conditions[] = "w.id IN (SELECT wali_santri_id FROM {$childTable} WHERE nama_anak LIKE :nama_anak)";
     $params[':nama_anak'] = '%' . $nama_anak_filter . '%';
 }
 
 // Filter: Kelas Anak
 if (!empty($kelas_filter)) {
-    $conditions[] = "w.id IN (SELECT wali_santri_id FROM santri_detail WHERE kelas = :kls)";
+    $conditions[] = "w.id IN (SELECT wali_santri_id FROM {$childTable} WHERE kelas = :kls)";
     $params[':kls'] = $kelas_filter;
 }
 
@@ -216,15 +218,19 @@ $sql .= " GROUP BY w.id ORDER BY w.nama_bapak";
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $peserta = $stmt->fetchAll();
+$managedFamilyIds = $childTable === 'family_children'
+    ? array_fill_keys($pdo->query('SELECT wali_santri_id FROM family_guardians')->fetchAll(PDO::FETCH_COLUMN), true) : [];
+foreach ($peserta as &$participant) $participant['family_managed'] = isset($managedFamilyIds[(int) $participant['id']]);
+unset($participant);
 
 // Fetch all unique classes for the filter dropdown
-$daftar_kelas = $pdo->query("SELECT DISTINCT kelas FROM santri_detail WHERE kelas IS NOT NULL AND kelas != '' AND kelas != 'Lulus' ORDER BY kelas")->fetchAll(PDO::FETCH_COLUMN);
+$daftar_kelas = $pdo->query("SELECT DISTINCT kelas FROM {$childTable} WHERE kelas IS NOT NULL AND kelas != '' AND kelas != 'Lulus' ORDER BY kelas")->fetchAll(PDO::FETCH_COLUMN);
 
 // Fetch all halaqoh for filter dropdown
 $daftar_halaqoh = $pdo->query("SELECT h.id, h.nama_halaqoh, u.nama_lengkap as nama_ustadz FROM halaqoh h JOIN users u ON h.ustadz_id = u.id ORDER BY h.nama_halaqoh")->fetchAll();
 
 // Optimization: Fetch all children at once to avoid N+1 query problem (Fix N+1)
-$childrenData = $pdo->query("SELECT wali_santri_id, nama_anak as nama, kelas FROM santri_detail")->fetchAll(PDO::FETCH_GROUP);
+$childrenData = $pdo->query("SELECT wali_santri_id, nama_anak as nama, kelas FROM {$childTable}")->fetchAll(PDO::FETCH_GROUP);
 
 // Convert grouped data to a format easy for Alpine.js
 $jsonChildren = json_encode($childrenData);
@@ -550,17 +556,17 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                 <?php csrfField(); ?>
                 <input type="hidden" name="action" value="save">
                 <input type="hidden" name="id" x-model="formData.id">
-                <p x-show="formData.data_induk_guardian_id" class="rounded-xl bg-blue-50 p-3 text-xs text-blue-700">Nama, kontak, alamat, dan data anak dikelola oleh Data Induk. Di halaman ini hanya pengaturan Tahsin dan penempatan halaqoh yang dapat diubah.</p>
+                <p x-show="formData.data_induk_guardian_id || formData.family_managed" class="rounded-xl bg-blue-50 p-3 text-xs text-blue-700">Nama, kontak, alamat, dan data anak dikelola oleh master keluarga / Data Induk. Di halaman ini hanya pengaturan Tahsin dan penempatan halaqoh yang dapat diubah.</p>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label class="block text-sm font-semibold text-slate-700 mb-1">Nama Peserta (Bapak / Ibu)</label>
-                        <input type="text" name="nama_bapak" x-model="formData.nama_bapak" required :readonly="!!formData.data_induk_guardian_id"
+                        <input type="text" name="nama_bapak" x-model="formData.nama_bapak" required :readonly="!!formData.data_induk_guardian_id || !!formData.family_managed"
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
                     </div>
                     <div>
                         <label class="block text-sm font-semibold text-slate-700 mb-1">No. HP / WhatsApp</label>
-                        <input type="text" name="no_hp" x-model="formData.no_hp" required :readonly="!!formData.data_induk_guardian_id"
+                        <input type="text" name="no_hp" x-model="formData.no_hp" :required="!formData.data_induk_guardian_id && !formData.family_managed" :readonly="!!formData.data_induk_guardian_id || !!formData.family_managed"
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition"
                             placeholder="08xxxx">
                     </div>
@@ -578,7 +584,7 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                     </div>
                     <div>
                         <label class="block text-sm font-semibold text-slate-700 mb-1">Alamat</label>
-                        <input type="text" name="alamat" x-model="formData.alamat" :readonly="!!formData.data_induk_guardian_id"
+                        <input type="text" name="alamat" x-model="formData.alamat" :readonly="!!formData.data_induk_guardian_id || !!formData.family_managed"
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
                     </div>
                 </div>
@@ -629,7 +635,7 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                 <div class="bg-slate-50 p-6 rounded-2xl">
                     <div class="flex justify-between items-center mb-4">
                         <label class="text-sm font-bold text-slate-800">Daftar Anak</label>
-                        <button type="button" @click="addAnak()"
+                        <button type="button" @click="addAnak()" :disabled="!!formData.family_managed || !!formData.data_induk_guardian_id"
                             class="text-xs bg-blue-100 text-blue-600 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
                             + Tambah Anak
                         </button>
@@ -638,16 +644,16 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                         <template x-for="(item, index) in anak" :key="index">
                             <div class="flex gap-3">
                                 <div class="flex-1">
-                                    <input type="text" :name="'anak['+index+'][nama]'" x-model="item.nama" :readonly="!!formData.data_induk_guardian_id"
+                                    <input type="text" :name="'anak['+index+'][nama]'" x-model="item.nama" :readonly="!!formData.data_induk_guardian_id || !!formData.family_managed"
                                         placeholder="Nama Anak" required
                                         class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition bg-white text-sm">
                                 </div>
                                 <div class="w-32">
-                                    <input type="text" :name="'anak['+index+'][kelas]'" x-model="item.kelas" :readonly="!!formData.data_induk_guardian_id"
+                                    <input type="text" :name="'anak['+index+'][kelas]'" x-model="item.kelas" :readonly="!!formData.data_induk_guardian_id || !!formData.family_managed"
                                         placeholder="Kelas"
                                         class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition bg-white text-sm">
                                 </div>
-                                <button type="button" @click="removeAnak(index)"
+                                <button type="button" @click="removeAnak(index)" :disabled="!!formData.family_managed || !!formData.data_induk_guardian_id"
                                     class="text-red-400 hover:text-red-600 p-2">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"

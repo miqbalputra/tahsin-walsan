@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/family_helper.php';
 
 function getReportFilters()
 {
@@ -23,6 +24,7 @@ function filterPositiveInt($value)
 
 function buildPresensiReportQuery($filters, $role = '', $user_id = null, $options = [])
 {
+    $childTable = ($options['child_table'] ?? '') === 'family_children' ? 'family_children' : 'santri_detail';
     $includePhone = !empty($options['include_phone']);
     $includeUstadz = !empty($options['include_ustadz']);
 
@@ -83,7 +85,7 @@ function buildPresensiReportQuery($filters, $role = '', $user_id = null, $option
     if (!empty($filters['kelas'])) {
         $sql .= ' AND EXISTS (
             SELECT 1
-            FROM santri_detail sd_kelas
+            FROM ' . $childTable . ' sd_kelas
             WHERE sd_kelas.wali_santri_id = w.id
             AND sd_kelas.kelas = :kls
         )';
@@ -95,7 +97,7 @@ function buildPresensiReportQuery($filters, $role = '', $user_id = null, $option
             w.nama_bapak LIKE :q1
             OR EXISTS (
                 SELECT 1
-                FROM santri_detail sd_search
+                FROM ' . $childTable . ' sd_search
                 WHERE sd_search.wali_santri_id = w.id
                 AND sd_search.nama_anak LIKE :q2
             )
@@ -119,6 +121,7 @@ function buildPresensiReportQuery($filters, $role = '', $user_id = null, $option
 
 function fetchPresensiReport($pdo, $filters, $role = '', $user_id = null, $options = [])
 {
+    $options['child_table'] = familyChildrenTable($pdo);
     [$sql, $params] = buildPresensiReportQuery($filters, $role, $user_id, $options);
     $stmt = $pdo->prepare($sql);
     foreach ($params as $name => $value) {

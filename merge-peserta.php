@@ -26,6 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'merge' && $keep_id && $delete_id && $keep_id !== $delete_id) {
         $pdo->beginTransaction();
         try {
+            if (familyIsManaged($pdo, $keep_id) || familyIsManaged($pdo, $delete_id)) {
+                throw new RuntimeException('Identitas master keluarga tidak dapat digabung lewat fitur duplikat. Tinjau pemetaan ID keluarga terlebih dahulu.');
+            }
             // Verify both exist
             $stmtA = $pdo->prepare("SELECT * FROM wali_santri WHERE id = ?");
             $stmtA->execute([$keep_id]);

@@ -15,6 +15,7 @@ node_modules/
 vendor/
 .phpunit.cache/
 .phpunit.result.cache
+/outputs/keluarga-tahsin-*/
 *.log
 
 # Local n8n exports and audit contain production credentials or personal data.

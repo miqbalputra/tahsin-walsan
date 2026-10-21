@@ -5,6 +5,8 @@ require_once 'includes/auth_helper.php';
 checkLogin();
 $allowed_roles = ['admin', 'pj_tahfidz', 'kepsek', 'ustadz'];
 checkRole($allowed_roles);
+require_once __DIR__ . '/includes/family_helper.php';
+$childTable = familyChildrenTable($pdo);
 
 $wali_santri_id = $_GET['wali_santri_id'] ?? '';
 $start_date = $_GET['start_date'] ?? date('Y-m-01');
@@ -29,7 +31,7 @@ if (!$peserta) {
 }
 
 // Fetch children
-$stmtS = $pdo->prepare("SELECT nama_anak, kelas FROM santri_detail WHERE wali_santri_id = ?");
+$stmtS = $pdo->prepare("SELECT nama_anak, kelas FROM {$childTable} WHERE wali_santri_id = ?");
 $stmtS->execute([$wali_santri_id]);
 $santri = $stmtS->fetchAll();
 
