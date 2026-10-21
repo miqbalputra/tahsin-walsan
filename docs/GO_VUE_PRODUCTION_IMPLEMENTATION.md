@@ -19,6 +19,9 @@ Paket produksi terpisah dari paket staging: `docker/Dockerfile.go-vue-production
 - Identitas wali yang terhubung ke Data Induk/master keluarga dikunci di server. Kelas anak yang dikelola view keluarga tidak dapat ditulis melalui form peserta; ID `santri_detail` lama dipertahankan saat koreksi dan endpoint tidak menghapus anak yang tidak dikirim.
 - Status alumni dihitung ulang dari kelas/status anak di dalam transaksi: wali hanya diarsipkan otomatis jika semua anak terdata berstatus Lulus; anak tanpa kelas atau status yang belum jelas mempertahankan wali tetap aktif.
 - Administrasi user kini mendukung daftar, tambah, dan ubah akun/role. Password menggunakan bcrypt yang kompatibel dengan hash PHP; perubahan password bersifat opsional saat edit, hash tidak pernah dikirim ke browser, identitas guru Data Induk terkunci, dan admin terakhir tidak dapat diturunkan rolenya.
+- Halaman Riwayat guru memakai laporan presensi berfilter yang sama, tetapi server membatasi hasil dan pilihan filter ke kelompok guru yang sedang login. Guru hanya dapat menghapus catatan dari kelompoknya; perubahan menaikkan revisi autosave dan mencatat audit.
+- Modul libur memakai tabel lama: tanggal ganda memperbarui keterangan, dan menghapus penanda libur tidak menghapus catatan presensi. Operasi “bersihkan Alfa” tidak tersedia di Go.
+- Pengumuman dapat dibuat, diaktifkan, atau diarsipkan tanpa menghapus riwayat; pengumuman aktif ditampilkan pada akun guru.
 - File versi PHP, Compose staging, migration lama, ID, dan data tidak diubah oleh pekerjaan ini.
 
 ## Environment
@@ -50,8 +53,9 @@ Status modul agar keputusan cutover terukur:
 | Kelompok dan anggota | Daftar, tambah/edit, tambah anggota, dan arsip keanggotaan tersedia; hapus kelompok belum ada | Uji pada clone dengan histori/draft, alumni, dan perubahan roster serentak |
 | Peserta/anak | Daftar, tambah, ubah, penempatan kelompok, dan arsip lunak tersedia; tidak ada hapus fisik anak | Uji pada clone untuk keluarga legacy/Data Induk, alumni, relasi, dan membership; port import serta manajemen arsip lanjutan |
 | Pengguna | Daftar, tambah, dan ubah akun/role tersedia; penghapusan akun belum dipindahkan | Uji hash/password/role serta relasi user pada clone; implementasikan penghapusan atau penonaktifan yang aman |
-| Dashboard, histori, capaian, rapor, rekap, ekspor | Laporan presensi dasar saja | Cocokkan hasil PHP dan Go untuk periode/filter yang sama |
-| Libur, pengumuman, log, pengaturan | Belum dipindahkan | Port operasi dan audit yang saat ini dipakai |
+| Dashboard, histori, capaian, rapor, rekap, ekspor | Laporan presensi berfilter untuk admin/PJ/kepsek dan histori berlingkup guru tersedia; dashboard/progress/rapor/ekspor belum dipindahkan | Cocokkan hasil PHP dan Go untuk periode/filter yang sama dan port modul yang tersisa |
+| Libur dan pengumuman | Tambah/daftar/hapus penanda libur dan buat/aktif/arsip pengumuman tersedia; penghapusan Alfa massal belum dipindahkan | Uji efek tanggal libur pada sesi/laporan dan paritas pesan aktif di clone |
+| Log dan pengaturan | Belum dipindahkan | Port operasi dan audit yang saat ini dipakai |
 | Backup dan restore | Belum dipindahkan | Implementasikan pratinjau dan merge-only, lalu latihan restore di clone |
 | Hermes, n8n, pengingat, Data Induk | Belum dipindahkan | Pertahankan kontrak, rahasia, retry, dan uji endpoint lama |
 | Backup produksi dan pemulihan | Gerbang operasional | Salinan di luar home server, restore drill, dan replay delta/binlog yang teruji |

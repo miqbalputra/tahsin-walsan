@@ -40,8 +40,8 @@ func TestParseAttendanceReportFiltersRejectsInvalidOrRepeatedValues(t *testing.T
 }
 
 func TestAttendanceReportWhereUsesBoundFiltersAndEscapedTablePlaceholder(t *testing.T) {
-	where, args := attendanceReportWhere(AttendanceReportFilters{StartDate: "2026-01-01", EndDate: "2026-01-31", GroupID: 8, WaliID: 9, Class: "2A", Search: "Amin"})
-	if len(args) != 7 || args[0] != "2026-01-01" || args[2] != int64(8) || args[3] != int64(9) || args[4] != "2A" || args[5] != "%Amin%" || args[6] != "%Amin%" {
+	where, args := attendanceReportWhere(AttendanceReportFilters{StartDate: "2026-01-01", EndDate: "2026-01-31", GroupID: 8, TeacherID: 11, WaliID: 9, Class: "2A", Search: "Amin"})
+	if len(args) != 8 || args[0] != "2026-01-01" || args[2] != int64(8) || args[3] != int64(11) || args[4] != int64(9) || args[5] != "2A" || args[6] != "%Amin%" || args[7] != "%Amin%" {
 		t.Fatalf("unexpected query args: %#v", args)
 	}
 	if where == "" || len([]rune(where)) == 0 {

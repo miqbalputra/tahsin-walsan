@@ -6,12 +6,15 @@ import AttendanceReport from './AttendanceReport.vue'
 import GroupManagement from './GroupManagement.vue'
 import Participants from './Participants.vue'
 import UserManagement from './UserManagement.vue'
+import HolidayManagement from './HolidayManagement.vue'
+import AnnouncementManagement from './AnnouncementManagement.vue'
 import FamilyPreview from './App.vue'
 import type { TeacherBoot } from './teacher'
 import { loadLegacyAutosave } from './autosave-loader'
 
 type User = { id: number; username: string; nama_lengkap: string; role: string }
 type Group = { id: number; nama_halaqoh: string; ustadz_id: number; nama_ustadz: string; program_code: string }
+type Announcement = { id: number; judul: string; isi: string; is_aktif: boolean; created_at: string }
 type Envelope<T> = { status: string; data: T; message?: string }
 
 const router = useRouter()
@@ -28,6 +31,7 @@ const error = ref('')
 const username = ref('')
 const password = ref('')
 const loginError = ref('')
+const activeAnnouncement = ref<Announcement | null>(null)
 
 const menus = computed(() => {
   const role = user.value?.role
@@ -38,7 +42,7 @@ const menus = computed(() => {
     { path: '/dashboard', label: 'Dashboard' }, { path: '/progress', label: 'Progress' }, { path: '/rekap', label: 'Rekap' }, { path: '/laporan', label: 'Laporan' },
   ]
   return [
-    { path: '/dashboard', label: 'Dashboard' }, { path: '/peserta', label: 'Peserta' }, { path: '/keluarga', label: 'Keluarga' }, { path: '/halaqoh', label: 'Kelompok' }, { path: '/users', label: 'Pengguna' }, { path: '/laporan', label: 'Laporan' }, { path: '/akun', label: 'Akun' },
+    { path: '/dashboard', label: 'Dashboard' }, { path: '/peserta', label: 'Peserta' }, { path: '/keluarga', label: 'Keluarga' }, { path: '/halaqoh', label: 'Kelompok' }, { path: '/users', label: 'Pengguna' }, { path: '/libur', label: 'Hari Libur' }, { path: '/pengumuman', label: 'Pengumuman' }, { path: '/laporan', label: 'Laporan' }, { path: '/akun', label: 'Akun' },
   ]
 })
 const screen = computed(() => route.path.replace(/^\//, '') || 'hari-ini')
@@ -68,6 +72,7 @@ async function loadIdentity() {
     user.value = data.user
     csrf.value = data.csrf_token
     await loadGroups()
+    if (user.value.role === 'ustadz') await loadActiveAnnouncement()
     if (route.path === '/sesi') {
       if (typeof route.query.tanggal === 'string') selectedDate.value = route.query.tanggal
       const groupID = Number(route.query.id)
@@ -83,6 +88,11 @@ async function loadGroups() {
   catch (e) { error.value = (e as Error).message }
 }
 
+async function loadActiveAnnouncement() {
+  try { activeAnnouncement.value = await api<Announcement | null>('/api/v1/announcements/active') }
+  catch { activeAnnouncement.value = null }
+}
+
 async function signIn() {
   busy.value = true
   loginError.value = ''
@@ -92,6 +102,7 @@ async function signIn() {
     csrf.value = data.csrf_token
     password.value = ''
     await loadGroups()
+    if (user.value.role === 'ustadz') await loadActiveAnnouncement()
     await router.replace('/hari-ini')
   } catch (e) { loginError.value = (e as Error).message }
   finally { busy.value = false }
@@ -169,12 +180,16 @@ function localDate() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia
   <div v-else class="app-shell">
     <header class="topbar"><div><span class="brand-mark small">ت</span><span class="brand-name">Presensi Tahsin</span></div><div class="account"><span>{{ displayName }}</span><button @click="signOut">Keluar</button></div></header>
     <div v-if="error" class="global-error" role="alert"><span>{{ error }}</span><button @click="error = ''">Tutup</button></div>
+    <aside v-if="user.role === 'ustadz' && activeAnnouncement" class="teacher-announcement" aria-label="Pengumuman aktif"><strong>{{ activeAnnouncement.judul }}</strong><p>{{ activeAnnouncement.isi }}</p></aside>
     <section v-if="isTeacherSession && boot" class="content teacher-content"><Teacher :key="boot.halaqoh_id + ':' + boot.tanggal" :boot="boot"></Teacher></section>
     <section v-else-if="screen === 'halaqoh' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><GroupManagement :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'peserta' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><Participants :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'users' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><UserManagement :csrf="csrf" @unauthorized="expireLogin" /></section>
+    <section v-else-if="screen === 'libur' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><HolidayManagement :csrf="csrf" @unauthorized="expireLogin" /></section>
+    <section v-else-if="screen === 'pengumuman' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><AnnouncementManagement :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'keluarga'" class="content"><div id="go-vue-preview"><FamilyPreview endpoint="/api/v1/families" :hide-back-link="true" /></div></section>
     <section v-else-if="screen === 'laporan'" class="content"><AttendanceReport :csrf="csrf" :role="user.role" @unauthorized="expireLogin" /></section>
+    <section v-else-if="screen === 'riwayat' && user.role === 'ustadz'" class="content"><AttendanceReport :csrf="csrf" :role="user.role" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'hari-ini' || screen === 'sesi'" class="content">
       <div class="page-heading"><p class="eyebrow">{{ user.role === 'ustadz' ? 'HARI INI' : 'TAHSIN' }}</p><h1>{{ user.role === 'ustadz' ? 'Sesi mengajar' : 'Ringkasan Tahsin' }}</h1><p class="muted">Pilih kelompok dan tanggal untuk membuka daftar peserta.</p></div>
       <div v-if="busy" class="panel">Memuat peserta dan capaian…</div>
@@ -186,6 +201,11 @@ function localDate() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia
       <div class="page-heading"><p class="eyebrow">{{ user.role.toUpperCase() }}</p><h1>{{ moduleLabel[screen] || 'Tahsin' }}</h1><p class="muted">Modul ini masih berada pada tahap pemindahan dan belum diaktifkan untuk pencatatan operasional.</p></div>
       <div class="panel migration-note"><strong>Data lama tetap menjadi sumber utama.</strong><p>Modul ini belum dialihkan ke Go. Gunakan aplikasi Tahsin yang sedang berjalan sampai uji kesetaraan dan cutover dinyatakan selesai.</p><button class="secondary" @click="router.push('/hari-ini')">Kembali ke sesi</button></div>
     </section>
-    <nav class="bottom-nav" aria-label="Navigasi utama"><RouterLink v-for="item in menus" :key="item.path" :to="item.path" :aria-current="route.path === item.path ? 'page' : undefined">{{ item.label }}</RouterLink></nav>
+    <nav class="bottom-nav" :class="{ 'admin-navigation': user.role === 'admin' || user.role === 'pj_tahfidz' }" aria-label="Navigasi utama"><RouterLink v-for="item in menus" :key="item.path" :to="item.path" :aria-current="route.path === item.path ? 'page' : undefined">{{ item.label }}</RouterLink></nav>
   </div>
 </template>
+
+<style scoped>
+.teacher-announcement{width:min(100% - 32px,980px);margin:14px auto 0;padding:14px 16px;border:1px solid #f0df9f;border-radius:13px;background:#fff8e7;color:#76541c}.teacher-announcement strong{font-size:14px}.teacher-announcement p{margin:6px 0 0;font-size:13px;line-height:1.6;white-space:pre-line;overflow-wrap:anywhere}
+@media(max-width:600px){.bottom-nav.admin-navigation{justify-content:flex-start;overflow-x:auto;scrollbar-width:thin}.bottom-nav.admin-navigation a{flex:0 0 auto;min-width:88px;max-width:none;white-space:nowrap}}
+</style>

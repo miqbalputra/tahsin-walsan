@@ -76,7 +76,7 @@ onMounted(() => { void initialize().catch(e => { error.value = (e as Error).mess
 
 <template>
   <section class="report-page">
-    <div class="page-heading"><p class="eyebrow">LAPORAN</p><h1>Rekap presensi</h1><p class="muted">Data berasal langsung dari database Tahsin yang sama.</p></div>
+    <div class="page-heading"><p class="eyebrow">{{ role === 'ustadz' ? 'RIWAYAT' : 'LAPORAN' }}</p><h1>{{ role === 'ustadz' ? 'Riwayat presensi' : 'Rekap presensi' }}</h1><p class="muted">{{ role === 'ustadz' ? 'Hanya menampilkan catatan dari kelompok yang Anda ajar.' : 'Data berasal langsung dari database Tahsin yang sama.' }}</p></div>
     <form class="report-filters" @submit.prevent="submit">
       <label>Dari tanggal<input v-model="filters.start_date" type="date" :max="filters.end_date" required></label>
       <label>Sampai tanggal<input v-model="filters.end_date" type="date" :min="filters.start_date" :max="today()" required></label>
@@ -90,13 +90,13 @@ onMounted(() => { void initialize().catch(e => { error.value = (e as Error).mess
     <div class="report-summary"><span>{{ total.toLocaleString('id-ID') }} catatan</span><span>Halaman {{ page }} dari {{ pages }}</span></div>
     <div class="report-table-wrap">
       <table class="report-table">
-        <thead><tr><th>Tanggal</th><th>Wali</th><th>Anak / kelas</th><th>Kelompok</th><th>Presensi & capaian</th><th v-if="role === 'admin' || role === 'pj_tahfidz'">Aksi</th></tr></thead>
+        <thead><tr><th>Tanggal</th><th>Wali</th><th>Anak / kelas</th><th>Kelompok</th><th>Presensi & capaian</th><th v-if="role === 'admin' || role === 'pj_tahfidz' || role === 'ustadz'">Aksi</th></tr></thead>
         <tbody>
           <tr v-if="busy && !rows.length"><td colspan="6">Memuat laporan…</td></tr>
           <tr v-else-if="!rows.length"><td colspan="6">Tidak ada catatan untuk filter ini.</td></tr>
           <tr v-for="row in rows" :key="row.id">
             <td>{{ row.tanggal }}</td><td>{{ row.nama_bapak }}</td><td>{{ row.kelas || '—' }}</td><td>{{ row.nama_halaqoh }}</td><td>{{ material(row) }}</td>
-            <td v-if="role === 'admin' || role === 'pj_tahfidz'"><button class="danger-link" :disabled="busy" @click="remove(row)">Hapus</button></td>
+            <td v-if="role === 'admin' || role === 'pj_tahfidz' || role === 'ustadz'"><button class="danger-link" :disabled="busy" @click="remove(row)">Hapus</button></td>
           </tr>
         </tbody>
       </table>

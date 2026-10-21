@@ -16,6 +16,7 @@ type AttendanceReportFilters struct {
 	StartDate string
 	EndDate   string
 	GroupID   int64
+	TeacherID int64
 	WaliID    int64
 	Class     string
 	Search    string
@@ -107,6 +108,10 @@ func attendanceReportWhere(f AttendanceReportFilters) (string, []any) {
 		where = append(where, "p.halaqoh_id=?")
 		args = append(args, f.GroupID)
 	}
+	if f.TeacherID > 0 {
+		where = append(where, "h.ustadz_id=?")
+		args = append(args, f.TeacherID)
+	}
 	if f.WaliID > 0 {
 		where = append(where, "p.wali_santri_id=?")
 		args = append(args, f.WaliID)
@@ -180,6 +185,10 @@ func (s *Server) handleAttendanceReport(w http.ResponseWriter, r *http.Request) 
 		writeAPIError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	auth, _ := currentAuth(r)
+	if auth.User.Role == "ustadz" {
+		filters.TeacherID = auth.User.ID
+	}
 	rows, total, err := fetchAttendanceReport(r.Context(), s.DB, filters)
 	if err != nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "Laporan presensi belum dapat dibaca.")
@@ -198,8 +207,13 @@ func (s *Server) handleAttendanceReportOptions(w http.ResponseWriter, r *http.Re
 		writeAPIError(w, http.StatusServiceUnavailable, "Pilihan filter laporan belum dapat dibaca.")
 		return
 	}
+	auth, _ := currentAuth(r)
 	groups := []map[string]any{}
-	rows, err := s.DB.QueryContext(r.Context(), "SELECT id,nama_halaqoh FROM halaqoh ORDER BY nama_halaqoh,id")
+	groupQuery, groupArgs := "SELECT id,nama_halaqoh FROM halaqoh ORDER BY nama_halaqoh,id", []any{}
+	if auth.User.Role == "ustadz" {
+		groupQuery, groupArgs = "SELECT id,nama_halaqoh FROM halaqoh WHERE ustadz_id=? ORDER BY nama_halaqoh,id", []any{auth.User.ID}
+	}
+	rows, err := s.DB.QueryContext(r.Context(), groupQuery, groupArgs...)
 	if err != nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "Pilihan filter laporan belum dapat dibaca.")
 		return
@@ -221,7 +235,11 @@ func (s *Server) handleAttendanceReportOptions(w http.ResponseWriter, r *http.Re
 	}
 	rows.Close()
 	walis := []map[string]any{}
-	rows, err = s.DB.QueryContext(r.Context(), "SELECT id,nama_bapak FROM wali_santri ORDER BY nama_bapak,id")
+	waliQuery, waliArgs := "SELECT id,nama_bapak FROM wali_santri ORDER BY nama_bapak,id", []any{}
+	if auth.User.Role == "ustadz" {
+		waliQuery, waliArgs = "SELECT DISTINCT w.id,w.nama_bapak FROM wali_santri w JOIN presensi p ON p.wali_santri_id=w.id JOIN halaqoh h ON h.id=p.halaqoh_id WHERE h.ustadz_id=? ORDER BY w.nama_bapak,w.id", []any{auth.User.ID}
+	}
+	rows, err = s.DB.QueryContext(r.Context(), waliQuery, waliArgs...)
 	if err != nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "Pilihan filter laporan belum dapat dibaca.")
 		return
@@ -243,7 +261,12 @@ func (s *Server) handleAttendanceReportOptions(w http.ResponseWriter, r *http.Re
 	}
 	rows.Close()
 	classes := []string{}
-	rows, err = s.DB.QueryContext(r.Context(), "SELECT DISTINCT kelas FROM "+childTable+" WHERE kelas IS NOT NULL AND kelas<>'' ORDER BY kelas")
+	classQuery, classArgs := "SELECT DISTINCT kelas FROM "+childTable+" WHERE kelas IS NOT NULL AND kelas<>'' ORDER BY kelas", []any{}
+	if auth.User.Role == "ustadz" {
+		classQuery = "SELECT DISTINCT c.kelas FROM " + childTable + " c WHERE c.kelas IS NOT NULL AND c.kelas<>'' AND EXISTS(SELECT 1 FROM presensi p JOIN halaqoh h ON h.id=p.halaqoh_id WHERE h.ustadz_id=? AND p.wali_santri_id=c.wali_santri_id) ORDER BY c.kelas"
+		classArgs = []any{auth.User.ID}
+	}
+	rows, err = s.DB.QueryContext(r.Context(), classQuery, classArgs...)
 	if err != nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "Pilihan filter laporan belum dapat dibaca.")
 		return
@@ -285,13 +308,18 @@ func (s *Server) handleDeleteAttendance(w http.ResponseWriter, r *http.Request) 
 	defer tx.Rollback()
 	var groupID, waliID int64
 	var dateText string
-	err = tx.QueryRowContext(r.Context(), "SELECT halaqoh_id,wali_santri_id,DATE_FORMAT(tanggal,'%Y-%m-%d') FROM presensi WHERE id=? FOR UPDATE", id).Scan(&groupID, &waliID, &dateText)
+	var teacherID int64
+	err = tx.QueryRowContext(r.Context(), "SELECT p.halaqoh_id,p.wali_santri_id,DATE_FORMAT(p.tanggal,'%Y-%m-%d'),h.ustadz_id FROM presensi p JOIN halaqoh h ON h.id=p.halaqoh_id WHERE p.id=? FOR UPDATE", id).Scan(&groupID, &waliID, &dateText, &teacherID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeAPIError(w, http.StatusNotFound, "Catatan presensi tidak ditemukan.")
 		return
 	}
 	if err != nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "Data presensi belum dapat diubah.")
+		return
+	}
+	if auth.User.Role == "ustadz" && teacherID != auth.User.ID {
+		writeAPIError(w, http.StatusForbidden, "Catatan ini bukan milik kelompok yang Anda ajar.")
 		return
 	}
 	day, err := time.Parse("2006-01-02", dateText)
