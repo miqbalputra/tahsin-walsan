@@ -90,7 +90,15 @@ Bukti penuh berada di direktori root privat host dengan prefix `/root/tahsin-mig
 
 Backup Coolify manual tambahan juga berstatus sukses. **Salinan di luar home server belum berhasil diambil**: tombol unduh tidak menghasilkan berkas melalui browser yang dipakai saat pemeriksaan, dan SSH port 22 timeout. Backup yang tersedia sekarang tetap berada pada host yang sama. Keberhasilan restore tidak menggantikan kebutuhan salinan independen.
 
-Gerbang yang masih terbuka: salinan independen beserta validasinya; rantai log produksi dan pemulihan delta operasional; inventaris perangkat/antrean serta kelompok pilot; uji manusia dan beban; validasi kode baca/tulis Go pada MySQL/image target; pemulihan data hasil Go dan administrasi pilot. Kode staging dan latihan pengembalian lokal kini tersedia dalam panduan writer. Penulisan Go dan pilot **produksi** belum diaktifkan. Tidak ada klaim migrasi penuh atau kapasitas guru sudah terbukti.
+Gerbang yang masih terbuka: salinan independen beserta validasinya; rantai log produksi dan pemulihan delta operasional; pemulihan data Go sesuai prosedur operasional; kebijakan administrasi pilot; inventaris perangkat/antrean serta kelompok pilot; dan uji manusia serta beban. Kode staging dan latihan pengembalian lokal tersedia dalam panduan writer. Penulisan Go dan pilot **produksi** belum diaktifkan. Tidak ada klaim migrasi penuh atau kapasitas guru sudah terbukti.
+
+### Verifikasi writer pada MySQL home server
+
+Pada 22 Oktober 2026, writer Go diuji ulang di home server pada MySQL **8.4.11**, memakai image ID yang sama dengan server database produksi. Uji memakai container dan datadir sintetis tersendiri, hanya terikat ke `127.0.0.1:13319`, dengan akun serta database fiktif; container database dan volume produksi tidak diakses. Integrasi autosave PHP lulus 25 assertion, lalu suite writer Go/PHP memeriksa handoff setelah transaksi PHP lama selesai, retry idempoten, hak akun terbatas, konflik dua perangkat, rollback kegagalan, finalisasi, pause dan pengembalian kepemilikan.
+
+Dump sintetis sebelum restore dan dump hasil restore cocok persis pada skema, data, serta trigger. Setelah transfer kepemilikan di salinan restore, replay tanda terima Go yang dipulihkan mengembalikan respons asli dan tidak membuat presensi kedua: tanda terima tetap satu dan catatan resmi untuk wali/sesi uji juga tetap satu. Hasil uji, dump, dan log disimpan privat di direktori staging host; tidak ada kredensial atau isi dump yang dimasukkan ke Git. Container uji dihentikan setelah pemeriksaan, sementara data dan bukti tetap dipertahankan.
+
+Uji ini menutup validasi sintetik MySQL target serta replay tanda terima hasil backup. Uji tersebut tidak menjalankan pemulihan delta dari binlog produksi dan tidak memenuhi gerbang backup di luar server. Migrasi/cutover tetap menunggu backup independen tervalidasi, kebijakan administrasi pilot, inventaris antrean perangkat, serta pilot dan uji beban dengan persetujuan operasional terpisah.
 
 Contoh smoke test setelah backup/restore terverifikasi tersedia, memakai image kandidat yang telah dibangun:
 
