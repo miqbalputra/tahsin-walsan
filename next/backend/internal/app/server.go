@@ -67,6 +67,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/families", s.requireRoles(http.HandlerFunc(s.handleFamilies), "admin", "pj_tahfidz"))
 	mux.Handle("GET /api/v1/reports/attendance", s.requireRoles(http.HandlerFunc(s.handleAttendanceReport), "admin", "pj_tahfidz", "kepsek", "ustadz"))
 	mux.Handle("GET /api/v1/reports/attendance/options", s.requireRoles(http.HandlerFunc(s.handleAttendanceReportOptions), "admin", "pj_tahfidz", "kepsek", "ustadz"))
+	mux.Handle("GET /api/v1/reports/tahsin", s.requireRoles(http.HandlerFunc(s.handleTahsinReport), "admin", "pj_tahfidz", "kepsek", "ustadz"))
+	mux.Handle("POST /api/v1/reports/tahsin/verifications", s.requireRoles(http.HandlerFunc(s.handleTahsinVerification), "admin", "pj_tahfidz"))
 	mux.Handle("GET /export-excel.php", s.requireRoles(http.HandlerFunc(s.handleAttendanceExport), "admin", "pj_tahfidz", "kepsek", "ustadz"))
 	mux.Handle("DELETE /api/v1/attendance/records/{id}", s.requireRoles(http.HandlerFunc(s.handleDeleteAttendance), "admin", "pj_tahfidz", "ustadz"))
 	mux.Handle("GET /api/v1/attendance/state", s.requireRoles(http.HandlerFunc(s.handleAttendanceState), "ustadz"))

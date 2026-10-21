@@ -26,6 +26,7 @@ const router = createRouter({
     { path: '/progress-wali.php', redirect: '/progress' },
     { path: '/rekap-halaqoh.php', redirect: '/rekap' },
     { path: '/rekap-lengkap.php', redirect: '/rekap' },
+    { path: '/persentase-keaktifan.php', redirect: '/progress' },
     { path: '/capaian.php', redirect: '/capaian' },
     { path: '/libur.php', redirect: '/libur' },
     { path: '/pengumuman.php', redirect: '/pengumuman' },
