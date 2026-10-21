@@ -7,6 +7,7 @@ Paket ini menyiapkan candidate PHP–Vue dan Go dalam satu resource Compose tanp
 - Kedua container menolak database yang namanya bukan `tahsin_test_autosave_*`; backend Go juga menolak bila PHP dan Go menunjuk database berbeda.
 - Go API, Vue guru, dan Go writer mati secara default. Go memakai demo mode, dan PHP tetap menjadi satu-satunya penulis.
 - PHP dan Go hanya memiliki `expose` internal; file tidak memetakan `ports` ke host. Pasang domain hanya ke service `app` bila perlu menguji lewat browser. Service `go` tetap tanpa domain publik.
+- Batas keras service candidate: PHP maksimum 1 CPU/768 MiB, Go maksimum 0.5 CPU/256 MiB. Database clone adalah resource terpisah dan pemakaian resource-nya harus diperhitungkan sebelum deploy; batas ini tidak mencakup database.
 - File ini tidak membuat, mengubah, atau mengimpor database. Tidak ada definisi MySQL baru di stack ini.
 
 ## Menyiapkan resource
