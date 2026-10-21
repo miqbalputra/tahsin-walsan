@@ -84,6 +84,8 @@ Pemeriksaan read-only pada resource yang sama memastikan nama resource Coolify `
 
 Snapshot storage host saat pemeriksaan menunjukkan filesystem `/` 77 GB total, 50 GB terpakai, dan 24 GB tersedia; Docker melaporkan image 29.03 GB dan volume lokal 4.56 GB. Ini ukuran filesystem saat itu, bukan pengukuran SSD fisik. Paket backup produksi pada host berukuran 648 KB dan clone restore 197 MB. Folder `backup/` di workspace lokal bertanggal 30 Agustus 2026 dan hanya memuat enam ekspor tabel; folder itu tidak dihitung sebagai backup penuh terkini atau salinan independen.
 
+`lsblk` menampilkan satu disk blok 80 GB untuk LVM/root dan zram 1 GB; tidak terlihat disk backup kedua atau mount di `/mnt`, `/media`, `/srv`, maupun `/run/media`. Ukuran block device 80 GB juga belum cocok dengan spesifikasi SSD 60 GB yang diinformasikan; kapasitas fisik dan pemetaan storage perlu dikonfirmasi sebelum menentukan retensi.
+
 - Uji MySQL fiktif di host yang sama lulus **11 pemeriksaan**, termasuk restore seluruh objek dan replay transaksi setelah backup melewati rotasi binlog. Tidak memasang volume produksi pada container uji.
 - Backup penuh database produksi berhasil, dengan waktu proses terukur **1,194 detik**. Restore ke instance MySQL dengan image ID yang sama persis berhasil membandingkan seluruh **11 tabel**, definisi objek dan hash seluruh baris terhadap snapshot beku.
 - Pemeriksaan ulang pada host memastikan seluruh **17 berkas** paket backup masih cocok dengan checksum manifest; `verification.json` restore tetap menyatakan berhasil dengan 11 tabel dan nol perbedaan.
