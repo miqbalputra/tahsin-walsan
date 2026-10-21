@@ -1,6 +1,6 @@
 # Migrasi bertahap Go dan Vue
 
-Rencana tahapan, perlindungan data, syarat pengalihan, dan pemulihan ada di [Rencana migrasi Go + Vue](RENCANA_MIGRASI_GO_VUE.md). Dokumen ini menjelaskan implementasi pratinjau baca yang tersedia secara lokal; cara mematikan pratinjau di bawah tidak berlaku sebagai prosedur rollback setelah Go mulai menulis data.
+Rencana tahapan, perlindungan data, syarat pengalihan, dan pemulihan ada di [Rencana migrasi Go + Vue](RENCANA_MIGRASI_GO_VUE.md). Implementasi pilot Vue memakai autosave PHP, hasil backup/restore produksi terisolasi, dan build image home server dicatat di [runbook pelaksanaan](MIGRATION_SAFETY_RUNBOOK.md). Dokumen ini menjelaskan layanan pratinjau baca; cara mematikannya di bawah tidak berlaku sebagai prosedur rollback setelah Go mulai menulis data.
 
 Tahap pertama menambahkan pratinjau **baca data keluarga** untuk admin/PJ Tahfidz. PHP tetap melayani aplikasi utama, login, semua penulisan presensi/capaian, draft, finalisasi, impor, serta laporan. Tidak ada migrasi skema atau impor data produksi untuk tahap ini.
 
@@ -48,7 +48,7 @@ Untuk mode MySQL, gunakan akun khusus SELECT-only dan ubah `TAHSIN_NEXT_DATA_SOU
 
 Isi `TAHSIN_NEXT_DB_HOST`, `TAHSIN_NEXT_DB_PORT`, `TAHSIN_NEXT_DB_DATABASE`, `TAHSIN_NEXT_DB_USERNAME`, `TAHSIN_NEXT_DB_PASSWORD` secara eksplisit. Gunakan TLS terverifikasi (`TAHSIN_NEXT_DB_TLS=true`) untuk koneksi yang memerlukannya. `skip-verify`, role, dan mode TLS tanpa verifikasi tidak diterima.
 
-Pada container, jalankan Go sebagai layanan **internal** di jaringan yang sama dengan PHP; jangan publikasikan port Go ke internet. `next/backend/Dockerfile` menyediakan build terpisah. Alamat PHP menjadi, misalnya, `http://tahsin-next:8080`. TLS publik dan cookie login tetap ditangani aplikasi utama. File sumber `next/` ditolak Apache dan tidak dimasukkan ke image PHP; hanya aset hasil build yang diperlukan. Build image Docker belum diuji lokal jika Docker tidak tersedia.
+Pada container, jalankan Go sebagai layanan **internal** di jaringan yang sama dengan PHP; jangan publikasikan port Go ke internet. `next/backend/Dockerfile` menyediakan build terpisah. Alamat PHP menjadi, misalnya, `http://tahsin-next:8080`. TLS publik dan cookie login tetap ditangani aplikasi utama. File sumber `next/` ditolak Apache dan tidak dimasukkan ke image PHP; hanya aset hasil build yang diperlukan. Build image dan smoke test privat pada home server telah lulus pada 22 Oktober 2026; rincian versi/batas bukti ada di runbook.
 
 ## Pengembalian ke PHP
 
@@ -66,6 +66,6 @@ Set `TAHSIN_NEXT_ENABLED=0` pada PHP: menu dan endpoint pratinjau langsung tidak
 
 Dependensi frontend terkunci di package-lock.json; jangan mengganti versi tanpa mengulang pemeriksaan yang relevan. Tahap ini belum mengalihkan guru, mengaktifkan lingkungan produksi, atau membuktikan kapasitas guru di home server.
 
-Hasil verifikasi lokal 21 Oktober 2026: pengujian Go dan vet lolos; integrasi akun baca pada skema lama dan keluarga lolos; 12 pemeriksaan gateway PHP, 29 pemeriksaan browser, 147 regresi laporan lama, serta 25 pemeriksaan database autosave lama lolos. Build Vue dengan pemeriksaan tipe dan kompilasi biner Go untuk Windows/Linux berhasil. Build image Docker dan uji beban di home server belum dilakukan.
+Hasil verifikasi lokal 21 Oktober 2026: pengujian Go dan vet lolos; integrasi akun baca pada skema lama dan keluarga lolos; 12 pemeriksaan gateway PHP, 29 pemeriksaan browser, 147 regresi laporan lama, serta 25 pemeriksaan database autosave lama lolos. Build Vue dengan pemeriksaan tipe dan kompilasi biner Go untuk Windows/Linux berhasil. Build image Docker kemudian lulus pada home server, sebagaimana dicatat di runbook; uji beban belum dilakukan.
 
 Referensi: [Vue dan TypeScript](https://vuejs.org/guide/typescript/composition-api), [Vite backend integration](https://vite.dev/guide/backend-integration), [Go MySQL driver](https://github.com/go-sql-driver/mysql), [Transaksi database Go](https://pkg.go.dev/database/sql#TxOptions).

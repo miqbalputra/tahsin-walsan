@@ -74,6 +74,26 @@ Tautan **Buka tampilan sebelumnya** memakai `renderer=php`, kembali ke autosave 
 - 15 pemeriksaan perpindahan Vue ↔ PHP: draft offline, ID operasi yang responsnya hilang, fallback, batas kelompok pilot, dan lebar HP.
 - Build Vue/typecheck dan pengujian/vet Go lulus.
 
-Hasil ini belum menyatakan pemulihan MySQL produksi, build image Docker, kapasitas home server, atau pilot manusia selesai. Hasil produksi dan kendala dicatat terpisah sesudah pemeriksaan langsung.
+## Pemeriksaan home server, 22 Oktober 2026
+
+Coolify sudah dapat diakses. Database yang berjalan adalah MySQL **8.4.11**. Commit aplikasi PHP yang benar-benar terpasang adalah `24b8ed39bde8b43b382af11d03c9a4ebc2f4b6e6`, lebih lama daripada Git `main`; keberhasilan push tidak berarti versi itu sudah terdeploy. Image PHP yang terpasang diberi tag pemulihan lokal dan tetap menjadi aplikasi aktif.
+
+- Uji MySQL fiktif di host yang sama lulus **11 pemeriksaan**, termasuk restore seluruh objek dan replay transaksi setelah backup melewati rotasi binlog. Tidak memasang volume produksi pada container uji.
+- Backup penuh database produksi berhasil, dengan waktu proses terukur **1,194 detik**. Restore ke instance MySQL dengan image ID yang sama persis berhasil membandingkan seluruh **11 tabel**, definisi objek dan hash seluruh baris terhadap snapshot beku.
+- Skema reporting/autosave/keluarga diterapkan **hanya pada salinan pemulihan**, kemudian diulang. Seluruh nilai kolom lama tetap cocok; histori tidak digandakan; ringkasan laporan kandidat sebelum/sesudah migrasi sama. Pemeriksaan ini bukan impor keluarga atau perbaikan konflik historis.
+- Image kandidat PHP+Vue dan Go pada kode `aa19d4c9027d6c075fc0c55f0fe940f0b04e75de` berhasil dibangun di home server. `tests/migration-image-smoke.py` lulus **5 pemeriksaan** pada jaringan klon privat: koneksi PHP/MySQL, kedua entrypoint Vue, larangan akses berkas privat, gateway PHP–Go bertanda tangan dalam mode demo, serta penolakan permintaan tanpa tanda tangan dan penulisan Go. Pengujian Go MySQL sebelumnya tetap terpisah; smoke test image ini memakai mode demo Go secara eksplisit.
+- Container pemulihan dan runtime uji dihentikan sesudah pemeriksaan; data dan log uji disimpan privat di host. Tidak ada penggantian koneksi, migrasi skema, impor keluarga, atau deploy pada aplikasi produksi.
+
+Bukti penuh berada di direktori root privat host dengan prefix `/root/tahsin-migration-20261022-`: `synthetic-mysql-02/result.json`, `production-backup-01/manifest.json`, `production-restore-01/result.json`, `production-restore-01/verified/verification.json`, `production-schema-check-01/clone-migration.json`, dan `image-smoke-01/result.json`. Jangan memasukkan SQL, hash per baris, environment atau password pemulihan ke repository.
+
+Backup Coolify manual tambahan juga berstatus sukses. **Salinan di luar home server belum berhasil diambil**: tombol unduh tidak menghasilkan berkas melalui browser yang dipakai saat pemeriksaan, dan SSH port 22 timeout. Backup yang tersedia sekarang tetap berada pada host yang sama. Keberhasilan restore tidak menggantikan kebutuhan salinan independen.
+
+Gerbang yang masih terbuka: salinan independen beserta validasinya; rantai log produksi dan pemulihan delta operasional; inventaris perangkat/antrean serta kelompok pilot; uji manusia dan beban; kontrak baca sesi Go; implementasi penulisan Go di staging, pembatas seluruh jalur tulis dan latihan pengembalian. Penulisan Go dan pilot produksi belum diaktifkan. Tidak ada klaim migrasi penuh atau kapasitas guru sudah terbukti.
+
+Contoh smoke test setelah backup/restore terverifikasi tersedia, memakai image kandidat yang telah dibangun:
+
+```text
+python3 tests/migration-image-smoke.py --tool=scripts/migration-safety-docker.py --backup=/private/tahsin/backup-UNIK --restore=/private/tahsin/restore-UNIK --php-image=IMAGE_PHP_KANDIDAT --go-image=IMAGE_GO_KANDIDAT --out=/private/tahsin/image-smoke-UNIK
+```
 
 Referensi resmi: [mysqldump MySQL 8.4](https://dev.mysql.com/doc/refman/8.4/en/mysqldump.html), [posisi binlog MySQL 8.4](https://dev.mysql.com/doc/refman/8.4/en/show-binary-log-status.html), [mysqlbinlog MySQL 8.4](https://dev.mysql.com/doc/refman/8.4/en/mysqlbinlog.html), [mariadb-dump](https://mariadb.com/docs/server/clients-and-utilities/backup-restore-and-import-clients/mariadb-dump), [Vue v-once](https://vuejs.org/guide/best-practices/performance#v-once), [Vite backend integration](https://vite.dev/guide/backend-integration).
