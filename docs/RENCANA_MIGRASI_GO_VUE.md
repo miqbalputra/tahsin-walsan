@@ -20,12 +20,12 @@ Target keutuhan adalah **tidak kehilangan perubahan yang sudah diakui server aki
 | Komponen | Keadaan yang diketahui | Syarat sebelum digunakan lebih jauh |
 |---|---|---|
 | Aplikasi PHP | Jalur utama untuk login, pengisian, impor, dan laporan | Bekukan versi stabil yang dapat dijalankan kembali |
-| Go + Vue tahap pertama | Pratinjau keluarga hanya baca, lokal, mati secara default; belum dipush pada saat rencana dibuat | Paket deploy, build container, dan uji di lingkungan server |
-| Go untuk guru | Kontrak baca sesi dan [autosave staging dengan pengunci](GO_AUTOSAVE_STAGING.md) tersedia pada branch migrasi; mati secara default dan belum produksi | Uji image/MySQL target, pemulihan dan administrasi pilot; batas database sintetis belum boleh dibuka |
+| Go + Vue tahap pertama | Paket Compose Coolify staging dan guard database sintetis tersedia di branch `codex/go-vue-migration` pada commit `4d09c21`; belum dideploy, semua fitur tetap mati secara default | Deploy hanya ke clone/fixture staging setelah akun baca dan jaringan internal siap |
+| Go untuk guru | [Autosave writer Go](GO_AUTOSAVE_STAGING.md) lulus uji MySQL 8.4.11 sintetis dan gateway PHP→Go; belum menulis ke data produksi | Pertahankan PHP sebagai penulis produksi sampai backup independen, pemulihan operasional, kebijakan pilot dan uji guru/beban terbukti |
 | Autosave | Ada IndexedDB, draft server, revisi, tanda terima operasi, dan transaksi catatan resmi | Kontrak lama harus tetap dapat diproses frontend/backend baru |
 | Backup ZIP aplikasi | Mengekspor tabel fisik dan skema tabel; restore hanya memasukkan ID yang belum ada | Tidak dipakai sebagai satu-satunya pemulihan penuh |
-| Backup/pemulihan produksi | Belum diperiksa atau diuji pada home server dalam pekerjaan ini | Uji restore lengkap serta pemulihan transaksi setelah backup |
-| Kapasitas home server | Informasi pengguna: 4 CPU, RAM 6 GB, SSD 60 GB, Intel i5 generasi 12 | Ukur sisa sumber daya, aplikasi lain, ukuran DB, dan beban nyata |
+| Backup/pemulihan produksi | Backup MySQL 8.4.11 dan restore terisolasi cocok pada seluruh 11 tabel/objek; binary log ROW 30 hari, `sync_binlog=1`, `innodb_flush_log_at_trx_commit=1`; posisi saat pemeriksaan sama dengan manifest backup | Salinan terenkripsi di luar home server, pemulihan delta produksi, dan jadwal backup aktif belum terbukti. Ekspor lokal enam tabel dari 30 Agustus 2026 terlalu lama/tidak lengkap |
+| Kapasitas home server | Informasi pengguna: 4 CPU, RAM 6 GB, SSD 60 GB. Snapshot host menunjukkan filesystem `/` 77 GB total, 50 GB terpakai, 24 GB tersedia; Docker: image 29.03 GB, volume 4.56 GB | Perbedaan kapasitas filesystem dan SSD fisik perlu dicocokkan; ukur CPU/RAM dan beban aplikasi nyata |
 
 Temuan backup: `backup-restore.php` menggunakan restore **merge-only**, sehingga nilai salah pada baris yang sudah ada tidak dikembalikan ke nilai backup. Ekspornya juga tidak menyertakan definisi view, trigger, routine, atau event. `scripts/database-snapshot.php` yang tersedia di workspace pun mengekspor tabel, bukan seluruh objek database; skrip tersebut belum menjadi perangkat pemulihan produksi yang terverifikasi. `scripts/production-baseline.php` menghitung baris dan indeks, belum membuktikan kesamaan isi setiap baris. Skrip `verify-tahsin-snapshot.php` berguna untuk regresi enam tabel lama, bukan bukti restore seluruh aplikasi.
 
@@ -170,10 +170,10 @@ Untuk pusat laporan mendatang, Tahsin tetap menjadi sumber data resminya. Pusat 
 
 ## 12. Urutan pekerjaan terdekat
 
-1. Selesaikan inventaris target, seluruh jalur tulis, dan perangkat pilot; tetapkan versi PHP stabil yang benar-benar terpasang.
-2. Siapkan backup penuh, manifest/hash baris, dan latihan restore/replay pada lingkungan terisolasi. Ini adalah pekerjaan perlindungan data yang didahulukan.
-3. Lengkapi paket deploy pratinjau Go–Vue, termasuk build aset Vue di image PHP, build container Go dan pemantauan layanan internal. Fitur tetap mati sampai pemeriksaan staging selesai.
-4. Bangun kontrak baca sesi dan adaptor Vue untuk autosave PHP; buktikan kompatibilitas draft lama sebelum mengalihkan tampilan.
-5. Baru lanjutkan Go sebagai penulis di staging, pembatas seluruh jalur tulis, latihan rollback, dan pilot produksi sesuai gerbang di atas.
+1. Simpan salinan backup produksi terenkripsi di tujuan independen dari home server, lalu verifikasi hash dan lakukan restore drill dari salinan tersebut. Tujuan penyimpanan masih perlu ditetapkan.
+2. Lengkapi bukti pemulihan titik-waktu dari binlog produksi dan buktikan koordinat/log yang dipulihkan pada clone terisolasi. Uji sintetik MySQL 8.4.11 sudah mencakup transaksi sesudah backup; bukti sumber produksi belum.
+3. Verifikasi konfigurasi jadwal/retensi Coolify yang benar-benar tersimpan; form backup sebelumnya masih menunjukkan perubahan belum disimpan. Selesaikan inventaris antrean/perangkat dan pilih kelompok pilot.
+4. Deploy paket Compose hanya ke clone staging sintetis, lalu aktifkan satu fitur baca demi satu dan cocokkan laporan dengan PHP. Go writer tetap off.
+5. Tetapkan kebijakan operator/pemeriksa, jalankan pilot tampilan dan uji beban tanpa mengganggu produksi; setelah semua gerbang lulus barulah rencanakan pilot penulisan Go.
 
 Rujukan aturan yang tetap berlaku: [autosave](AUTOSAVE_ROLLOUT.md), [impor dan relasi keluarga](FAMILY_IMPORT.md), serta [implementasi pratinjau Go–Vue](GO_VUE_MIGRATION.md).
