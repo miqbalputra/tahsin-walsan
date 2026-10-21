@@ -1,0 +1,57 @@
+# Select this file explicitly in Coolify. It is intentionally not named
+# docker-compose.yml, so it cannot replace the current production app by discovery.
+# This stack only accepts an isolated database named tahsin_test_autosave_*.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.go-vue
+    environment:
+      APP_ENV: staging
+      APP_TIMEZONE: Asia/Jakarta
+      DB_HOST: ${TAHSIN_STAGING_DB_HOST:?Set the internal host for the isolated staging database}
+      DB_PORT: ${TAHSIN_STAGING_DB_PORT:-3306}
+      DB_DATABASE: ${TAHSIN_STAGING_DB_DATABASE:?Set a tahsin_test_autosave_* database name}
+      DB_USERNAME: ${TAHSIN_STAGING_DB_USERNAME:?Set the staging-only PHP database account}
+      DB_PASSWORD: ${TAHSIN_STAGING_DB_PASSWORD:?Set the staging-only PHP database password}
+      DB_CHARSET: utf8mb4
+      DB_CONNECT_TIMEOUT: "5"
+      SESSION_SAVE_PATH: /var/www/html/.sessions
+      TAHSIN_STAGING_ONLY: "1"
+      TAHSIN_NEXT_ENABLED: "0"
+      TAHSIN_NEXT_API_URL: http://go:8080
+      TAHSIN_NEXT_SHARED_SECRET: ${TAHSIN_STAGING_NEXT_SHARED_SECRET:-}
+      TAHSIN_VUE_TEACHER_ENABLED: "0"
+      TAHSIN_NEXT_WRITE_ENABLED: "0"
+    depends_on:
+      - go
+    expose:
+      - "80"
+    restart: unless-stopped
+    volumes:
+      - staging_sessions:/var/www/html/.sessions
+
+  go:
+    build:
+      context: ./next/backend
+      dockerfile: Dockerfile
+    environment:
+      TAHSIN_STAGING_ONLY: "1"
+      TAHSIN_NEXT_ENABLED: "0"
+      TAHSIN_NEXT_SHARED_SECRET: ${TAHSIN_STAGING_NEXT_SHARED_SECRET:-}
+      TAHSIN_NEXT_DATA_SOURCE: demo
+      TAHSIN_NEXT_LISTEN: 0.0.0.0:8080
+      TAHSIN_NEXT_DB_HOST: ${TAHSIN_STAGING_DB_HOST:?Set the internal host for the isolated staging database}
+      TAHSIN_NEXT_DB_PORT: ${TAHSIN_STAGING_DB_PORT:-3306}
+      TAHSIN_NEXT_DB_DATABASE: ${TAHSIN_STAGING_DB_DATABASE:?Set a tahsin_test_autosave_* database name}
+      TAHSIN_NEXT_DB_USERNAME: ${TAHSIN_STAGING_GO_READ_USERNAME:?Set the separate Go read-only staging account}
+      TAHSIN_NEXT_DB_PASSWORD: ${TAHSIN_STAGING_GO_READ_PASSWORD:?Set the Go read-only staging password}
+      TAHSIN_NEXT_DB_TLS: "false"
+      TAHSIN_NEXT_WRITE_ENABLED: "0"
+      TAHSIN_NEXT_TEACHER_READ_ENABLED: "0"
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+volumes:
+  staging_sessions:

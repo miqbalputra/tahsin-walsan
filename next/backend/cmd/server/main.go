@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -16,7 +17,31 @@ import (
 	"tahsin.local/next/internal/sessionread"
 )
 
+var syntheticDatabaseName = regexp.MustCompile(`^tahsin_test_autosave_[a-z0-9_]+$`)
+
+func validateStagingEnvironment(getenv func(string) string) error {
+	if getenv("TAHSIN_STAGING_ONLY") != "1" {
+		return nil
+	}
+	database := getenv("DB_DATABASE")
+	if !syntheticDatabaseName.MatchString(database) {
+		return errors.New("staging-only mode requires a synthetic PHP database")
+	}
+	for _, key := range []string{"TAHSIN_NEXT_DB_DATABASE", "TAHSIN_NEXT_WRITE_DB_DATABASE"} {
+		if value := getenv(key); value != "" && value != database {
+			return errors.New("staging-only services must use the same synthetic database")
+		}
+	}
+	if getenv("TAHSIN_NEXT_WRITE_ENABLED") == "1" {
+		return errors.New("Go writer is disabled in staging-only mode")
+	}
+	return nil
+}
+
 func main() {
+	if err := validateStagingEnvironment(os.Getenv); err != nil {
+		log.Fatal(err)
+	}
 	enabled := os.Getenv("TAHSIN_NEXT_ENABLED") == "1"
 	secret := os.Getenv("TAHSIN_NEXT_SHARED_SECRET")
 	if enabled && len(secret) < 32 {

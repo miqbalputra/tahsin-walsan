@@ -6,6 +6,8 @@ Kode berikutnya menyediakan [kontrak baca sesi guru Go](GO_SESSION_READ.md), ter
 
 Writer Go untuk database sintetis, pengunci penulisan dan bukti kompatibilitas PHP → Go → PHP tersedia dalam [panduan autosave staging](GO_AUTOSAVE_STAGING.md). Flag writer terpisah; tahap pratinjau baca dalam dokumen ini tetap memakai PHP sebagai penulis.
 
+Paket Compose Coolify untuk PHP–Vue dan Go pada database clone sintetis, dengan guard agar tidak bisa menunjuk database produksi, ada di [panduan staging Coolify](COOLIFY_GO_VUE_STAGING.md). Paket ini bukan konfigurasi cutover.
+
 Tahap pertama menambahkan pratinjau **baca data keluarga** untuk admin/PJ Tahfidz. PHP tetap melayani aplikasi utama, login, semua penulisan presensi/capaian, draft, finalisasi, impor, serta laporan. Tidak ada migrasi skema atau impor data produksi untuk tahap ini.
 
 ## Yang sudah tersedia
