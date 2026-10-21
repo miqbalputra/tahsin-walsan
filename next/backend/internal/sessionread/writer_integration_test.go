@@ -371,3 +371,46 @@ func TestWriterPHPInteroperability(t *testing.T) {
 	equivalent(t, committed, decodeAs[any](t, phpReplay))
 	t.Log("Finalization survives PHP reads, pause/stale generations retry, rollback to PHP retains Go receipts")
 }
+
+func TestWriterRestoredReceiptReplay(t *testing.T) {
+	if os.Getenv("TAHSIN_WRITE_RESTORE_TEST") != "1" {
+		t.Skip("requires a restored synthetic writer backup")
+	}
+	if os.Getenv("TAHSIN_NEXT_WRITE_DB_HOST") != "127.0.0.1" || os.Getenv("TAHSIN_NEXT_WRITE_DB_PORT") != "13319" || !strings.HasPrefix(os.Getenv("TAHSIN_NEXT_WRITE_DB_DATABASE"), "tahsin_test_autosave_") {
+		t.Fatal("owned loopback restore fixture required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	w, err := OpenWriter(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.DB.Close()
+	const operation = "go_complete_retry_0001"
+	var requestHash, response, date string
+	var generation int64
+	if err = w.DB.QueryRowContext(ctx, "SELECT request_hash,response_json FROM tahsin_autosave_operations WHERE user_id=2 AND operation_id=?", operation).Scan(&requestHash, &response); err != nil {
+		t.Fatal("Go receipt missing after restore:", err)
+	}
+	if err = w.DB.QueryRowContext(ctx, "SELECT generation FROM tahsin_writer_policy WHERE id=1").Scan(&generation); err != nil {
+		t.Fatal(err)
+	}
+	if err = w.DB.QueryRowContext(ctx, "SELECT session_date FROM tahsin_writer_groups WHERE halaqoh_id=3 ORDER BY session_date DESC LIMIT 1").Scan(&date); err != nil {
+		t.Fatal(err)
+	}
+	var before int
+	if err = w.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM presensi WHERE wali_santri_id=10 AND tanggal BETWEEN ? AND DATE_ADD(?,INTERVAL 6 DAY)", date, date).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	request := WriteRequest{Action: "save", Operation: operation, Group: 3, Wali: 10, Date: date}
+	got, err := w.Execute(ctx, 2, generation, request, requestHash, time.Now())
+	if err != nil {
+		t.Fatal("restored Go receipt did not replay:", err)
+	}
+	equivalent(t, got, decodeAs[any](t, []byte(response)))
+	var after int
+	if err = w.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM presensi WHERE wali_santri_id=10 AND tanggal BETWEEN ? AND DATE_ADD(?,INTERVAL 6 DAY)", date, date).Scan(&after); err != nil || after != before {
+		t.Fatal("replaying a restored receipt duplicated official attendance")
+	}
+	t.Log("Backup restore preserved the Go receipt; replay returned its original response without another attendance write")
+}
