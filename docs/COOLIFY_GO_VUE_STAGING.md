@@ -25,6 +25,7 @@ Untuk menggunakan Go read-only pada clone staging, ubah `TAHSIN_NEXT_ENABLED` me
 
 - `go test ./...` dari `next/backend` dan `node tests/staging-entrypoint-guard.cjs` dari root repo.
 - `docker compose -f compose.go-vue-staging.yml config` dengan env staging sintetis. Semua variabel `TAHSIN_STAGING_*` harus menunjuk clone/fixture staging; untuk pemeriksaan konfigurasi gunakan nilai dummy, bukan kredensial produksi.
+- Pada 22 Oktober 2026, Compose v5.5.1 di home server berhasil menjalankan `config -q` pada file branch terbaru dengan nilai placeholder setelah batas CPU/RAM ditambahkan. Pemeriksaan ini tidak membuat atau menjalankan container.
 - Jalankan image candidate dan periksa `/health.php`, login test, aset Vue, serta `/healthz` internal Go. Pastikan PHP tetap dapat bekerja bila Go berhenti saat semua flag Go mati.
 - Sebelum pilot, ikuti gerbang backup dan pemulihan di [runbook keselamatan migrasi](MIGRATION_SAFETY_RUNBOOK.md). Paket staging ini bukan persetujuan untuk cutover atau mengaktifkan penulisan Go di produksi.
 
