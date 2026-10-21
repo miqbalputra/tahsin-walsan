@@ -123,7 +123,9 @@ func attendanceReportWhere(f AttendanceReportFilters) (string, []any) {
 	return strings.Join(where, " AND "), args
 }
 
-func familyChildSource(ctx context.Context, db *sql.DB) (string, error) {
+func familyChildSource(ctx context.Context, db interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}) (string, error) {
 	var views int
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.views WHERE table_schema=DATABASE() AND table_name='family_children'").Scan(&views); err != nil {
 		return "", err

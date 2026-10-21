@@ -113,6 +113,24 @@ func TestProductionReleaseGateBlocksAPIsUntilExplicitlyOpened(t *testing.T) {
 	}
 }
 
+func TestParticipantEndpointsRequireAuthentication(t *testing.T) {
+	server := NewServer(Config{Environment: "development", CookieName: "tahsin_session", SessionDays: 30}, nil)
+	for _, test := range []struct{ method, path string }{
+		{method: "GET", path: "/api/v1/participants"},
+		{method: "POST", path: "/api/v1/participants"},
+		{method: "PATCH", path: "/api/v1/participants/12"},
+		{method: "DELETE", path: "/api/v1/participants/12"},
+	} {
+		t.Run(test.method+" "+test.path, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, httptest.NewRequest(test.method, test.path, nil))
+			if recorder.Code != 401 {
+				t.Fatalf("status = %d, want 401; body=%s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
 func contains(text, part string) bool {
 	for i := 0; i+len(part) <= len(text); i++ {
 		if text[i:i+len(part)] == part {

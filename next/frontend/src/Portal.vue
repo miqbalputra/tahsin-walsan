@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import Teacher from './Teacher.vue'
 import AttendanceReport from './AttendanceReport.vue'
 import GroupManagement from './GroupManagement.vue'
+import Participants from './Participants.vue'
 import FamilyPreview from './App.vue'
 import type { TeacherBoot } from './teacher'
 import { loadLegacyAutosave } from './autosave-loader'
@@ -169,6 +170,7 @@ function localDate() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia
     <div v-if="error" class="global-error" role="alert"><span>{{ error }}</span><button @click="error = ''">Tutup</button></div>
     <section v-if="isTeacherSession && boot" class="content teacher-content"><Teacher :key="boot.halaqoh_id + ':' + boot.tanggal" :boot="boot"></Teacher></section>
     <section v-else-if="screen === 'halaqoh' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><GroupManagement :csrf="csrf" @unauthorized="expireLogin" /></section>
+    <section v-else-if="screen === 'peserta' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><Participants :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'keluarga'" class="content"><div id="go-vue-preview"><FamilyPreview endpoint="/api/v1/families" :hide-back-link="true" /></div></section>
     <section v-else-if="screen === 'laporan'" class="content"><AttendanceReport :csrf="csrf" :role="user.role" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'hari-ini' || screen === 'sesi'" class="content">
