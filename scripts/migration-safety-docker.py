@@ -27,7 +27,7 @@ def run(args, *, data=None, output=None, timeout=45):
     if result.returncode:
         if output:
             Path(str(output.name) + '.stderr').write_bytes(result.stderr)
-        raise RuntimeError('Native command failed; private stderr retained when available. No cutover performed.')
+        raise RuntimeError('Native command failed (exit ' + str(result.returncode) + '); private output retained when available. No cutover performed.')
     return result.stdout
 
 

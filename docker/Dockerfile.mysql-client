@@ -3,7 +3,12 @@ ARG MYSQL_BASE=mysql:8.4.11
 FROM ${MYSQL_BASE}
 ARG MYSQL_CLIENT_VERSION=8.4.11-1.el9
 USER root
-RUN microdnf install -y mysql-community-client-${MYSQL_CLIENT_VERSION} \
+RUN printf '%s\n' '[mysql84-recovery-client]' 'name=MySQL 8.4 official recovery client' \
+        'baseurl=https://repo.mysql.com/yum/mysql-8.4-community/el/9/$basearch/' \
+        'enabled=1' 'gpgcheck=1' 'gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-mysql' 'module_hotfixes=true' \
+        > /etc/yum.repos.d/mysql-recovery-client.repo \
+    && microdnf remove -y mysql-community-server-minimal \
+    && microdnf install -y mysql-community-client-${MYSQL_CLIENT_VERSION} \
     && microdnf clean all \
     && mysqlbinlog --version
 ENTRYPOINT ["mysqlbinlog"]
