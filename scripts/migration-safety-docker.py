@@ -14,6 +14,7 @@ import secrets
 import selectors
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -76,6 +77,16 @@ def native_config(container, password):
 
 
 def native(container, config, program, *args, **kwargs):
+    if program == 'mysqlbinlog' and os.environ.get('TAHSIN_MYSQL_CLIENT_IMAGE'):
+        # The official minimal server image omits mysqlbinlog. A matching official
+        # client image shares only the target's network, never its data volume.
+        credentials = run(['docker', 'exec', container, 'cat', config])
+        with tempfile.NamedTemporaryFile(prefix='tahsin-client-', suffix='.cnf') as handle:
+            handle.write(credentials)
+            handle.flush()
+            return run(['docker', 'run', '--rm', '--network', 'container:' + container, '--memory', '128m', '--cpus', '0.25',
+                '--mount', 'type=bind,src=' + handle.name + ',dst=/work/client.cnf,readonly', '--entrypoint', 'mysqlbinlog',
+                os.environ['TAHSIN_MYSQL_CLIENT_IMAGE'], '--defaults-file=/work/client.cnf', '--host=127.0.0.1', '--protocol=TCP', *args], **kwargs)
     return run(['docker', 'exec', '-i', container, program, '--defaults-file=' + config, *args], **kwargs)
 
 

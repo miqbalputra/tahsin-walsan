@@ -1,0 +1,9 @@
+# Native client for recovery only; never replaces the production database image.
+ARG MYSQL_BASE=mysql:8.4.11
+FROM ${MYSQL_BASE}
+ARG MYSQL_CLIENT_VERSION=8.4.11-1.el9
+USER root
+RUN microdnf install -y mysql-community-client-${MYSQL_CLIENT_VERSION} \
+    && microdnf clean all \
+    && mysqlbinlog --version
+ENTRYPOINT ["mysqlbinlog"]
