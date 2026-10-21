@@ -47,6 +47,10 @@ Restore Docker memakai **image DB yang sama persis menurut image ID**, direktori
 
 Profil Docker belum menyediakan replay binlog atau otomatisasi salinan di luar server. Berhasil restore penuh **belum memenuhi gerbang penulisan Go** sebelum bukti pemulihan transaksi setelah backup dan salinan independen tersedia. User DB/grants, konfigurasi host, serta volume sesi tetap dicadangkan sebagai lingkup tersendiri.
 
+Image MySQL server minimal tidak selalu memuat `mysqlbinlog`. `docker/Dockerfile.mysql-client` menyediakan client resmi dengan versi paket yang disamakan dengan sumber; repository lengkap dan pemeriksaan GPG tetap digunakan. Image client terpisah ini tidak mengganti image database. Set `TAHSIN_MYSQL_CLIENT_IMAGE` pada proses pengujian untuk menjalankan pembaca binlog melalui client tersebut, hanya berbagi jaringan container target dan konfigurasi client sementara yang hanya dapat dibaca.
+
+`tests/migration-docker-integration.py` menguji objek, hash data dan replay melewati rotasi binlog pada instance fiktif tanpa volume produksi. `tests/verify-migration-clone.php` menguji penerapan skema reporting/autosave/keluarga dua kali pada salinan pemulihan; UUID/hostname target wajib cocok guard dan berbeda dari sumber. Seluruh kolom asli setiap tabel dibandingkan lewat hash, serta jumlah laporan historis diperiksa. Skrip ini tidak mengimpor data keluarga atau dijalankan pada database produksi.
+
 ## Pilot Vue dengan PHP
 
 Build frontend menyediakan entry `src/main.ts` untuk pratinjau keluarga dan `src/teacher.ts` untuk form guru. PHP memvalidasi manifest beserta chunk importnya sebelum memilih tampilan baru. Build opsional `docker/Dockerfile.go-vue` menyertakan hasil Vue di image PHP; `Dockerfile` utama tetap tersedia untuk versi stabil. Build container harus diuji sebelum deploy.
