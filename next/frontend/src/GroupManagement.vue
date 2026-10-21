@@ -3,7 +3,9 @@ import { onMounted, ref } from 'vue'
 
 type Group = { id: number; nama_halaqoh: string; ustadz_id: number; nama_ustadz: string; program_code: 'bapak' | 'ibu'; total_member: number }
 type Teacher = { id: number; nama_lengkap: string }
+type Member = { id: number; nama_bapak: string; no_hp: string; daftar_anak: string }
 type GroupPayload = { groups: Group[]; teachers: Teacher[] }
+type MemberPayload = { members: Member[]; available: Member[] }
 type Envelope<T> = { status: string; data?: T; message?: string }
 
 const props = defineProps<{ csrf: string }>()
@@ -19,6 +21,13 @@ const teacherID = ref(0)
 const program = ref<'bapak' | 'ibu'>('bapak')
 const error = ref('')
 const notice = ref('')
+const membersOpen = ref(false)
+const memberGroup = ref<Group | null>(null)
+const members = ref<Member[]>([])
+const availableMembers = ref<Member[]>([])
+const memberToAdd = ref(0)
+const loadingMembers = ref(false)
+const savingMember = ref(false)
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
@@ -82,6 +91,52 @@ async function save() {
   finally { saving.value = false }
 }
 
+async function openMembers(group: Group) {
+  memberGroup.value = group
+  memberToAdd.value = 0
+  membersOpen.value = true
+  await loadMembers()
+}
+
+async function loadMembers() {
+  if (!memberGroup.value) return
+  loadingMembers.value = true
+  error.value = ''
+  try {
+    const payload = await request<MemberPayload>(`/api/v1/groups/${memberGroup.value.id}/members`)
+    members.value = payload.members
+    availableMembers.value = payload.available
+  } catch (e) { error.value = (e as Error).message }
+  finally { loadingMembers.value = false }
+}
+
+async function addMember() {
+  if (!memberGroup.value || !memberToAdd.value) return
+  savingMember.value = true
+  error.value = ''
+  try {
+    await request(`/api/v1/groups/${memberGroup.value.id}/members`, { method: 'POST', body: JSON.stringify({ wali_santri_id: memberToAdd.value }) })
+    memberToAdd.value = 0
+    notice.value = 'Peserta ditambahkan ke kelompok.'
+    await loadMembers()
+    await load()
+  } catch (e) { error.value = (e as Error).message }
+  finally { savingMember.value = false }
+}
+
+async function removeMember(member: Member) {
+  if (!memberGroup.value || !window.confirm(`Keluarkan ${member.nama_bapak} dari kelompok? Riwayat kehadiran tetap disimpan.`)) return
+  savingMember.value = true
+  error.value = ''
+  try {
+    await request(`/api/v1/groups/${memberGroup.value.id}/members/${member.id}`, { method: 'DELETE' })
+    notice.value = 'Peserta dikeluarkan dari kelompok; histori tetap tersimpan.'
+    await loadMembers()
+    await load()
+  } catch (e) { error.value = (e as Error).message }
+  finally { savingMember.value = false }
+}
+
 onMounted(load)
 </script>
 
@@ -102,7 +157,7 @@ onMounted(load)
         <h2>{{ group.nama_halaqoh }}</h2>
         <p class="muted">Pengajar: {{ group.nama_ustadz || 'Belum ditentukan' }}</p>
         <p class="group-count">{{ group.total_member }} peserta aktif</p>
-        <p v-if="group.total_member > 0" class="group-note">Program tidak dapat diganti jika kelompok ini memiliki riwayat atau draft.</p>
+        <div class="group-actions"><button class="secondary" @click="openMembers(group)">Kelola anggota</button><span v-if="group.total_member > 0" class="group-note">Program terkunci bila ada histori atau draft.</span></div>
       </article>
     </div>
 
@@ -119,9 +174,29 @@ onMounted(load)
         <div class="editor-actions"><button type="button" class="secondary" :disabled="saving" @click="editorOpen = false">Batal</button><button type="submit" class="primary" :disabled="saving || !name.trim() || !teacherID">{{ saving ? 'Menyimpan…' : 'Simpan' }}</button></div>
       </form>
     </div>
+
+    <div v-if="membersOpen && memberGroup" class="modal-backdrop" @click.self="membersOpen = false">
+      <section class="member-editor panel" role="dialog" aria-modal="true" :aria-label="'Kelola anggota ' + memberGroup.nama_halaqoh">
+        <div class="member-heading"><div><p class="eyebrow">TAHSIN {{ memberGroup.program_code.toUpperCase() }}</p><h2>Anggota · {{ memberGroup.nama_halaqoh }}</h2></div><button class="secondary" @click="membersOpen = false">Tutup</button></div>
+        <p v-if="error" class="error" role="alert">{{ error }}</p>
+        <div v-if="loadingMembers" class="panel">Memuat daftar anggota…</div>
+        <template v-else>
+          <div class="member-list" aria-label="Anggota aktif">
+            <article v-for="member in members" :key="member.id" class="member-row"><div><strong>{{ member.nama_bapak }}</strong><p>{{ member.daftar_anak || member.no_hp || 'Detail anak belum tersedia' }}</p></div><button class="remove-button" :disabled="savingMember" @click="removeMember(member)">Keluarkan</button></article>
+            <p v-if="!members.length" class="muted">Belum ada peserta aktif di kelompok ini.</p>
+          </div>
+          <form v-if="availableMembers.length" class="member-add" @submit.prevent="addMember">
+            <label>Tambah peserta<select v-model.number="memberToAdd" required><option :value="0" disabled>Pilih peserta tanpa kelompok</option><option v-for="member in availableMembers" :key="member.id" :value="member.id">{{ member.nama_bapak }}{{ member.daftar_anak ? ' — ' + member.daftar_anak : '' }}</option></select></label>
+            <button class="primary" :disabled="savingMember || !memberToAdd">{{ savingMember ? 'Menyimpan…' : 'Tambahkan' }}</button>
+          </form>
+          <p v-else class="muted">Tidak ada peserta aktif tanpa kelompok yang bisa ditambahkan.</p>
+          <p class="editor-note muted">Mengeluarkan peserta mengarsipkan keanggotaan. Data peserta dan histori presensi tidak dihapus.</p>
+        </template>
+      </section>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.groups-page{display:grid;gap:18px}.groups-heading-row{display:flex;align-items:end;justify-content:space-between;gap:16px}.groups-heading-row h1{margin-bottom:8px}.groups-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}.group-card{display:grid;gap:10px}.group-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.group-card h2{font-size:18px;margin:6px 0 0}.group-card p{margin:0}.group-count{font-weight:700;color:#234b8c}.group-note,.editor-note{font-size:12px;line-height:1.5}.notice{background:#e8f7ee;border:1px solid #c5e8d2;color:#17633a;padding:12px 14px;border-radius:12px}.warning-panel{background:#fff7e7;color:#7a5719}.modal-backdrop{position:fixed;inset:0;z-index:30;background:#13243bb0;display:grid;place-items:center;padding:18px}.group-editor{width:min(100%,460px);display:grid;gap:15px}.group-editor h2{margin:0}.group-editor label{display:grid;gap:7px;font-size:13px;font-weight:700}.group-editor input,.group-editor select{width:100%;border:1px solid #cbd7e5;border-radius:9px;background:white;padding:11px 12px;font:inherit}.editor-actions{display:flex;justify-content:flex-end;gap:9px}.editor-note{margin:0}@media(max-width:600px){.groups-heading-row{align-items:stretch;flex-direction:column}.groups-heading-row .primary{width:100%}.group-editor{max-height:calc(100dvh - 36px);overflow:auto}}
+.groups-page{display:grid;gap:18px}.groups-heading-row{display:flex;align-items:end;justify-content:space-between;gap:16px}.groups-heading-row h1{margin-bottom:8px}.groups-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}.group-card{display:grid;gap:10px}.group-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.group-card h2{font-size:18px;margin:6px 0 0}.group-card p{margin:0}.group-count{font-weight:700;color:#234b8c}.group-actions{display:grid;gap:7px}.group-actions .secondary{justify-self:start}.group-note,.editor-note{font-size:12px;line-height:1.5}.notice{background:#e8f7ee;border:1px solid #c5e8d2;color:#17633a;padding:12px 14px;border-radius:12px}.warning-panel{background:#fff7e7;color:#7a5719}.modal-backdrop{position:fixed;inset:0;z-index:30;background:#13243bb0;display:grid;place-items:center;padding:18px}.group-editor,.member-editor{width:min(100%,520px);display:grid;gap:15px;max-height:calc(100dvh - 36px);overflow:auto}.group-editor h2,.member-editor h2{margin:0}.group-editor label,.member-add label{display:grid;gap:7px;font-size:13px;font-weight:700}.group-editor input,.group-editor select,.member-add select{width:100%;border:1px solid #cbd7e5;border-radius:9px;background:white;padding:11px 12px;font:inherit}.editor-actions,.member-heading{display:flex;align-items:center;justify-content:space-between;gap:9px}.editor-actions{justify-content:flex-end}.editor-note{margin:0}.member-list{display:grid;gap:8px;max-height:40vh;overflow:auto}.member-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #e7edf2}.member-row strong{font-size:14px}.member-row p{font-size:12px;color:#65788e;line-height:1.45;margin:5px 0 0}.remove-button{border:1px solid #f1d2d0;background:#fff4f3;color:#963c35;border-radius:9px;padding:8px 10px;font-weight:700;white-space:nowrap}.member-add{display:flex;align-items:end;gap:9px}.member-add label{flex:1}.member-add .primary{white-space:nowrap}@media(max-width:600px){.groups-heading-row{align-items:stretch;flex-direction:column}.groups-heading-row .primary{width:100%}.member-add{align-items:stretch;flex-direction:column}.member-add .primary{width:100%}}
 </style>
