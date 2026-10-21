@@ -579,7 +579,7 @@ function tahsinDashboardData(PDO $pdo, string $role, int $userId): array
     return ['recent' => $recent, 'warnings' => $warnings];
 }
 
-function tahsinPendingFromReport(array $report, DateTimeImmutable $now): array
+function tahsinPendingFromReport(array $report, DateTimeImmutable $now, ?string $currentReminderSession = null): array
 {
     $groups = [];
     foreach ($report['rows'] as $row) {
@@ -587,7 +587,12 @@ function tahsinPendingFromReport(array $report, DateTimeImmutable $now): array
             // Teacher reminders must be grounded in a roster captured for this
             // session. The latest active roster is useful context, but cannot
             // prove historical obligations before tracking began.
-            if (!$cell['in_schedule'] || !$cell['expected'] || empty($cell['verified_roster'])) continue;
+            // The weekly reminder can check the same current roster used by
+            // the input form while history is unavailable. Never extend that
+            // fallback to past sessions or change historical report totals.
+            $currentRosterReminder = $currentReminderSession === tahsinSessionDate($now->format('Y-m-d'))
+                && $cell['session_date'] === $currentReminderSession;
+            if (!$cell['in_schedule'] || !$cell['expected'] || (empty($cell['verified_roster']) && !$currentRosterReminder)) continue;
             $owner = $cell['owner'];
             if (empty($owner['halaqoh_id'])) continue;
             $key = $cell['session_date'] . ':' . $owner['halaqoh_id'] . ':' . ($owner['ustadz_id'] ?? 0);
@@ -600,7 +605,9 @@ function tahsinPendingFromReport(array $report, DateTimeImmutable $now): array
                 'missing_capaian' => 0, 'missing_keterangan' => 0, 'conflicts' => 0, 'pending_participants' => [], 'deadline_at' => $cell['deadline_at'],
                 'has_expected_roster' => false,
                 'expected_count' => 0, 'expected_complete' => 0, 'expected_recorded' => 0,
-                'roster_source' => $cell['roster_source'], 'data_verified' => $cell['verified_roster']];
+                'roster_source' => $cell['roster_source'], 'data_verified' => $cell['verified_roster'],
+                'roster_basis' => $cell['verified_roster'] ? 'session_history' : 'current_roster',
+                'attendance_counts' => ['H' => 0, 'S' => 0, 'I' => 0, 'A' => 0]];
             $g =& $groups[$key];
             $g['has_expected_roster'] = $g['has_expected_roster'] || $cell['expected'];
             if ($cell['expected']) {
@@ -610,6 +617,7 @@ function tahsinPendingFromReport(array $report, DateTimeImmutable $now): array
             }
             $g['total_anggota']++;
             if ($cell['record']) $g['sudah_diisi']++;
+            if ($cell['record'] && isset($g['attendance_counts'][$cell['record']['status']])) $g['attendance_counts'][$cell['record']['status']]++;
             if ($cell['complete']) $g['complete_input']++;
             else {
                 $counter = in_array($cell['state'], ['conflict', 'invalid_date'], true) ? 'conflicts' : ($cell['state'] === 'capaian' ? 'missing_capaian' : ($cell['state'] === 'presensi_incomplete' ? 'missing_keterangan' : 'missing_presensi'));
@@ -691,9 +699,9 @@ function tahsinUnverifiedRecordIssuesFromReport(array $report, string $role = 'a
 }
 
 /** Build the date-first monitoring view while preserving the legacy groups list for integrations. */
-function tahsinPendingOverviewFromReport(array $report, DateTimeImmutable $now, string $role = 'admin'): array
+function tahsinPendingOverviewFromReport(array $report, DateTimeImmutable $now, string $role = 'admin', ?string $currentReminderSession = null): array
 {
-    $groups = tahsinPendingFromReport($report, $now);
+    $groups = tahsinPendingFromReport($report, $now, $currentReminderSession);
     $issues = tahsinUnverifiedRecordIssuesFromReport($report, $role);
     $sessions = [];
     $verifiedCount = 0;
@@ -703,13 +711,15 @@ function tahsinPendingOverviewFromReport(array $report, DateTimeImmutable $now, 
         $verified = !empty($trend['roster_verified']);
         if ($verified) $verifiedCount++; else $unverifiedCount++;
         $sessionGroups = array_values(array_filter($groups, static fn($g) => $g['tanggal_tahsin'] === $date));
+        $currentRosterAvailable = !$verified && $date === $currentReminderSession && count($sessionGroups) > 0;
         $sessionIssues = array_values(array_filter($issues, static fn($issue) => $issue['session_date'] === $date));
         $sessions[] = [
             'tanggal' => $date,
             'roster_verified' => $verified,
-            'roster_count' => $verified ? (int) $trend['peserta_roster'] : null,
-            'complete_input' => $verified ? (int) $trend['complete_input'] : null,
-            'missing_presensi' => $verified ? (int) $trend['missing_presensi'] : null,
+            'current_roster_available' => $currentRosterAvailable,
+            'roster_count' => $verified ? (int) $trend['peserta_roster'] : ($currentRosterAvailable ? array_sum(array_column($sessionGroups, 'total_anggota')) : null),
+            'complete_input' => $verified ? (int) $trend['complete_input'] : ($currentRosterAvailable ? array_sum(array_column($sessionGroups, 'complete_input')) : null),
+            'missing_presensi' => $verified ? (int) $trend['missing_presensi'] : ($currentRosterAvailable ? array_sum(array_column($sessionGroups, 'missing_presensi')) : null),
             'missing_keterangan' => (int) $trend['missing_keterangan'],
             'missing_capaian' => (int) $trend['missing_capaian'],
             'conflicts' => (int) $trend['conflicts'],
@@ -757,7 +767,10 @@ function tahsinFetchPendingOverview(PDO $pdo, string $role = 'admin', int $userI
     foreach (['start_date', 'end_date'] as $key) if (isset($query[$key]) && trim((string) $query[$key]) === '') unset($query[$key]);
     $filters = tahsinFilters(array_merge(['start_date' => $start, 'end_date' => $now->format('Y-m-d')], $query), $now);
     $report = tahsinAssembleReport($data, $filters, $role, $userId, $now, $latest);
-    return tahsinPendingOverviewFromReport($report, $now, $role);
+    $currentSession = tahsinSessionDate($now->format('Y-m-d'));
+    $currentReminderSession = $latest === $currentSession
+        && $now >= new DateTimeImmutable($currentSession . ' 07:30:00', new DateTimeZone('Asia/Jakarta')) ? $currentSession : null;
+    return tahsinPendingOverviewFromReport($report, $now, $role, $currentReminderSession);
 }
 
 /** Kept as the flat array consumed by the existing dashboard and n8n reminder API. */

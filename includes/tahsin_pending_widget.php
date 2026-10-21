@@ -6,7 +6,8 @@ try {
     $widgetGroups = array_values(array_filter($widgetOverview['groups'], static fn($g) => $g['belum_diisi'] > 0));
     $widgetTeachers = (int) $widgetOverview['summary']['pending_teachers'];
     $widgetMissing = (int) $widgetOverview['summary']['pending_participants'];
-    $widgetText = $widgetGroups ? $widgetTeachers . ' guru · ' . count($widgetGroups) . ' halaqoh-sesi · ' . $widgetMissing . ' data peserta perlu dilengkapi' : 'Tidak ada kekurangan pada roster yang terverifikasi';
+    $widgetText = $widgetGroups ? $widgetTeachers . ' guru · ' . count($widgetGroups) . ' halaqoh-sesi · ' . $widgetMissing . ' data peserta perlu dilengkapi' : 'Tidak ada kekurangan pada roster yang diperiksa';
+    if (array_filter($widgetGroups, static fn($g) => ($g['roster_basis'] ?? '') === 'current_roster')) $widgetText .= ' · pekan ini memakai roster aktif';
     if ($widgetOverview['summary']['unverified_sessions']) $widgetText .= ' · ' . (int) $widgetOverview['summary']['unverified_sessions'] . ' sesi belum terverifikasi';
     if ($widgetOverview['summary']['unverified_record_issues']) $widgetText .= ' · ' . (int) $widgetOverview['summary']['unverified_record_issues'] . ' catatan lama perlu ditinjau';
 } catch (Throwable $e) {

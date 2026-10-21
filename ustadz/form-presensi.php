@@ -79,6 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $result = attendanceSaveEntries($pdo, $halaqoh_id, $ustadz_id, $tanggal, $presensi_data, true);
             $message = sprintf('Presensi berhasil disimpan untuk %d peserta.', $result['saved']);
+            if ($result['auto_alpha'] > 0) $message .= sprintf(' %d peserta yang belum dipilih disimpan sebagai Alfa.', $result['auto_alpha']);
             if ($result['deleted'] > 0) {
                 $message .= sprintf(' %d data yang dibatalkan juga dihapus.', $result['deleted']);
             }
@@ -239,7 +240,7 @@ if ((int) substr(tahsinSessionDate($tanggal), 8, 2) <= 7) $holiday = ['keteranga
     <a class="underline font-bold" href="../rekap-lengkap.php?<?= htmlspecialchars(http_build_query(['start_date' => tahsinSessionDate($tanggal), 'end_date' => tahsinSessionDate($tanggal), 'halaqoh_id' => $halaqoh_id])) ?>">Rekap Lengkap</a>.
 </div>
 <?php endif; ?>
-<p class="text-xs text-slate-500 mb-4">Sesi Ahad <?= date('d/m/Y', strtotime(tahsinSessionDate($tanggal))) ?>. Data kosong bukan Alfa. Hadir tersimpan setelah capaian lengkap.</p>
+<p class="text-xs text-slate-500 mb-4">Sesi Ahad <?= date('d/m/Y', strtotime(tahsinSessionDate($tanggal))) ?>, selesai sekitar 07.30 WIB. Hadir wajib dilengkapi capaian. Saat menekan Finalisasi &amp; Simpan Semua setelah sesi selesai, peserta yang belum dipilih akan disimpan sebagai Alfa. Selama masih draft, data kosong tetap belum diinput.</p>
 <?php if (attendanceLegacyRecordedSession($pdo, $tanggal)): ?><p class="text-xs text-amber-800 bg-amber-50 p-3 rounded-lg mb-4">Histori roster sesi ini belum tersedia. Hanya peserta yang sudah memiliki catatan sesi ditampilkan untuk perbaikan; daftar peserta lama tidak ditebak dari roster sekarang.</p><?php endif; ?>
 <form method="POST" action="" @submit.prevent="finalizeForm($event)">
     <?php csrfField(); ?>
@@ -685,7 +686,7 @@ if ((int) substr(tahsinSessionDate($tanggal), 8, 2) <= 7) $holiday = ['keteranga
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
-                Sistem menyimpan otomatis setiap kali Anda mengubah data.
+                Draft tersimpan otomatis. Finalisasi setelah 07.30 WIB mengisi peserta yang belum dipilih sebagai Alfa.
             </div>
             <button type="submit" :disabled="isFinalizing"
                 :class="isFinalizing ? 'cursor-wait opacity-70' : 'hover:bg-blue-700 active:scale-[0.98]'"

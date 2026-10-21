@@ -268,6 +268,19 @@ function attendanceNormalizePayload($data, $allowReset = false)
     ];
 }
 
+/** Blank draft entries become Alfa only on an explicit full-form finalization. */
+function attendanceNormalizeSubmission($data, string $tanggal, bool $finalize, ?DateTimeImmutable $now = null): array
+{
+    if (is_array($data) && $finalize && strtolower(trim((string) ($data['intent'] ?? 'save'))) === 'save'
+        && trim((string) ($data['status'] ?? '')) === '') {
+        $now = $now ?? tahsinNow();
+        $cutoff = new DateTimeImmutable(tahsinSessionDate($tanggal) . ' 07:30:00', new DateTimeZone('Asia/Jakarta'));
+        if ($now < $cutoff) throw new AttendanceValidationException('Sesi belum selesai. Peserta yang belum dipilih baru dapat difinalisasi sebagai Alfa setelah Ahad 07.30 WIB.');
+        return attendanceNormalizePayload(['status' => 'A']) + ['automatic_alpha' => true];
+    }
+    return attendanceNormalizePayload($data, true);
+}
+
 /**
  * Saves one or more attendance payloads atomically.
  *
@@ -290,7 +303,7 @@ function attendanceSaveEntries(PDO $pdo, $halaqohId, $ustadzId, $tanggal, $entri
         if ($waliId === false) {
             throw new AttendanceValidationException('Data peserta presensi tidak valid.');
         }
-        $normalizedEntries[(int) $waliId] = attendanceNormalizePayload($data, true);
+        $normalizedEntries[(int) $waliId] = attendanceNormalizeSubmission($data, $tanggal, $requireCompleteRoster);
     }
 
     $weekStart = tahsinSessionDate($tanggal);
@@ -336,6 +349,7 @@ function attendanceSaveEntries(PDO $pdo, $halaqohId, $ustadzId, $tanggal, $entri
 
         $savedCount = 0;
         $deletedCount = 0;
+        $autoAlphaCount = 0;
         $supportsVerification = tahsinSchemaReady($pdo);
         foreach ($normalizedEntries as $waliId => $entry) {
             if ($entry['intent'] === 'reset') {
@@ -372,6 +386,13 @@ function attendanceSaveEntries(PDO $pdo, $halaqohId, $ustadzId, $tanggal, $entri
             }
             if ($resolved['record']) {
                 if ((int) $resolved['record']['halaqoh_id'] !== (int) $halaqohId) throw new AttendanceValidationException('Sesi ini sudah tercatat pada halaqoh lain. Minta admin/PJ meninjau Rekap Lengkap.');
+                // A blank in a stale form must never overwrite an autosave
+                // that completed before this finalization obtained its lock.
+                if (!empty($entry['automatic_alpha'])) {
+                    if (!$resolved['complete']) throw new AttendanceValidationException('Peserta yang belum dipilih sudah memiliki catatan belum lengkap. Muat ulang dan lengkapi catatan tersebut.');
+                    $savedCount++;
+                    continue;
+                }
                 $updateParams = $params;
                 unset($updateParams[':halaqoh_id'], $updateParams[':wali_santri_id'], $updateParams[':tanggal']);
                 // Update identical copies together, but preserve verified conflicting sources.
@@ -384,12 +405,13 @@ function attendanceSaveEntries(PDO $pdo, $halaqohId, $ustadzId, $tanggal, $entri
                 if (function_exists('addLog')) addLog($pdo, 'UPDATE_TAHSIN_ATTENDANCE', json_encode(['wali_id' => $waliId, 'sesi' => $weekStart, 'before' => $source, 'after' => $entry], JSON_UNESCAPED_UNICODE));
             } else {
                 $insert->execute($params);
+                if (!empty($entry['automatic_alpha'])) $autoAlphaCount++;
             }
             $savedCount++;
         }
 
         $pdo->commit();
-        return ['saved' => $savedCount, 'deleted' => $deletedCount];
+        return ['saved' => $savedCount, 'deleted' => $deletedCount, 'auto_alpha' => $autoAlphaCount];
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();

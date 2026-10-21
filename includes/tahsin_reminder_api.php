@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/tahsin_report_helper.php';
+require_once __DIR__ . '/tahsin_reminder_helper.php';
 function tahsinReminderApi(PDO $pdo, bool $daily): void
 {
     header('Content-Type: application/json; charset=utf-8');
@@ -16,17 +16,11 @@ function tahsinReminderApi(PDO $pdo, bool $daily): void
     }
     try {
         $dataset = tahsinLoadDataset($pdo, $now->format('Y-m-d'), $now);
-        $latest = tahsinLatestSession($now->format('Y-m-d'), $dataset['holidays']);
-        // Existing scheduled workflows continue reminding the latest session.
-        // Backlog is opt-in; the application's manual reminder page always includes it.
-        $query = ($_GET['all_pending'] ?? '') === '1' ? [] : ['start_date' => $latest ?? $now->format('Y-m-d')];
-        $groups = array_values(array_filter(tahsinFetchPending($pdo, 'admin', 0, $query, $now), static fn($g) => $g['belum_diisi'] > 0));
-        if (!$daily && !tahsinSessionActive($now->format('Y-m-d'), $dataset['holidays'])) {
-            echo json_encode(['status' => 'skip', 'reason' => 'Sesi Ahad ini libur.']); return;
-        }
-        echo json_encode(['status' => 'success', 'date' => $now->format('Y-m-d'), 'date_today' => $now->format('Y-m-d'),
+        $overview = tahsinReminderOverview($dataset, $now, ($_GET['all_pending'] ?? '') === '1');
+        $session = $overview['tanggal_tahsin'];
+        echo json_encode(array_merge($overview, ['date' => $now->format('Y-m-d'), 'date_today' => $now->format('Y-m-d'),
             'day' => ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'][$weekday],
-            'tanggal_tahsin' => $latest, 'tanggal_tahsin_formatted' => $latest ? 'Ahad, ' . date('d/m/Y', strtotime($latest)) : null,
-            'server_timezone' => 'Asia/Jakarta', 'server_time' => $now->format('Y-m-d H:i:s'), 'count' => count($groups), 'data' => $groups], JSON_UNESCAPED_UNICODE);
+            'tanggal_tahsin_formatted' => 'Ahad, ' . date('d/m/Y', strtotime($session)),
+            'server_timezone' => 'Asia/Jakarta', 'server_time' => $now->format('Y-m-d H:i:s')]), JSON_UNESCAPED_UNICODE);
     } catch (Throwable $e) { error_log('tahsin-reminder: ' . $e->getMessage()); http_response_code(500); echo json_encode(['error' => 'Terjadi kesalahan server.']); }
 }

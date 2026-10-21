@@ -1,0 +1,330 @@
+{
+  "name": "Laporan Admin dan Pengingat Guru Tahsin (Senin-Sabtu 10.00 WIB)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * 1-6"
+            }
+          ]
+        }
+      },
+      "id": "4d12b250-8de0-42cf-b2e1-fbcdf19fd81e",
+      "name": "Senin-Sabtu 10.00 WIB",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "c3629f40-3559-4808-bc49-3b7b175b074c",
+      "name": "Uji Manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://tahsin.griyaquran.web.id/api/daily-reminder.php",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "GANTI_DENGAN_N8N_API_KEY"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "30ee7435-8fc5-4e21-b470-3ade6fafdfa3",
+      "name": "Ambil Kekurangan Presensi",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        260,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Embedded in the n8n Code node; no network calls or message delivery here.\nconst response = $input.first().json;\nconst escapeHtml = (value, limit = 200) => String(value ?? '').slice(0, limit)\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst output = (report, status) => [{ json: { report, status, part: 1, parts: 1 } }];\nconst failure = (reason) => output(\n  '⚠️ <b>Laporan Presensi Tahsin Bapak Wali Santri</b>\\n\\n' + reason +\n  '\\nStatus pengisian belum dapat dipastikan. Periksa aplikasi dan execution n8n.\\n' +\n  'https://tahsin.griyaquran.web.id/pantau-input.php', 'error');\n\nif (!response || typeof response !== 'object' || response.error) {\n  return failure('API tidak dapat dihubungi atau responsnya bukan JSON yang valid.');\n}\nconst httpStatus = Number(response.statusCode ?? 200);\nif (!Number.isFinite(httpStatus) || httpStatus < 200 || httpStatus >= 300) {\n  return failure('API mengembalikan HTTP ' + (Number.isFinite(httpStatus) ? httpStatus : 'tidak valid') + '.');\n}\nconst body = response.body ?? response;\nif (!body || typeof body !== 'object' || Array.isArray(body)) {\n  return failure('Format respons API tidak sesuai.');\n}\nif (body.status === 'skip') {\n  return output('ℹ️ <b>Laporan Presensi Tahsin Bapak Wali Santri</b>\\n\\nPemeriksaan dilewati oleh aplikasi: ' +\n    escapeHtml(body.reason || 'Tidak ada pemeriksaan pada jadwal ini.') +\n    '\\nStatus ini tidak berarti semua presensi lengkap.', 'skip');\n}\nconst asCount = (value) => (typeof value === 'number' || (typeof value === 'string' && /^\\d+$/.test(value))) &&\n  Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : null;\nif (body.status !== 'success' || !Array.isArray(body.data) || asCount(body.count) !== body.data.length) {\n  return failure('Respons API tidak memuat daftar kekurangan yang valid.');\n}\nconst summary = body.summary;\nif (!summary || asCount(summary.checked_participant_sessions) === null ||\n  asCount(summary.complete_participant_sessions) === null || !summary.attendance_counts ||\n  !['current_roster', 'session_history', 'unavailable'].includes(summary.roster_basis)) {\n  return failure('API belum menyediakan bukti pemeriksaan roster pekan ini. Deploy perbaikan aplikasi sebelum memakai workflow ini; daftar kosong dari API lama bukan bukti semua guru sudah mengisi.');\n}\nif (body.inspection_complete !== true || Number(summary.checked_participant_sessions) === 0 ||\n  Number(summary.complete_participant_sessions) > Number(summary.checked_participant_sessions) ||\n  ['H','S','I','A'].some(status => asCount(summary.attendance_counts[status]) === null)) {\n  return failure('Roster pekan ini belum dapat diperiksa secara lengkap.');\n}\nconst countFields = ['total_anggota', 'sudah_diisi', 'complete_input', 'belum_diisi',\n  'missing_presensi', 'missing_capaian', 'missing_keterangan', 'conflicts'];\nconst seenGroups = new Set();\nconst groups = [];\nfor (const row of body.data) {\n  if (!row || typeof row !== 'object' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(row.tanggal_tahsin || '') ||\n    asCount(row.ustadz_id) === null || asCount(row.halaqoh_id) === null ||\n    row.has_expected_roster !== true || !(row.data_verified === true ||\n      (row.data_verified === false && row.roster_basis === 'current_roster' && row.tanggal_tahsin === body.tanggal_tahsin)) ||\n    countFields.some((field) => asCount(row[field]) === null)) {\n    return failure('Detail guru atau histori roster pada respons API belum sesuai dengan aplikasi.');\n  }\n  const group = { ...row };\n  for (const field of countFields) group[field] = Number(row[field]);\n  const key = [row.tanggal_tahsin, row.halaqoh_id, row.ustadz_id].join(':');\n  if (seenGroups.has(key) || group.belum_diisi === 0 ||\n    group.complete_input + group.belum_diisi !== group.total_anggota ||\n    group.sudah_diisi > group.total_anggota ||\n    group.missing_presensi + group.missing_capaian + group.missing_keterangan + group.conflicts !== group.belum_diisi) {\n    return failure('Jumlah kekurangan pada respons API tidak konsisten.');\n  }\n  seenGroups.add(key);\n  groups.push(group);\n}\n\ngroups.sort((a, b) => String(a.ustadz_name).localeCompare(String(b.ustadz_name), 'id') ||\n  a.tanggal_tahsin.localeCompare(b.tanggal_tahsin) || String(a.nama_halaqoh).localeCompare(String(b.nama_halaqoh), 'id'));\nconst teacherIds = new Set(groups.map((g) => Number(g.ustadz_id)).filter((id) => id > 0));\nconst unknownGroups = groups.filter((g) => Number(g.ustadz_id) === 0).length;\nconst totals = Object.fromEntries(['missing_presensi', 'missing_capaian', 'missing_keterangan', 'conflicts', 'belum_diisi']\n  .map((field) => [field, groups.reduce((sum, group) => sum + group[field], 0)]));\nconst currentPending = groups.filter(g => g.tanggal_tahsin === body.tanggal_tahsin).reduce((sum,g) => sum + g.belum_diisi, 0);\nif (Number(summary.complete_participant_sessions) + currentPending !== Number(summary.checked_participant_sessions)) {\n  return failure('Jumlah peserta lengkap dan kekurangan tidak sesuai dengan roster yang diperiksa.');\n}\nconst header = '📊 <b>Laporan Presensi Tahsin Bapak Wali Santri</b>\\n' +\n  'Diperiksa: ' + escapeHtml(body.day) + ', ' + escapeHtml(body.date_today || body.date) + '\\n' +\n  'Sesi tahsin: ' + escapeHtml(body.tanggal_tahsin_formatted || body.tanggal_tahsin) + '\\n' +\n  'Peserta-sesi diperiksa: ' + summary.checked_participant_sessions + '; lengkap: ' + summary.complete_participant_sessions + '\\n' +\n  'Status setelah pemeriksaan: H ' + summary.attendance_counts.H + ' · S ' + summary.attendance_counts.S +\n  ' · I ' + summary.attendance_counts.I + ' · Alfa ' + summary.attendance_counts.A + '\\n' +\n  'Dasar: ' + (summary.roster_basis === 'current_roster' ? 'roster aktif pekan ini (histori belum tersedia)' : 'histori roster sesi') + '.';\nconst blocks = [header];\nif (summary.raw_status_counts && asCount(summary.raw_status_counts.A) !== null && Number(summary.raw_status_counts.A) !== Number(summary.attendance_counts.A)) {\n  blocks.push('Catatan Alfa tersimpan: ' + summary.raw_status_counts.A + '. Setelah pemeriksaan: ' +\n    summary.attendance_counts.A + '; periksa konflik atau penempatan ganda pada rincian.');\n}\nif (groups.length === 0) {\n  blocks.push('✅ Seluruh peserta pada roster yang diperiksa sudah memiliki presensi lengkap, termasuk status Alfa yang disimpan.');\n} else {\n  blocks.push('Guru teridentifikasi dengan kekurangan: <b>' + teacherIds.size + '</b>\\n' +\n    'Kelompok-sesi perlu dilengkapi: ' + groups.length + '\\n' +\n    'Belum input presensi: ' + totals.missing_presensi + ' peserta-sesi\\n' +\n    'Capaian belum lengkap: ' + totals.missing_capaian + ' peserta-sesi\\n' +\n    'Keterangan S/I belum lengkap: ' + totals.missing_keterangan + ' peserta-sesi\\n' +\n    'Konflik/perlu verifikasi: ' + totals.conflicts + ' peserta-sesi' +\n    (unknownGroups ? '\\n⚠️ Guru belum ditentukan pada ' + unknownGroups + ' kelompok-sesi.' : ''));\n  groups.forEach((group, index) => {\n    const reasons = [];\n    if (group.missing_presensi) reasons.push('Belum input presensi: ' + group.missing_presensi);\n    if (group.missing_capaian) reasons.push('Capaian belum lengkap: ' + group.missing_capaian);\n    if (group.missing_keterangan) reasons.push('Keterangan S/I belum lengkap: ' + group.missing_keterangan);\n    if (group.conflicts) reasons.push('Konflik/perlu verifikasi: ' + group.conflicts);\n    blocks.push((index + 1) + '. <b>' + escapeHtml(group.ustadz_name || 'Guru belum ditentukan', 100) + '</b>\\n' +\n      'Halaqoh: ' + escapeHtml(group.nama_halaqoh, 100) + '\\n' +\n      'Sesi: ' + escapeHtml(group.tanggal_tahsin_formatted || group.tanggal_tahsin, 40) + '\\n' +\n      (group.missing_presensi + group.missing_capaian + group.missing_keterangan === 0 && group.conflicts > 0\n        ? '⚠️ Catatan/penempatan perlu verifikasi admin\\n'\n        : (group.sudah_diisi === 0 ? '🔴 Belum mengisi sama sekali\\n' : '🟡 Sudah mengisi, masih perlu dilengkapi\\n')) +\n      'Lengkap: ' + group.complete_input + '/' + group.total_anggota + ' peserta; perlu dilengkapi: ' + group.belum_diisi + '\\n' +\n      reasons.join('\\n') + '\\nBatas input: ' + escapeHtml(group.deadline_at, 32) + ' WIB' +\n      (!/^62\\d{8,13}$/.test(String(group.ustadz_phone || '')) ? '\\n⚠️ Nomor WhatsApp guru belum valid; perlu ditindaklanjuti admin.' : ''));\n  });\n}\nblocks.push('Angka peserta-sesi menghitung satu wali pada satu sesi; satu guru dapat muncul pada beberapa halaqoh/sesi.\\n' +\n  'Draft kosong tetap belum diinput. Alfa otomatis hanya saat guru menekan finalisasi setelah sesi selesai.\\n' +\n  'Pengingat WhatsApp ke guru akan dicoba setelah laporan ini; status pengiriman tersedia di execution n8n.\\n' +\n  'Rincian:\\nhttps://tahsin.griyaquran.web.id/pantau-input.php');\n\n// Keep complete HTML blocks together; reserve room for a continuation label.\nconst chunks = [];\nlet chunk = '';\nfor (const block of blocks) {\n  if (chunk && chunk.length + block.length + 2 > 3400) {\n    chunks.push(chunk);\n    chunk = '';\n  }\n  chunk += (chunk ? '\\n\\n' : '') + block;\n}\nif (chunk) chunks.push(chunk);\nreturn chunks.map((report, index) => ({ json: {\n  report: (chunks.length > 1 ? 'Bagian ' + (index + 1) + '/' + chunks.length + '\\n\\n' : '') + report,\n  status: groups.length ? 'pending' : 'complete',\n  part: index + 1, parts: chunks.length, teacher_count: teacherIds.size,\n  group_session_count: groups.length, totals,\n} }));\n"
+      },
+      "id": "1b3f2acd-1001-4991-ba2e-5f57c6b50312",
+      "name": "Susun Laporan Admin",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "GANTI_DENGAN_CHAT_ID_ADMIN",
+        "text": "={{ $json.report }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "appendAttribution": false,
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "df40f541-ea01-49be-abf5-a1e407bcd657",
+      "name": "Kirim Laporan ke Telegram Admin",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        780,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const report = $('Susun Laporan Admin').first().json;\nif (report.status !== 'pending') return [];\nconst response = $('Ambil Kekurangan Presensi').first().json;\nconst body = response.body ?? response;\nif (body.status !== 'success' || body.inspection_complete !== true || !Array.isArray(body.data)) return [];\nreturn body.data.filter(g => Number(g.ustadz_id) > 0 && Number(g.missing_presensi) + Number(g.missing_capaian) + Number(g.missing_keterangan) > 0 && /^62\\d{8,13}$/.test(String(g.ustadz_phone || '')))\n  .map(g => ({json:{...g,wa_message:'Assalamualaikum Ustadz ' + g.ustadz_name + ',\\n\\nMohon melengkapi presensi dan capaian Tahsin Bapak kelompok ' + g.nama_halaqoh + ' untuk sesi ' + g.tanggal_tahsin_formatted + '.\\n\\n' +\n    (Number(g.sudah_diisi) === 0 ? 'Belum ada presensi yang disimpan.\\n' : 'Presensi sudah diisi sebagian.\\n') +\n    'Lengkap: ' + g.complete_input + '/' + g.total_anggota + ' peserta.\\nBelum presensi: ' + g.missing_presensi + '; belum capaian: ' + g.missing_capaian + '; belum keterangan S/I: ' + g.missing_keterangan + '; perlu verifikasi: ' + g.conflicts + '.\\n\\n' +\n    'Untuk peserta yang tidak hadir, finalisasi setelah sesi selesai akan menyimpan pilihan kosong sebagai Alfa. Hadir tetap wajib dilengkapi capaian.\\n\\nhttps://tahsin.griyaquran.web.id/ustadz/form-presensi.php?id=' + g.halaqoh_id + '&tanggal=' + g.tanggal_tahsin + '\\n\\nJazakumullah khairan.'}}));"
+      },
+      "id": "a672825d-8ce9-46e8-bce4-079128e5b291",
+      "name": "Siapkan Pengingat Guru",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "6a2e68c3-d41e-4c24-9b12-b98145e31a1b",
+      "name": "Kirim Satu Guru Bergantian",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 6,
+        "unit": "seconds"
+      },
+      "id": "95a81560-0888-458d-bf2c-327f236bcd2b",
+      "name": "Jeda 6 Detik",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1560,
+        180
+      ],
+      "webhookId": "8889c85f-589d-4970-ada8-38f71138163c"
+    },
+    {
+      "parameters": {
+        "phoneNumber": "={{ $json.ustadz_phone }}",
+        "message": "={{ $json.wa_message }}"
+      },
+      "id": "53861a98-04d3-4038-9ead-ad7e71c3d36c",
+      "name": "Kirim WhatsApp Guru",
+      "type": "@aldinokemal2104/n8n-nodes-gowa.gowa",
+      "typeVersion": 1,
+      "position": [
+        1820,
+        180
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const failed = $input.all().filter(item => item.json.error);\nif (!failed.length) return [];\nreturn [{json:{report:'⚠️ <b>Pengingat WhatsApp Tahsin</b>\\n\\nAda ' + failed.length + ' error pada node pengiriman guru. Daftar kekurangan tetap ada pada laporan sebelumnya. Periksa execution n8n untuk tindak lanjut.'}}];"
+      },
+      "id": "f638a00f-71e7-4eee-b1c0-46533dcb41ff",
+      "name": "Laporkan Error Pengiriman",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "GANTI_DENGAN_CHAT_ID_ADMIN",
+        "text": "={{ $json.report }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "appendAttribution": false,
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "707a6f6c-090a-453d-bdbe-e9817091b5fe",
+      "name": "Kirim Info Error WhatsApp",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1820,
+        -100
+      ]
+    }
+  ],
+  "connections": {
+    "Senin-Sabtu 10.00 WIB": {
+      "main": [
+        [
+          {
+            "node": "Ambil Kekurangan Presensi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Uji Manual": {
+      "main": [
+        [
+          {
+            "node": "Ambil Kekurangan Presensi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ambil Kekurangan Presensi": {
+      "main": [
+        [
+          {
+            "node": "Susun Laporan Admin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Susun Laporan Admin": {
+      "main": [
+        [
+          {
+            "node": "Kirim Laporan ke Telegram Admin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim Laporan ke Telegram Admin": {
+      "main": [
+        [
+          {
+            "node": "Siapkan Pengingat Guru",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Siapkan Pengingat Guru": {
+      "main": [
+        [
+          {
+            "node": "Kirim Satu Guru Bergantian",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim Satu Guru Bergantian": {
+      "main": [
+        [
+          {
+            "node": "Laporkan Error Pengiriman",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Jeda 6 Detik",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jeda 6 Detik": {
+      "main": [
+        [
+          {
+            "node": "Kirim WhatsApp Guru",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim WhatsApp Guru": {
+      "main": [
+        [
+          {
+            "node": "Kirim Satu Guru Bergantian",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Laporkan Error Pengiriman": {
+      "main": [
+        [
+          {
+            "node": "Kirim Info Error WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "availableInMCP": false
+  },
+  "tags": []
+}

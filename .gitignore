@@ -16,3 +16,8 @@ vendor/
 .phpunit.cache/
 .phpunit.result.cache
 *.log
+
+# Local n8n exports and audit contain production credentials or personal data.
+/n8n_workflow_laporan_admin_tahsin.json
+/Reminder Harian Presensi Tahsin Bapak Walsan (Senin-Sabtu 10_00 WIB).json
+/docs/N8N_LAPORAN_ADMIN_AUDIT.md
