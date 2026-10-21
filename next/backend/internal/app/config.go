@@ -19,6 +19,7 @@ type Config struct {
 	DatabaseHost    string
 	DatabasePort    string
 	DatabaseName    string
+	ExpectedDBName  string
 	DatabaseUser    string
 	DatabasePass    string
 	DatabaseTLSCA   string
@@ -41,6 +42,7 @@ func LoadConfigFrom(getenv func(string) string) (Config, error) {
 		DatabaseHost:    value(getenv, "DB_HOST", "mysql"),
 		DatabasePort:    value(getenv, "DB_PORT", "3306"),
 		DatabaseName:    strings.TrimSpace(getenv("DB_DATABASE")),
+		ExpectedDBName:  strings.TrimSpace(getenv("APP_EXPECTED_DB_DATABASE")),
 		DatabaseUser:    strings.TrimSpace(getenv("DB_USERNAME")),
 		DatabasePass:    getenv("DB_PASSWORD"),
 		DatabaseTLSCA:   strings.TrimSpace(getenv("DB_TLS_CA_FILE")),
@@ -66,6 +68,14 @@ func LoadConfigFrom(getenv func(string) string) (Config, error) {
 	}
 	if c.DatabaseName == "" || !safeIdentifier(c.DatabaseName) || c.DatabaseUser == "" {
 		return Config{}, errors.New("DB_DATABASE and DB_USERNAME are required")
+	}
+	if c.Environment == "production" {
+		if c.ExpectedDBName == "" || !safeIdentifier(c.ExpectedDBName) {
+			return Config{}, errors.New("APP_EXPECTED_DB_DATABASE is required in production")
+		}
+		if c.DatabaseName != c.ExpectedDBName {
+			return Config{}, errors.New("DB_DATABASE does not match APP_EXPECTED_DB_DATABASE")
+		}
 	}
 	if c.Environment == "production" && c.DatabasePass == "" {
 		return Config{}, errors.New("DB_PASSWORD is required in production")

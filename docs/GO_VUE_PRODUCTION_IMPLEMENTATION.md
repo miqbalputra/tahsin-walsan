@@ -7,6 +7,7 @@ Paket produksi terpisah dari paket staging: `docker/Dockerfile.go-vue-production
 - Image satu service Go + Vue 3/TypeScript dengan fallback route SPA yang tidak mengambil alih `/api/*`, `/assets/*`, atau berkas statis yang hilang.
 - Service worker dan manifest PWA Go berada di `next/frontend/public/`; `sw.js` dan `manifest.json` PHP di root tetap utuh selama transisi.
 - Pemeriksaan health/readiness. Readiness menolak traffic sampai tabel lama dan migrasi aplikasi yang diwajibkan tersedia.
+- Pada runtime produksi, `APP_EXPECTED_DB_DATABASE` ditetapkan ke `db_tahsinbapak`; Go menolak startup bila `DB_DATABASE` kosong atau berbeda dari schema yang disetujui.
 - `APP_PRODUCTION_READY=0` menolak semua API Go dan endpoint autosave lama walaupun proxy keliru mengarahkan traffic ke service yang belum sehat.
 - Login memakai `users.password` yang sudah ada, memverifikasi prefix bcrypt PHP `$2y$`/`$2b$` tanpa menulis hash, lalu membuat cookie sesi server-side. Pengguna perlu login ulang satu kali saat cutover.
 - Perintah eksplisit `tahsin-migrate` hanya membuat tabel aditif `tahsin_app_sessions`; `CREATE TABLE IF NOT EXISTS` aman diulang dan tidak mengubah tabel/data lama.
@@ -18,7 +19,7 @@ Paket produksi terpisah dari paket staging: `docker/Dockerfile.go-vue-production
 
 ## Environment
 
-Lihat [.env.go-vue.example](../.env.go-vue.example). `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_CHARSET`, `APP_TIMEZONE` dan rahasia Hermes, n8n, serta Data Induk tetap dibawa ke target Go. `DB_DATABASE` tetap menunjuk schema lama. `DB_USERNAME`/`DB_PASSWORD` harus menjadi akun aplikasi Go khusus dengan DML yang diperlukan tetapi tanpa DDL, trigger, atau grant. Simpan kredensial PHP saat ini di resource Coolify lama untuk rollback.
+Lihat [.env.go-vue.example](../.env.go-vue.example). Pada server aktif, `DB_DATABASE` adalah schema `db_tahsinbapak`; nama resource/database Coolify `db_tahsinbpk` berbeda dan bukan nilai schema. Pertahankan `DB_HOST` internal, port, schema, charset, timezone, dan rahasia integrasi yang ada pada resource Go terpisah. `DB_USERNAME`/`DB_PASSWORD` harus menjadi akun aplikasi Go khusus dengan DML yang diperlukan tetapi tanpa DDL, trigger, atau grant. Simpan kredensial PHP saat ini di resource Coolify lama untuk rollback.
 
 `MIGRATION_DB_USERNAME` dan `MIGRATION_DB_PASSWORD` diperlukan sementara ketika operator menjalankan `tahsin-migrate`, dan harus memakai akun yang boleh membuat tabel. Jangan memasukkannya ke environment runtime app. `TAHSIN_NEXT_*` tidak digunakan oleh runtime produksi.
 

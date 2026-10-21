@@ -8,7 +8,7 @@ import (
 )
 
 func TestConfigRequiresExistingDatabaseAndSecureProductionPassword(t *testing.T) {
-	base := map[string]string{"APP_ENV": "production", "DB_DATABASE": "db_tahsinbpk", "DB_USERNAME": "tahsin_app", "DB_PASSWORD": "secret", "APP_STATIC_DIR": "/app/web", "APP_DATA_DIR": "/var/lib/tahsin"}
+	base := map[string]string{"APP_ENV": "production", "DB_DATABASE": "db_tahsinbapak", "APP_EXPECTED_DB_DATABASE": "db_tahsinbapak", "DB_USERNAME": "tahsin_app", "DB_PASSWORD": "secret", "APP_STATIC_DIR": "/app/web", "APP_DATA_DIR": "/var/lib/tahsin"}
 	load := func(overrides map[string]string) error {
 		t.Helper()
 		_, returnErr := LoadConfigFrom(func(key string) string {
@@ -31,6 +31,12 @@ func TestConfigRequiresExistingDatabaseAndSecureProductionPassword(t *testing.T)
 	}
 	if err := load(map[string]string{"DB_DATABASE": "db-tahsinbpk"}); err == nil {
 		t.Fatal("database name was not constrained to an identifier")
+	}
+	if err := load(map[string]string{"DB_DATABASE": "tahsin_test"}); err == nil {
+		t.Fatal("production accepted a database different from the approved legacy schema")
+	}
+	if err := load(map[string]string{"APP_EXPECTED_DB_DATABASE": ""}); err == nil {
+		t.Fatal("production accepted a missing expected database name")
 	}
 }
 
