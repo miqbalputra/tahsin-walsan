@@ -19,7 +19,9 @@ import (
 func phpBridge(t *testing.T, input map[string]any) (int, json.RawMessage) {
 	t.Helper()
 	body, _ := json.Marshal(input)
-	cmd := exec.Command(os.Getenv("TAHSIN_TEST_PHP_BINARY"), "-d", "extension=php_pdo_mysql.dll", os.Getenv("TAHSIN_WRITE_BRIDGE_FILE"), os.Getenv("TAHSIN_NEXT_WRITE_DB_DATABASE"))
+	args := phpCLIArgs()
+	args = append(args, os.Getenv("TAHSIN_WRITE_BRIDGE_FILE"), os.Getenv("TAHSIN_NEXT_WRITE_DB_DATABASE"))
+	cmd := exec.Command(os.Getenv("TAHSIN_TEST_PHP_BINARY"), args...)
 	cmd.Stdin = bytes.NewReader(body)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -39,6 +41,13 @@ func phpBridge(t *testing.T, input map[string]any) (int, json.RawMessage) {
 	return result.Status, result.Data
 }
 
+func phpCLIArgs() []string {
+	if extension := strings.TrimSpace(os.Getenv("TAHSIN_TEST_PHP_EXTENSION")); extension != "" {
+		return []string{"-d", "extension=" + extension}
+	}
+	return nil
+}
+
 func TestWriterHandoffWaitsForLegacyTransaction(t *testing.T) {
 	if os.Getenv("TAHSIN_WRITE_MYSQL_TEST") != "1" {
 		t.Skip("requires owned writer fixture")
@@ -52,7 +61,9 @@ func TestWriterHandoffWaitsForLegacyTransaction(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, os.Getenv("TAHSIN_TEST_PHP_BINARY"), "-d", "extension=php_pdo_mysql.dll", os.Getenv("TAHSIN_WRITE_BRIDGE_FILE"), os.Getenv("TAHSIN_NEXT_WRITE_DB_DATABASE"))
+	args := phpCLIArgs()
+	args = append(args, os.Getenv("TAHSIN_WRITE_BRIDGE_FILE"), os.Getenv("TAHSIN_NEXT_WRITE_DB_DATABASE"))
+	cmd := exec.CommandContext(ctx, os.Getenv("TAHSIN_TEST_PHP_BINARY"), args...)
 	input, _ := cmd.StdinPipe()
 	output, _ := cmd.StdoutPipe()
 	var stderr bytes.Buffer

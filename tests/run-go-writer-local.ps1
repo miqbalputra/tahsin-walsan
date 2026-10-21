@@ -11,7 +11,7 @@ $taskEnvironment=@{
  TAHSIN_NEXT_DB_HOST='127.0.0.1';TAHSIN_NEXT_DB_PORT='13319';TAHSIN_NEXT_DB_DATABASE=$taskFixture.database;TAHSIN_NEXT_DB_USERNAME=$taskFixture.read_user;TAHSIN_NEXT_DB_PASSWORD='tahsin_writer_test';TAHSIN_NEXT_DB_TLS='false'
  TAHSIN_NEXT_WRITE_ENABLED='1';TAHSIN_NEXT_WRITE_SHARED_SECRET='staging-writer-secret-0123456789abcdef';TAHSIN_NEXT_WRITE_HALAQOH_IDS='1,3'
  TAHSIN_NEXT_WRITE_DB_HOST='127.0.0.1';TAHSIN_NEXT_WRITE_DB_PORT='13319';TAHSIN_NEXT_WRITE_DB_DATABASE=$taskFixture.database;TAHSIN_NEXT_WRITE_DB_USERNAME=$taskFixture.go_user;TAHSIN_NEXT_WRITE_DB_PASSWORD='tahsin_writer_test';TAHSIN_NEXT_WRITE_DB_TLS='false'
- TAHSIN_TEST_DB_NAME=$taskFixture.database;TAHSIN_TEST_PHP_BINARY=$taskPhp;TAHSIN_WRITE_BRIDGE_FILE=(Join-Path $taskRoot 'tests/go-write-bridge.php');TAHSIN_WRITE_FIXTURE_FILE=$taskFixturePath
+ TAHSIN_TEST_DB_NAME=$taskFixture.database;TAHSIN_TEST_PHP_BINARY=$taskPhp;TAHSIN_TEST_PHP_EXTENSION='php_pdo_mysql.dll';TAHSIN_WRITE_BRIDGE_FILE=(Join-Path $taskRoot 'tests/go-write-bridge.php');TAHSIN_WRITE_FIXTURE_FILE=$taskFixturePath
  TAHSIN_TEST_URL='http://127.0.0.1:18086';TAHSIN_TEST_DATE=$taskFixture.date
 }
 $taskPrevious=@{};$taskServices=@();Push-Location $taskRoot
