@@ -1,0 +1,51 @@
+# Separate production target. Select this file explicitly in Coolify.
+# The MySQL resource stays separate on its existing private Coolify network.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.go-vue-production
+    environment:
+      APP_ENV: production
+      APP_PRODUCTION_READY: ${APP_PRODUCTION_READY:-0}
+      APP_HTTP_ADDR: 0.0.0.0:8080
+      APP_STATIC_DIR: /app/web
+      APP_DATA_DIR: /var/lib/tahsin
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Jakarta}
+      AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-tahsin_session}
+      AUTH_SESSION_DAYS: ${AUTH_SESSION_DAYS:-30}
+      DB_HOST: ${DB_HOST:?Set the existing private MySQL host}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_DATABASE: ${DB_DATABASE:?Set the existing Tahsin schema; do not create a second copy}
+      DB_USERNAME: ${DB_USERNAME:?Set the dedicated Go application DML account}
+      DB_PASSWORD: ${DB_PASSWORD:?Set the dedicated Go application password}
+      DB_CHARSET: ${DB_CHARSET:-utf8mb4}
+      DB_TLS_CA_FILE: ${DB_TLS_CA_FILE:-}
+      HERMES_API_KEY: ${HERMES_API_KEY:?Copy the existing Hermes secret}
+      N8N_API_KEY: ${N8N_API_KEY:?Copy the existing n8n secret}
+      DATA_INDUK_ENABLED: ${DATA_INDUK_ENABLED:?Copy the existing Data Induk enabled value}
+      DATA_INDUK_BASE_URL: ${DATA_INDUK_BASE_URL:?Copy the existing Data Induk URL}
+      DATA_INDUK_API_KEY: ${DATA_INDUK_API_KEY:?Copy the existing Data Induk secret}
+      DATA_INDUK_UNIT_ID: ${DATA_INDUK_UNIT_ID:?Copy the existing Data Induk unit ID}
+      DATA_INDUK_SYNC_STALE_MINUTES: ${DATA_INDUK_SYNC_STALE_MINUTES:-60}
+      BACKUP_MAX_UPLOAD_MB: ${BACKUP_MAX_UPLOAD_MB:-512}
+      APP_VERSION: ${APP_VERSION:-go-vue}
+    expose:
+      - "8080"
+    volumes:
+      - tahsin_app_data:/var/lib/tahsin
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/readyz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 2048M
+
+volumes:
+  tahsin_app_data:

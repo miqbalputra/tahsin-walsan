@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { readFamilies, type Result, type Guardian } from './api'
 
-const props = defineProps<{ endpoint: string }>()
+const props = defineProps<{ endpoint: string; hideBackLink?: boolean }>()
 const result = ref<Result | null>(null)
 const loading = ref(false)
 const error = ref('')
@@ -47,7 +47,7 @@ onBeforeUnmount(() => { generation++; controller?.abort() })
   <div class="nxt-wrap">
     <header class="nxt-heading">
       <div><span class="nxt-kicker">PRATINJAU · BACA DATA</span><h1>Keluarga Anak–Bapak–Ibu</h1><p>Lihat peserta aktif dan hubungan keluarga. Perubahan data tetap dilakukan di aplikasi utama.</p></div>
-      <a href="keluarga.php" class="nxt-back">Buka Keluarga utama ↗</a>
+      <a v-if="!hideBackLink" href="keluarga.php" class="nxt-back">Buka Keluarga utama ↗</a>
     </header>
 
     <p v-if="result?.meta.data_source === 'demo'" class="nxt-banner" role="status" data-demo>Data contoh untuk pengujian. Daftar ini tidak memakai data keluarga sebenarnya.</p>

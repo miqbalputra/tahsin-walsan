@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -59,6 +60,84 @@ func hash(v any) string {
 	}
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+
+// HashPHPAutosaveRequest preserves JSON object insertion order and excludes
+// csrf_token exactly as the legacy PHP endpoint does. This lets operation IDs
+// already queued by the existing IndexedDB client replay against Go without
+// creating a second receipt or attendance row.
+func HashPHPAutosaveRequest(group int64, date string, body []byte) (string, error) {
+	d := json.NewDecoder(bytes.NewReader(body))
+	d.UseNumber()
+	value, err := decodeOrderedJSON(d)
+	if err != nil {
+		return "", err
+	}
+	if _, err = d.Token(); err != io.EOF {
+		return "", fmt.Errorf("trailing JSON content")
+	}
+	obj, ok := value.(ordered)
+	if !ok {
+		return "", fmt.Errorf("autosave request must be a JSON object")
+	}
+	filtered := make(ordered, 0, len(obj))
+	seen := map[string]bool{}
+	for _, field := range obj {
+		if seen[field.key] {
+			return "", fmt.Errorf("duplicate JSON field")
+		}
+		seen[field.key] = true
+		if field.key != "csrf_token" {
+			filtered = append(filtered, field)
+		}
+	}
+	return hash([]any{group, date, filtered}), nil
+}
+
+func decodeOrderedJSON(d *json.Decoder) (any, error) {
+	token, err := d.Token()
+	if err != nil {
+		return nil, err
+	}
+	switch value := token.(type) {
+	case json.Delim:
+		switch value {
+		case '{':
+			result := ordered{}
+			for d.More() {
+				keyToken, e := d.Token()
+				if e != nil {
+					return nil, e
+				}
+				key, ok := keyToken.(string)
+				if !ok {
+					return nil, fmt.Errorf("invalid JSON object key")
+				}
+				child, e := decodeOrderedJSON(d)
+				if e != nil {
+					return nil, e
+				}
+				result = append(result, pair{key, child})
+			}
+			_, err = d.Token()
+			return result, err
+		case '[':
+			result := []any{}
+			for d.More() {
+				child, e := decodeOrderedJSON(d)
+				if e != nil {
+					return nil, e
+				}
+				result = append(result, child)
+			}
+			_, err = d.Token()
+			return result, err
+		default:
+			return nil, fmt.Errorf("unexpected JSON delimiter")
+		}
+	default:
+		return value, nil
+	}
 }
 func text(v any) string {
 	if v == nil {

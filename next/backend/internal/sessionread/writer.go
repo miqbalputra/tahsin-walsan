@@ -23,9 +23,16 @@ type WriteError struct {
 
 func (e *WriteError) Error() string { return e.Message }
 
-type Writer struct{ DB *sql.DB }
+// Writer persists the PHP-compatible autosave contract. Fenced remains enabled
+// for the staging handoff writer; the production single-writer runtime disables
+// it only after PHP writers have been stopped at cutover.
+type Writer struct {
+	DB     *sql.DB
+	Fenced bool
+}
 type WriteRequest struct {
 	Action, Operation, Program, Context, Official string
+	ActorIP                                       string
 	Group, Wali, Draft                            int64
 	Date                                          string
 	Payload                                       Payload
@@ -175,8 +182,10 @@ func (w Writer) Execute(ctx context.Context, user, generation int64, request Wri
 		return nil, err
 	}
 	defer tx.Rollback()
-	if err = lockPolicy(ctx, tx, generation); err != nil {
-		return nil, err
+	if w.Fenced {
+		if err = lockPolicy(ctx, tx, generation); err != nil {
+			return nil, err
+		}
 	}
 	var groupID int64
 	if err = tx.QueryRowContext(ctx, "SELECT id FROM halaqoh WHERE id=? LOCK IN SHARE MODE", request.Group).Scan(&groupID); err != nil {
@@ -186,7 +195,21 @@ func (w Writer) Execute(ctx context.Context, user, generation int64, request Wri
 		return nil, err
 	}
 	canonical := session(day)
-	if request.Action == "save" {
+	if !w.Fenced {
+		// Reuse the existing per-member revision row as an inert transaction
+		// mutex. The operation changes no user-facing data, but serializes two
+		// devices that otherwise could both observe the same draft revision.
+		if request.Action == "save" {
+			if _, err = tx.ExecContext(ctx, "INSERT INTO tahsin_autosave_revisions(wali_id,session_date,revision) VALUES(?,?,0) ON DUPLICATE KEY UPDATE revision=revision", request.Wali, canonical); err != nil {
+				return nil, err
+			}
+			var revision int64
+			if err = tx.QueryRowContext(ctx, "SELECT revision FROM tahsin_autosave_revisions WHERE wali_id=? AND session_date=? FOR UPDATE", request.Wali, canonical).Scan(&revision); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if w.Fenced && request.Action == "save" {
 		if err = lockScope(ctx, tx, request.Wali, canonical); err != nil {
 			return nil, err
 		}
@@ -207,9 +230,11 @@ func (w Writer) Execute(ctx context.Context, user, generation int64, request Wri
 			ids = append(ids, e.WaliID)
 		}
 		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-		for _, id := range ids {
-			if err = lockScope(ctx, tx, id, canonical); err != nil {
-				return nil, err
+		if w.Fenced {
+			for _, id := range ids {
+				if err = lockScope(ctx, tx, id, canonical); err != nil {
+					return nil, err
+				}
 			}
 		}
 		state, err = readStateTx(ctx, tx, user, request.Group, request.Date, now)
@@ -299,7 +324,11 @@ func (w Writer) Execute(ctx context.Context, user, generation int64, request Wri
 	if err != nil {
 		return nil, err
 	}
-	_, err = tx.ExecContext(ctx, "INSERT INTO activity_logs(user_id,username,action,description,ip_address) SELECT id,username,'GO_AUTOSAVE',?,'internal-gateway' FROM users WHERE id=?", fmt.Sprintf("wali_id=%d session=%s operation=%s state=%s", request.Wali, canonical, request.Operation, newState), user)
+	actorIP := request.ActorIP
+	if actorIP == "" {
+		actorIP = "internal-gateway"
+	}
+	_, err = tx.ExecContext(ctx, "INSERT INTO activity_logs(user_id,username,action,description,ip_address) SELECT id,username,'GO_AUTOSAVE',?,? FROM users WHERE id=?", fmt.Sprintf("wali_id=%d session=%s operation=%s state=%s", request.Wali, canonical, request.Operation, newState), actorIP, user)
 	if err != nil {
 		return nil, err
 	}

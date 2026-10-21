@@ -122,5 +122,5 @@ func OpenWriter(ctx context.Context) (*Writer, error) {
 		return nil, errors.New("writer identity or staging fence policy differs")
 	}
 	failed = false
-	return &Writer{DB: db}, nil
+	return &Writer{DB: db, Fenced: true}, nil
 }

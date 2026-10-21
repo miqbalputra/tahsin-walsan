@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.go-vue.example
 *.zip
 db_tahsinbpk.sql
 import_database*.sql
@@ -19,6 +20,7 @@ vendor/
 /assets/go-vue/
 /next/backend/server
 /next/backend/server.exe
+/next/frontend/dist/
 __pycache__/
 *.log
 

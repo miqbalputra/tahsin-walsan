@@ -1,0 +1,111 @@
+package app
+
+import (
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestConfigRequiresExistingDatabaseAndSecureProductionPassword(t *testing.T) {
+	base := map[string]string{"APP_ENV": "production", "DB_DATABASE": "db_tahsinbpk", "DB_USERNAME": "tahsin_app", "DB_PASSWORD": "secret", "APP_STATIC_DIR": "/app/web", "APP_DATA_DIR": "/var/lib/tahsin"}
+	load := func(overrides map[string]string) error {
+		t.Helper()
+		_, returnErr := LoadConfigFrom(func(key string) string {
+			if value, ok := overrides[key]; ok {
+				return value
+			}
+			return base[key]
+		})
+		return returnErr
+	}
+	if err := load(nil); err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadConfigFrom(func(key string) string { return base[key] })
+	if err != nil || config.ProductionReady {
+		t.Fatal("production release gate must default closed")
+	}
+	if err := load(map[string]string{"DB_PASSWORD": ""}); err == nil {
+		t.Fatal("production accepted an empty database password")
+	}
+	if err := load(map[string]string{"DB_DATABASE": "db-tahsinbpk"}); err == nil {
+		t.Fatal("database name was not constrained to an identifier")
+	}
+}
+
+func TestLegacyIntegrationPathDoesNotFallThroughToSPA(t *testing.T) {
+	server := NewServer(Config{StaticDir: t.TempDir(), Environment: "development", CookieName: "tahsin_session", SessionDays: 30}, nil)
+	handler := server.Handler()
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest("GET", "/api/hermes.php?action=status", nil))
+	if recorder.Code != 503 || !contains(recorder.Body.String(), "Integrasi ini belum dipindahkan") {
+		t.Fatalf("legacy API returned %d %s", recorder.Code, recorder.Body.String())
+	}
+	preflight := httptest.NewRecorder()
+	handler.ServeHTTP(preflight, httptest.NewRequest("OPTIONS", "/api/hermes.php", nil))
+	if preflight.Code != 204 {
+		t.Fatalf("CORS preflight status = %d, want 204", preflight.Code)
+	}
+}
+
+func TestStaticRouterServesLegacyPageFallbackButNotAPIsOrMissingAssets(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("portal-index"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "app.js"), []byte("bundle"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "app-a1b2c3d4.js"), []byte("hashed-bundle"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{StaticDir: dir, Environment: "development", CookieName: "tahsin_session", SessionDays: 30}
+	server := NewServer(cfg, nil)
+	handler := server.Handler()
+	for _, test := range []struct {
+		path string
+		code int
+		body string
+	}{{"/", 200, "portal-index"}, {"/dashboard.php", 200, "portal-index"}, {"/assets/app.js", 200, "bundle"}, {"/assets/app-a1b2c3d4.js", 200, "hashed-bundle"}, {"/assets/missing.js", 404, ""}, {"/api/v1/missing", 404, "Endpoint API tidak ditemukan."}} {
+		t.Run(test.path, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httptest.NewRequest("GET", test.path, nil))
+			if recorder.Code != test.code {
+				t.Fatalf("status = %d, want %d", recorder.Code, test.code)
+			}
+			if test.body != "" && !contains(recorder.Body.String(), test.body) {
+				t.Fatalf("body %q does not contain %q", recorder.Body.String(), test.body)
+			}
+			if test.path == "/assets/app-a1b2c3d4.js" && !contains(recorder.Header().Get("Cache-Control"), "immutable") {
+				t.Fatal("hashed asset was not marked immutable")
+			}
+			if test.path == "/assets/app.js" && !contains(recorder.Header().Get("Cache-Control"), "no-store") {
+				t.Fatal("unhashed asset was cached indefinitely")
+			}
+		})
+	}
+}
+
+func TestProductionReleaseGateBlocksAPIsUntilExplicitlyOpened(t *testing.T) {
+	config := Config{Environment: "production", ProductionReady: false, StaticDir: t.TempDir(), CookieName: "tahsin_session", SessionDays: 30}
+	server := NewServer(config, nil)
+	req := httptest.NewRequest("POST", "/api/v1/attendance/snapshot", nil)
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, req)
+	if recorder.Code != 503 || !contains(recorder.Body.String(), "API Go+Vue belum dibuka") {
+		t.Fatalf("closed release gate returned %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func contains(text, part string) bool {
+	for i := 0; i+len(part) <= len(text); i++ {
+		if text[i:i+len(part)] == part {
+			return true
+		}
+	}
+	return false
+}
