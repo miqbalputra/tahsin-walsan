@@ -36,4 +36,20 @@ Ganti nama schema dan host sesuai resource lama; jangan memakai `*.*`, `WITH GRA
 
 Image ini **belum memenuhi syarat redeploy produksi**. Login, fondasi sesi guru, autosave, laporan presensi dasar, dan serving Vue sudah ada, tetapi port dashboard dan pemantauan Tahsin penuh, CRUD anak/keluarga/kelompok/pengguna, capaian/rapor/ekspor, backup-restore merge-only, Hermes, reminder, Data Induk, dan kontrak API lama masih harus dipindahkan serta diuji paritasnya. Handler untuk modul yang belum dipindahkan tidak boleh dianggap pengganti aplikasi PHP.
 
+Status modul agar keputusan cutover terukur:
+
+| Modul | Status Go + Vue | Syarat sebelum produksi |
+|---|---|---|
+| Login dan role | Dasar tersedia | Uji semua role, hash password PHP, sesi, CSRF, dan akses endpoint pada clone |
+| Input guru dan autosave | Adapter lama dan writer Go tersedia | Uji antrean IndexedDB lama, offline, konflik, dua perangkat, serta laporan pada clone |
+| Daftar keluarga | Baca saja | Port tambah/edit/arsip keluarga-anak dan aturan Data Induk |
+| Peserta, kelompok, anggota, pengguna | Belum dipindahkan | Port CRUD/import/arsip dengan histori dan hak akses tetap |
+| Dashboard, histori, capaian, rapor, rekap, ekspor | Laporan presensi dasar saja | Cocokkan hasil PHP dan Go untuk periode/filter yang sama |
+| Libur, pengumuman, log, pengaturan | Belum dipindahkan | Port operasi dan audit yang saat ini dipakai |
+| Backup dan restore | Belum dipindahkan | Implementasikan pratinjau dan merge-only, lalu latihan restore di clone |
+| Hermes, n8n, pengingat, Data Induk | Belum dipindahkan | Pertahankan kontrak, rahasia, retry, dan uji endpoint lama |
+| Backup produksi dan pemulihan | Gerbang operasional | Salinan di luar home server, restore drill, dan replay delta/binlog yang teruji |
+
+Karena modul-modul tersebut belum lengkap, mengganti resource aplikasi aktif sekarang akan menghilangkan akses operasional ke fitur yang masih dipakai meskipun isi database tidak terhapus. Jangan membuka `APP_PRODUCTION_READY` atau mengganti domain/proxy ke Go sebelum semua baris tabel di atas lulus uji.
+
 Jangan pilih Compose produksi untuk mengganti traffic aplikasi aktif sampai seluruh modul dan integrasi itu selesai, pemeriksaan kesamaan data/laporan pada clone lulus, kredensial DML diverifikasi, antrean perangkat ditangani, serta backup independen dan latihan restore/replay binlog memenuhi gerbang di [runbook keselamatan migrasi](MIGRATION_SAFETY_RUNBOOK.md). Belum ada koneksi atau perubahan ke database produksi dari build ini.
