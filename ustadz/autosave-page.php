@@ -26,6 +26,12 @@ if (tahsinSchemaReady($pdo) && $ids) {
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) $references[$r['wali_santri_id']] ??= $r;
 }
 $boot['references'] = array_map('autosaveFromRecord', $references);
+require_once __DIR__ . '/../includes/go_vue_helper.php';
+require_once __DIR__ . '/../includes/tahsin_surah_helper.php';
+if (goVueTeacherEnabled((int)$groupId) && ($_GET['renderer'] ?? '') !== 'php' && ($vueAssets = goVueAssets('src/teacher.ts'))) {
+    require __DIR__ . '/vue-autosave-page.php';
+    return;
+}
 require __DIR__ . '/../includes/header.php';
 require __DIR__ . '/../includes/sidebar.php';
 ?>
@@ -36,6 +42,7 @@ require __DIR__ . '/../includes/sidebar.php';
         <p class="tas-eyebrow"><?= htmlspecialchars($pageTitle) ?></p>
         <h1><?= htmlspecialchars($ctx['group']['nama_halaqoh']) ?></h1>
         <form method="get" class="tas-date"><input type="hidden" name="id" value="<?= (int) $groupId ?>">
+            <?php if (($_GET['renderer'] ?? '') === 'php'): ?><input type="hidden" name="renderer" value="php"><?php endif; ?>
             <label>Tanggal pertemuan <input type="date" name="tanggal" value="<?= htmlspecialchars($date) ?>" max="<?= date('Y-m-d') ?>" required></label>
             <button type="submit" class="tas-button">Buka</button>
         </form>
@@ -95,7 +102,7 @@ require __DIR__ . '/../includes/sidebar.php';
     <nav class="tas-nav" aria-label="Navigasi guru"><a href="hari-ini.php" aria-current="page">Hari Ini</a><a href="riwayat.php">Riwayat</a><a href="akun.php">Akun</a></nav>
 </section>
 <datalist id="tas-surahs"><?php
-$surahs = ['Al-Fatihah','Al-Baqarah',"Ali 'Imran",'An-Nisa',"Al-Ma’idah","Al-An’am",'Al-A’raf','Al-Anfal','At-Taubah','Yunus','Hud','Yusuf','Ar-Ra’d','Ibrahim','Al-Hijr','An-Nahl','Al-Isra','Al-Kahf','Maryam','Taha','Al-Anbiya','Al-Hajj','Al-Mu’minun','An-Nur','Al-Furqan','Ash-Shu’ara','An-Naml','Al-Qasas','Al-Ankabut','Ar-Rum','Luqman','As-Sajdah','Al-Ahzab','Saba','Fatir','Yasin','As-Saffat','Sad','Az-Zumar','Ghafir','Fussilat','Ash-Shura','Az-Zukhruf','Ad-Dukhan','Al-Jathiyah','Al-Ahqaf','Muhammad','Al-Fath','Al-Hujurat','Qaf','Adh-Dhariyat','At-Tur','An-Najm','Al-Qamar','Ar-Rahman','Al-Waqi’ah','Al-Hadid','Al-Mujadilah','Al-Hashr','Al-Mumtahanah','As-Saff','Al-Jumu’ah','Al-Munafiqun','At-Taghabun','At-Talaq','At-Tahrim','Al-Mulk','Al-Qalam','Al-Haqqah','Al-Ma’arij','Nuh','Al-Jinn','Al-Muzzammil','Al-Muddaththir','Al-Qiyamah','Al-Insan','Al-Mursalat','An-Naba','An-Nazi’at','Abasa','At-Takwir','Al-Infitar','Al-Mutaffifin','Al-Inshiqaq','Al-Buruj','At-Tariq','Al-A’la','Al-Ghashiyah','Al-Fajr','Al-Balad','Ash-Shams','Al-Lail','Ad-Duha','Ash-Sharh','At-Tin','Al-Alaq','Al-Qadr','Al-Bayyinah','Az-Zalzalah','Al-Adiyat','Al-Qari’ah','At-Takathur','Al-Asr','Al-Humazah','Al-Fil','Quraysh','Al-Ma’un','Al-Kawthar','Al-Kafirun','An-Nasr','Al-Masad','Al-Ikhlas','Al-Falaq','An-Nas'];
+$surahs = tahsinSurahNames();
 foreach ($surahs as $name) echo '<option value="' . htmlspecialchars($name, ENT_QUOTES) . '"></option>';
 ?></datalist>
 <script id="tahsin-autosave-data" type="application/json"><?= json_encode($boot, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) ?></script>

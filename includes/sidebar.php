@@ -52,6 +52,9 @@ if (in_array($role, ['admin', 'pj_tahfidz', 'kepsek', 'ustadz'], true)) {
         ['label' => 'Pemantauan Input', 'icon' => 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', 'url' => $prefix . 'pantau-input.php'],
     ]);
 }
+if (getenv('TAHSIN_NEXT_ENABLED') === '1' && in_array($role, ['admin','pj_tahfidz'], true)) {
+    $menus[] = ['label'=>'Pratinjau Keluarga','icon'=>'M12 3v18m-9-9h18','url'=>'go-vue.php'];
+}
 $current_page = basename($_SERVER['PHP_SELF']);
 // Teacher navigation stays focused; detailed reports remain reachable from Akun.
 if ($role === 'ustadz') {

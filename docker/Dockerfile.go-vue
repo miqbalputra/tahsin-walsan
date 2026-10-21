@@ -1,0 +1,33 @@
+# Optional migration image. The current PHP Dockerfile remains a usable fallback.
+FROM node:24-alpine AS frontend
+WORKDIR /src/next/frontend
+COPY next/frontend/package.json next/frontend/package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY next/frontend/ ./
+RUN npm run build
+
+FROM php:8.2-apache
+WORKDIR /var/www/html
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl libcurl4-openssl-dev libicu-dev libzip-dev unzip \
+    && docker-php-ext-install -j"$(nproc)" intl curl opcache pdo_mysql mysqli zip \
+    && a2enmod deflate expires headers rewrite \
+    && rm -rf /var/lib/apt/lists/*
+COPY docker/apache.conf /etc/apache2/conf-available/presensi-tahsin.conf
+COPY docker/php-production.ini /usr/local/etc/php/conf.d/zz-production.ini
+RUN a2enconf presensi-tahsin
+COPY . /var/www/html
+RUN rm -rf /var/www/html/next
+COPY --from=frontend /src/assets/go-vue/ /var/www/html/assets/go-vue/
+COPY docker/entrypoint.sh /usr/local/bin/presensi-entrypoint
+RUN chmod +x /usr/local/bin/presensi-entrypoint \
+    && mkdir -p /var/www/html/.sessions \
+    && chown -R www-data:www-data /var/www/html/.sessions \
+    && find /var/www/html -type d -exec chmod 755 {} \; \
+    && find /var/www/html -type f -exec chmod 644 {} \;
+ENV TAHSIN_NEXT_ENABLED=0 TAHSIN_VUE_TEACHER_ENABLED=0
+EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://127.0.0.1/health.php >/dev/null || exit 1
+ENTRYPOINT ["presensi-entrypoint"]
+CMD ["apache2-foreground"]

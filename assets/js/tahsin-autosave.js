@@ -491,10 +491,25 @@
 
   if (typeof module !== 'undefined' && module.exports) module.exports = { missing, DraftStore };
   if (typeof document === 'undefined') return;
+  // Both renderers use the exact same draft keys, immutable flights and retry engine.
+  // A weak map prevents two renderers from mounting senders on the same editor.
+  const mounted = new WeakMap();
+  const mountEditor = (root, boot) => {
+    if (mounted.has(root)) return mounted.get(root);
+    const app = new AutosaveApp(root, boot);
+    const ready = app.init().catch(error => {
+      root.inert = true;
+      app.banner('Halaman belum dapat disiapkan. Muat ulang; draft sebelumnya tetap tersedia.');
+      throw error;
+    });
+    mounted.set(root, ready);
+    return ready;
+  };
+  window.TahsinAutosave = Object.freeze({ mountEditor });
+  window.dispatchEvent(new Event('tahsin-autosave-ready'));
   const root = document.getElementById('tahsin-autosave'), data = document.getElementById('tahsin-autosave-data');
-  if (root && data) {
-    const app = new AutosaveApp(root, JSON.parse(data.textContent));
-    app.init().catch(() => { root.inert = false; app.banner('Halaman belum dapat disiapkan. Muat ulang; draft sebelumnya tetap tersedia.'); });
+  if (root && data && !root.hasAttribute('data-vue-editor')) {
+    mountEditor(root, JSON.parse(data.textContent)).catch(() => {});
   } else {
     const pending = document.getElementById('tahsin-pending-recovery'), boot = document.getElementById('tahsin-pending-data');
     if (pending && boot) recoverPending(JSON.parse(boot.textContent), pending).catch(() => { pending.hidden = false; pending.textContent = 'Draft di HP belum dapat diperiksa. Buka kembali sesi untuk memulihkan perubahan.'; });

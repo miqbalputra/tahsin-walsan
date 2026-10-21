@@ -16,6 +16,10 @@ vendor/
 .phpunit.cache/
 .phpunit.result.cache
 /outputs/keluarga-tahsin-*/
+/assets/go-vue/
+/next/backend/server
+/next/backend/server.exe
+__pycache__/
 *.log
 
 # Local n8n exports and audit contain production credentials or personal data.
