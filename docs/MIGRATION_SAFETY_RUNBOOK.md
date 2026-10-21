@@ -100,6 +100,10 @@ Pada 22 Oktober 2026, writer Go diuji ulang di home server pada MySQL **8.4.11**
 
 Dump sintetis sebelum restore dan dump hasil restore cocok persis pada skema, data, serta trigger. Setelah transfer kepemilikan di salinan restore, replay tanda terima Go yang dipulihkan mengembalikan respons asli dan tidak membuat presensi kedua: tanda terima tetap satu dan catatan resmi untuk wali/sesi uji juga tetap satu. Hasil uji, dump, dan log disimpan privat di direktori staging host; tidak ada kredensial atau isi dump yang dimasukkan ke Git. Container uji dihentikan setelah pemeriksaan, sementara data dan bukti tetap dipertahankan.
 
+### Build dan uji image kandidat terbaru
+
+Sesudah writer ditambahkan, image PHP–Vue `tahsin-php-vue:go-writer-9ba7385` dan Go `tahsin-go-writer:9ba7385` berhasil dibangun dari checkout `9ba7385`. `tests/migration-image-smoke.py` lulus 5 pemeriksaan pada clone restore privat; pada smoke itu Go sengaja berjalan dengan data demo dan writer mati. Secara terpisah, image Go yang sama dijalankan dengan writer aktif, akun baca SELECT-only dan akun writer terbatas pada database sintetis MySQL 8.4.11 di loopback. Alur HTTP gateway PHP → container Go lulus 11 assertion (login, CSRF, retry idempoten, bacaan pasca tulis, isolasi kelompok, pause, dan handback). Pemeriksaan akhir menemukan satu receipt uji dan pemilik sesi kembali ke PHP. Permintaan tanpa tanda tangan ditolak untuk endpoint baca maupun tulis. Semua container uji kini berhenti; image dan datadir sintetis dipertahankan. Aplikasi produksi tetap memakai PHP.
+
 Uji ini menutup validasi sintetik MySQL target serta replay tanda terima hasil backup. Uji tersebut tidak menjalankan pemulihan delta dari binlog produksi dan tidak memenuhi gerbang backup di luar server. Migrasi/cutover tetap menunggu backup independen tervalidasi, kebijakan administrasi pilot, inventaris antrean perangkat, serta pilot dan uji beban dengan persetujuan operasional terpisah.
 
 Contoh smoke test setelah backup/restore terverifikasi tersedia, memakai image kandidat yang telah dibangun:
