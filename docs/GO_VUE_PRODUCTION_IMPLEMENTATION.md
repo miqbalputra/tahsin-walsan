@@ -26,7 +26,7 @@ Akun runtime dibuat terpisah oleh operator database dan dibatasi ke host/jaringa
 
 ```sql
 CREATE USER 'tahsin_go_app'@'<host-atau-subnet-aplikasi>' IDENTIFIED BY '<secret-di-Coolify>';
-GRANT SELECT, INSERT, UPDATE, DELETE ON `db_tahsinbpk`.* TO 'tahsin_go_app'@'<host-atau-subnet-aplikasi>';
+GRANT SELECT, INSERT, UPDATE, DELETE ON `db_tahsinbapak`.* TO 'tahsin_go_app'@'<host-atau-subnet-aplikasi>';
 ```
 
 Ganti nama schema dan host sesuai resource lama; jangan memakai `*.*`, `WITH GRANT OPTION`, atau kredensial migrasi untuk runtime. Jika MySQL mewajibkan TLS, pasang CA sebagai file read-only di container dan isi `DB_TLS_CA_FILE` dengan path file tersebut.
