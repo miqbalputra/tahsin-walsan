@@ -8,9 +8,10 @@ RUN npm run build
 
 FROM php:8.2-apache
 WORKDIR /var/www/html
+ARG PHP_BUILD_JOBS=2
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl libcurl4-openssl-dev libicu-dev libzip-dev unzip \
-    && docker-php-ext-install -j"$(nproc)" intl curl opcache pdo_mysql mysqli zip \
+    && docker-php-ext-install -j"$PHP_BUILD_JOBS" intl curl opcache pdo_mysql mysqli zip \
     && a2enmod deflate expires headers rewrite \
     && rm -rf /var/lib/apt/lists/*
 COPY docker/apache.conf /etc/apache2/conf-available/presensi-tahsin.conf
