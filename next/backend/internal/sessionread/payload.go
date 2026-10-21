@@ -1,4 +1,5 @@
-// Package sessionread reproduces the PHP autosave read contract. It never writes data.
+// Package sessionread shares the PHP autosave contract between the read-only
+// session reader and the separately configured synthetic staging writer.
 package sessionread
 
 import (

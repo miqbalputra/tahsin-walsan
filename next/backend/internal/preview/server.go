@@ -27,6 +27,12 @@ type Server struct {
 	TeacherReader  interface {
 		Read(context.Context, int64, int64, string, time.Time) (sessionread.State, error)
 	}
+	WriterEnabled bool
+	WriteSecret   []byte
+	WriteGroups   map[int64]bool
+	Writer        interface {
+		Execute(context.Context, int64, int64, sessionread.WriteRequest, string, time.Time) (any, error)
+	}
 }
 
 func Signature(secret []byte, method, path, query, user, role, stamp string) string {
@@ -107,7 +113,11 @@ func ParseFilters(r *http.Request) (Filters, error) {
 func (s Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" && r.Method == http.MethodGet {
-			writeJSON(w, 200, map[string]any{"status": "ok", "service": "tahsin-next", "read_only": true, "enabled": s.Enabled})
+			writeJSON(w, 200, map[string]any{"status": "ok", "service": "tahsin-next", "read_only": !s.WriterEnabled, "enabled": s.Enabled, "writes_enabled": s.WriterEnabled})
+			return
+		}
+		if r.URL.Path == "/api/v1/autosave" {
+			s.handleWrite(w, r)
 			return
 		}
 		if r.URL.Path == "/api/v1/teacher-session" {

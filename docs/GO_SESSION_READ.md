@@ -2,6 +2,8 @@
 
 Status 22 Oktober 2026: kode staging tersedia, mati secara default. Ini belum mengalihkan pembacaan editor atau penulisan produksi. Editor Vue/PHP tetap memakai `ustadz/api-autosave.php` untuk GET dan POST.
 
+Tahap berikutnya menyediakan [autosave Go dengan pengunci staging](GO_AUTOSAVE_STAGING.md). Pembaca sesi ini dipakai ulang di dalam transaksi tulis tersebut, sambil mempertahankan kontrak GET lama.
+
 `GET /api/go-vue-teacher-session.php?halaqoh_id=ID&tanggal=YYYY-MM-DD` memvalidasi sesi PHP, role `ustadz`, daftar kelompok pilot, skema reporting/autosave lengkap dan penugasan guru. PHP menandatangani identitas, role, metode, path dan query menuju `GET /api/v1/teacher-session` di layanan Go internal. Guru tidak dapat memilih identitas lewat query. Endpoint keluarga admin/PJ tetap menolak guru, dan endpoint sesi guru menolak admin/PJ.
 
 Go memeriksa ulang penugasan berdasarkan batas histori roster hari Ahad. Guru lama dapat membaca sesi yang memang menjadi penugasannya; guru yang baru ditugaskan tidak otomatis mendapat roster historis itu. Periode sebelum pelacakan memakai aturan roster tercatat PHP. Status aktif peserta saat ini tidak menghapus keanggotaan historis yang sah.
@@ -43,6 +45,6 @@ Set `TAHSIN_TEST_DB_PORT=13319` sebelum menyiapkan fixture. Untuk `TestTeacherPH
 
 Untuk HTTP, jalankan Go pada loopback 18091 dengan daftar kelompok fiktif `11,12,13`, lalu PHP development server pada loopback 18085 menggunakan `tests/go-session-router.php` dan `TAHSIN_TEST_DB_NAME`. Jalankan `node tests/go-session-http.cjs` dengan path hasil PHP yang sama. Router tidak dapat berjalan melalui PHP web biasa dan selalu menunjuk database uji loopback.
 
-Kesamaan endpoint baru ini sudah diuji pada MariaDB lokal; pemeriksaan MySQL 8.4/image home server sebelumnya memakai kode tahap sebelumnya. Kode baca sesi baru perlu diuji lagi pada image dan salinan MySQL target sebelum aktivasi. Tidak ada perubahan produksi pada tahap ini. Penulisan Go, pembatas semua jalur tulis, pengembalian, uji beban dan pilot guru tetap pekerjaan berikutnya dalam [rencana migrasi](RENCANA_MIGRASI_GO_VUE.md).
+Kesamaan endpoint ini sudah diuji pada MariaDB lokal; pemeriksaan MySQL 8.4/image home server sebelumnya memakai kode tahap sebelumnya. Kode baca sesi baru perlu diuji lagi pada image dan salinan MySQL target sebelum aktivasi. Tidak ada perubahan produksi pada tahap ini. Implementasi penulisan dan pengunci sintetis beserta latihan pengembalian kini tersedia di [panduan staging](GO_AUTOSAVE_STAGING.md); hardening produksi, pemulihan, uji beban dan pilot tetap mengikuti [rencana migrasi](RENCANA_MIGRASI_GO_VUE.md).
 
 Referensi: [transaksi Go](https://go.dev/doc/database/execute-transactions), [konfigurasi timezone driver MySQL](https://github.com/go-sql-driver/mysql/tree/v1.10.1#system-variables).

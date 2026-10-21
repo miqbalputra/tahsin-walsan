@@ -21,7 +21,7 @@ Target keutuhan adalah **tidak kehilangan perubahan yang sudah diakui server aki
 |---|---|---|
 | Aplikasi PHP | Jalur utama untuk login, pengisian, impor, dan laporan | Bekukan versi stabil yang dapat dijalankan kembali |
 | Go + Vue tahap pertama | Pratinjau keluarga hanya baca, lokal, mati secara default; belum dipush pada saat rencana dibuat | Paket deploy, build container, dan uji di lingkungan server |
-| Go untuk guru | Kontrak baca sesi tersedia pada branch migrasi, gateway guru terpisah dan mati secara default; lihat [hasil uji](GO_SESSION_READ.md) | Uji image/MySQL target sebelum aktivasi; penulisan Go masih belum tersedia |
+| Go untuk guru | Kontrak baca sesi dan [autosave staging dengan pengunci](GO_AUTOSAVE_STAGING.md) tersedia pada branch migrasi; mati secara default dan belum produksi | Uji image/MySQL target, pemulihan dan administrasi pilot; batas database sintetis belum boleh dibuka |
 | Autosave | Ada IndexedDB, draft server, revisi, tanda terima operasi, dan transaksi catatan resmi | Kontrak lama harus tetap dapat diproses frontend/backend baru |
 | Backup ZIP aplikasi | Mengekspor tabel fisik dan skema tabel; restore hanya memasukkan ID yang belum ada | Tidak dipakai sebagai satu-satunya pemulihan penuh |
 | Backup/pemulihan produksi | Belum diperiksa atau diuji pada home server dalam pekerjaan ini | Uji restore lengkap serta pemulihan transaksi setelah backup |

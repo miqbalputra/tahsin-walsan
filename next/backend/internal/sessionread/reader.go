@@ -120,16 +120,28 @@ func optionalMissing(err error) bool {
 var suspectPattern = regexp.MustCompile(`Wali ID:\s*([0-9]+)`)
 
 func (r Reader) Read(ctx context.Context, user, group int64, requested string, now time.Time) (State, error) {
+	_, e := date(requested)
+	if e != nil || requested > now.In(jakarta).Format("2006-01-02") {
+		return State{}, &Error{422, "Tanggal sesi tidak valid."}
+	}
+	tx, e := r.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	if e != nil {
+		return State{}, e
+	}
+	defer tx.Rollback()
+	state, err := readStateTx(ctx, tx, user, group, requested, now)
+	if err != nil {
+		return state, err
+	}
+	return state, tx.Commit()
+}
+
+func readStateTx(ctx context.Context, tx *sql.Tx, user, group int64, requested string, now time.Time) (State, error) {
 	state := State{Entries: []Entry{}}
 	day, e := date(requested)
 	if e != nil || requested > now.In(jakarta).Format("2006-01-02") {
 		return state, &Error{422, "Tanggal sesi tidak valid."}
 	}
-	tx, e := r.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
-	if e != nil {
-		return state, e
-	}
-	defer tx.Rollback()
 	// Gateway checks trigger readiness with the existing PHP account. SELECT-only
 	// readers cannot inspect MySQL triggers; never grant TRIGGER just for this API.
 	tracking, _, e := readRows(ctx, tx, "SELECT tracked_from FROM tahsin_tracking WHERE id=1 AND schema_version=1")
@@ -293,7 +305,7 @@ func (r Reader) Read(ctx context.Context, user, group int64, requested string, n
 	if completed {
 		state.CompletedAt = closed[0]["completed_at"]
 	}
-	return state, tx.Commit()
+	return state, nil
 }
 
 func ParseQuery(values map[string][]string) (int64, string, error) {

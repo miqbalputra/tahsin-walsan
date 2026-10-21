@@ -2,6 +2,8 @@
 
 Mengikuti [rencana migrasi](RENCANA_MIGRASI_GO_VUE.md). Perangkat ini tidak mengalihkan koneksi produksi, mengimpor keluarga, atau mengaktifkan penulisan Go.
 
+Implementasi lanjutan [autosave Go dan pengunci staging](GO_AUTOSAVE_STAGING.md) sudah diuji pada database sintetis. Gerbang produksi dan bukti pemulihan dalam runbook ini tetap berlaku; writer staging tersebut belum diaktifkan pada database operasional.
+
 ## Backup dan pemulihan
 
 `scripts/migration-safety.php` menyediakan inventaris, backup, validasi checksum, pengambilan delta binlog, restore terisolasi, serta replay. Konfigurasi koneksi memakai `TAHSIN_SAFETY_DB_HOST`, `PORT`, `DATABASE`, `USERNAME`, `PASSWORD` dengan prefix lengkap pada setiap variabel; tidak mengambil kredensial `DB_*` aplikasi secara otomatis. Isi path client native melalui `TAHSIN_SAFETY_DUMP_BINARY`, `TAHSIN_SAFETY_CLIENT_BINARY`, dan `TAHSIN_SAFETY_BINLOG_BINARY`. Gunakan client yang cocok dengan mesin sumber.
@@ -64,7 +66,7 @@ Aktivasi memerlukan flag tepat `1` dan daftar ID kelompok yang valid dan tidak k
 
 Vue saat ini merender form sekali, lalu memakai controller autosave bersama dengan PHP. Controller tetap menjadi satu pemilik input/penyimpanan; tidak ada store IndexedDB atau penjadwal pengiriman kedua. Format draft, scope, client ID, operasi yang sedang dikirim dan tanda terima tetap sama. URL runtime versi baru menghindari cache runtime lama tanpa membersihkan data pengguna.
 
-Tautan **Buka tampilan sebelumnya** memakai `renderer=php`, kembali ke autosave PHP, dan mempertahankan pilihan itu saat mengganti tanggal. Ini tidak mengaktifkan finalisasi manual lama yang dapat berbeda perlakuannya terhadap isian kosong. Menonaktifkan flag juga mengembalikan form PHP tanpa menghapus draft. Hari Ini, Riwayat, dan Akun masih menggunakan halaman PHP; Go masih hanya membaca pratinjau keluarga.
+Tautan **Buka tampilan sebelumnya** memakai `renderer=php`, kembali ke autosave PHP, dan mempertahankan pilihan itu saat mengganti tanggal. Ini tidak mengaktifkan finalisasi manual lama yang dapat berbeda perlakuannya terhadap isian kosong. Menonaktifkan flag tampilan juga mengembalikan form PHP tanpa menghapus draft. Hari Ini, Riwayat, dan Akun masih menggunakan halaman PHP. Backend pilot tampilan ini tetap PHP kecuali writer staging yang terpisah diaktifkan; mengembalikan backend tulis memerlukan pengalihan kepemilikan, bukan sekadar mengganti renderer.
 
 ## Bukti lokal yang sudah ada
 
@@ -88,7 +90,7 @@ Bukti penuh berada di direktori root privat host dengan prefix `/root/tahsin-mig
 
 Backup Coolify manual tambahan juga berstatus sukses. **Salinan di luar home server belum berhasil diambil**: tombol unduh tidak menghasilkan berkas melalui browser yang dipakai saat pemeriksaan, dan SSH port 22 timeout. Backup yang tersedia sekarang tetap berada pada host yang sama. Keberhasilan restore tidak menggantikan kebutuhan salinan independen.
 
-Gerbang yang masih terbuka: salinan independen beserta validasinya; rantai log produksi dan pemulihan delta operasional; inventaris perangkat/antrean serta kelompok pilot; uji manusia dan beban; kontrak baca sesi Go; implementasi penulisan Go di staging, pembatas seluruh jalur tulis dan latihan pengembalian. Penulisan Go dan pilot produksi belum diaktifkan. Tidak ada klaim migrasi penuh atau kapasitas guru sudah terbukti.
+Gerbang yang masih terbuka: salinan independen beserta validasinya; rantai log produksi dan pemulihan delta operasional; inventaris perangkat/antrean serta kelompok pilot; uji manusia dan beban; validasi kode baca/tulis Go pada MySQL/image target; pemulihan data hasil Go dan administrasi pilot. Kode staging dan latihan pengembalian lokal kini tersedia dalam panduan writer. Penulisan Go dan pilot **produksi** belum diaktifkan. Tidak ada klaim migrasi penuh atau kapasitas guru sudah terbukti.
 
 Contoh smoke test setelah backup/restore terverifikasi tersedia, memakai image kandidat yang telah dibangun:
 
