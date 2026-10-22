@@ -57,15 +57,41 @@ require 'includes/header.php'; require 'includes/sidebar.php';
     <form method="post" class="bg-white rounded-2xl p-5 border space-y-4">
         <input type="hidden" name="csrf_token" value="<?= familyHtml(generateCsrfToken()) ?>">
         <h2 class="text-lg font-bold">Pratinjau snapshot <?= familyHtml($pending['data']['snapshot_date']) ?></h2>
-        <p><?= $plan['create'] ?> wali baru · <?= $plan['reuse'] ?> terhubung · <?= $plan['conflicts'] ?> perlu ditinjau · <?= $plan['students'] ?> anak · <?= $plan['links'] ?> relasi</p>
-        <p class="text-sm text-slate-600">Pencocokan otomatis memakai nama, HP, dan anak yang sama. Pilihan yang belum pasti harus ditinjau sebelum seluruh paket diimpor.</p>
-        <div class="overflow-x-auto max-h-96"><table class="min-w-full text-sm"><thead class="bg-slate-100"><tr><th class="text-left p-2">ID sumber</th><th class="text-left p-2">Wali</th><th class="text-left p-2">Pemetaan ke Tahsin</th></tr></thead><tbody>
-        <?php foreach ($plan['guardians'] as $id => $g): ?>
-            <tr class="border-b"><td class="p-2"><?= familyHtml($id) ?></td><td class="p-2"><?= familyHtml($g['name']) ?><br><span class="text-slate-500"><?= $types[$g['type']] ?></span></td><td class="p-2">
-                <?php if ($g['error']): ?><p class="text-red-700 mb-1"><?= familyHtml($g['error']) ?></p>
-                <select name="choices[<?= familyHtml($id) ?>]" aria-label="Pemetaan <?= familyHtml($g['name']) ?>" class="border rounded-lg p-2"><option value="">Pilih setelah ditinjau</option><?php foreach ($g['candidates'] as $localId => $name): ?><option value="<?= (int) $localId ?>">#<?= (int) $localId ?> · <?= familyHtml($name) ?></option><?php endforeach ?><option value="new">Buat wali baru (orang berbeda)</option></select>
-                <?php else: ?><?= $g['target_id'] ? '#' . (int) $g['target_id'] : 'Buat wali baru' ?><span class="block text-slate-500"><?= familyHtml($g['reason']) ?></span><?php endif ?>
-            </td></tr>
+        <p><?= $plan['create'] ?> wali baru · <?= $plan['reuse'] ?> terhubung · <?= $plan['conflicts'] ?> wali perlu ditinjau · <?= $plan['students'] ?> anak · <?= $plan['links'] ?> relasi · <?= count($plan['families']) ?> keluarga</p>
+        <p class="text-sm text-slate-600">Satu baris menampilkan satu keluarga. Anak bersaudara yang memiliki pasangan orang tua sama ditampilkan bersama. Pemetaan wali yang ditinjau berlaku untuk semua anak yang terhubung ke wali tersebut.</p>
+        <?php $renderedMappings = []; $familyRowNumber = 0; ?>
+        <div class="overflow-x-auto max-h-96"><table class="min-w-full text-sm" style="min-width: 900px"><thead class="bg-slate-100"><tr><th class="text-left p-3">Anak</th><th class="text-left p-3">Ayah</th><th class="text-left p-3">Ibu</th><th class="text-left p-3">Wali lain</th></tr></thead><tbody>
+        <?php foreach ($plan['families'] as $family): $familyRowNumber++; ?>
+            <tr class="border-b align-top" id="family-row-<?= $familyRowNumber ?>">
+                <td class="p-3"><div class="space-y-3">
+                    <?php foreach ($family['students'] as $student): ?>
+                        <div><strong><?= familyHtml($student['name']) ?></strong><span class="block text-slate-500">NIS <?= familyHtml($student['nis']) ?> · <?= familyHtml($student['class_name']) ?> · <?= familyHtml($student['status']) ?></span></div>
+                    <?php endforeach ?>
+                </div></td>
+                <?php foreach ([['father', $family['father_ids']], ['mother', $family['mother_ids']], ['guardian', $family['guardian_ids']]] as [$parentType, $parentIds]): ?>
+                    <td class="p-3"><div class="space-y-3">
+                    <?php if (!$parentIds): ?><span class="text-amber-800">Tidak tercantum di sumber</span><?php endif ?>
+                    <?php foreach ($parentIds as $id): $g = $plan['guardians'][(string) $id] ?? null; if (!$g) continue; ?>
+                        <div class="rounded-lg border border-slate-200 p-3">
+                            <strong><?= familyHtml($g['name']) ?></strong><span class="block text-slate-500"><?= $types[$parentType] ?> · ID sumber <?= familyHtml($id) ?></span>
+                            <?php if ($g['error']): ?>
+                                <?php if (isset($renderedMappings[$id])): ?>
+                                    <p class="mt-2 text-red-700">Perlu ditinjau. <a class="underline font-semibold" href="#family-map-<?= familyHtml($id) ?>">Atur pemetaan wali ini</a>; pilihan berlaku untuk semua anaknya.</p>
+                                <?php else: $renderedMappings[$id] = true; ?>
+                                    <p class="mt-2 text-red-700"><?= familyHtml($g['error']) ?></p>
+                                    <label class="block mt-2 text-sm" for="family-map-<?= familyHtml($id) ?>">Cocokkan dengan data Tahsin:</label>
+                                    <select id="family-map-<?= familyHtml($id) ?>" name="choices[<?= familyHtml($id) ?>]" aria-label="Pemetaan <?= familyHtml($g['name']) ?>" class="w-full border rounded-lg p-2 mt-1"><option value="">Pilih setelah ditinjau</option><?php foreach ($g['candidates'] as $localId => $name): ?><option value="<?= (int) $localId ?>">Hubungkan ke peserta #<?= (int) $localId ?> · <?= familyHtml($name) ?></option><?php endforeach ?><option value="new">Buat wali baru (orang berbeda)</option></select>
+                                <?php endif ?>
+                            <?php elseif ($g['target_id']): ?>
+                                <span class="block mt-1 text-emerald-700">Terhubung ke peserta Tahsin #<?= (int) $g['target_id'] ?></span><span class="block text-slate-500"><?= familyHtml($g['reason']) ?></span>
+                            <?php else: ?>
+                                <span class="block mt-1">Buat wali baru</span><span class="block text-slate-500"><?= familyHtml($g['reason']) ?></span>
+                            <?php endif ?>
+                        </div>
+                    <?php endforeach ?>
+                    </div></td>
+                <?php endforeach ?>
+            </tr>
         <?php endforeach ?>
         </tbody></table></div>
         <div class="flex flex-wrap gap-3"><button name="action" value="review" class="border rounded-xl px-4 py-2">Periksa Ulang Pemetaan</button><button name="action" value="apply" <?= $plan['conflicts'] || !$plan['schema_ready'] ? 'disabled' : '' ?> class="bg-blue-600 disabled:opacity-40 text-white rounded-xl px-4 py-2">Impor Keluarga</button><button name="action" value="cancel" class="text-slate-600 px-4 py-2">Batal</button></div>

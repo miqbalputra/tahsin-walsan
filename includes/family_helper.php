@@ -111,6 +111,52 @@ function familyValidatePackage(array $data): array
     return $indexed;
 }
 
+/** Group siblings by their exact source parent set for an understandable import preview. */
+function familyImportPreviewRows(array $rows): array
+{
+    $relationsByStudent = [];
+    foreach ($rows['links'] as $link) {
+        $type = $rows['guardians'][$link['guardian_id']]['type'];
+        $relationsByStudent[$link['student_id']][$type][] = (string) $link['guardian_id'];
+    }
+
+    $families = [];
+    foreach ($rows['students'] as $studentId => $student) {
+        $parents = ['father' => [], 'mother' => [], 'guardian' => []];
+        foreach ($relationsByStudent[$studentId] ?? [] as $type => $ids) {
+            $parents[$type] = array_values(array_unique($ids));
+            sort($parents[$type], SORT_NATURAL);
+        }
+        $familyKey = $parents;
+        // With no known parent, there is no evidence that two children are siblings.
+        if (!$parents['father'] && !$parents['mother'] && !$parents['guardian']) $familyKey['unlinked_student'] = (string) $studentId;
+        $key = json_encode($familyKey, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        if (!isset($families[$key])) {
+            $families[$key] = [
+                'father_ids' => $parents['father'],
+                'mother_ids' => $parents['mother'],
+                'guardian_ids' => $parents['guardian'],
+                'students' => [],
+            ];
+        }
+        $families[$key]['students'][] = [
+            'source_id' => (string) $studentId,
+            'name' => $student['name'],
+            'nis' => $student['nis'],
+            'class_name' => $student['class_name'],
+            'status' => $student['status'],
+        ];
+    }
+
+    $families = array_values($families);
+    foreach ($families as &$family) {
+        usort($family['students'], static fn(array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
+    }
+    unset($family);
+    usort($families, static fn(array $a, array $b): int => strnatcasecmp($a['students'][0]['name'] ?? '', $b['students'][0]['name'] ?? ''));
+    return $families;
+}
+
 /** Preview performs no writes. Name-only and ambiguous matches require a choice. */
 function familyImportPlan(PDO $pdo, array $data, array $choices = []): array
 {
@@ -141,7 +187,7 @@ function familyImportPlan(PDO $pdo, array $data, array $choices = []): array
         $known->execute([$data['source']]);
         foreach ($known->fetchAll(PDO::FETCH_COLUMN) as $sourceId) if (!isset($rows['students'][$sourceId])) throw new RuntimeException('Snapshot tidak lengkap: anak sumber yang pernah diimpor hilang.');
     }
-    $plan = ['guardians' => [], 'conflicts' => 0, 'create' => 0, 'reuse' => 0, 'students' => count($rows['students']), 'links' => count($rows['links']), 'hash' => $digest, 'schema_ready' => $ready];
+    $plan = ['guardians' => [], 'families' => familyImportPreviewRows($rows), 'conflicts' => 0, 'create' => 0, 'reuse' => 0, 'students' => count($rows['students']), 'links' => count($rows['links']), 'hash' => $digest, 'schema_ready' => $ready];
     foreach ($rows['guardians'] as $id => $g) {
         $matches = []; $strong = [];
         foreach ($wali as $localId => $w) {

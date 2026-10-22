@@ -21,10 +21,10 @@ File pribadi berada di folder keluaran lokal yang diabaikan Git. Jangan unggah d
 
 1. Backup database tujuan dengan fitur Backup & Restore. Semua tabel fisik keluarga ikut ditemukan oleh mekanisme backup yang ada.
 2. Deploy kode, lalu jalankan `php migrate_family.php` untuk membaca rencana. Jalankan `php migrate_family.php --apply` untuk menambah lima tabel dan view. Migrasi tidak mengubah data lama dan dapat diulang. Akun database memerlukan izin CREATE TABLE dan CREATE VIEW.
-3. Login sebagai admin / PJ Tahfidz, buka **Keluarga Anak–Bapak–Ibu**, unggah paket JSON dan periksa pratinjau.
-4. Tinjau kandidat wali yang belum pasti. Nama saja tidak cukup. Tiga kecocokan—nama, HP, dan anak—memakai ID wali lama secara otomatis. Kandidat ganda, HP berubah, atau nama berbeda memerlukan pilihan ID lokal / buat orang baru. Semua konflik harus selesai sebelum impor dijalankan.
+3. Login sebagai admin / PJ Tahfidz, buka **Keluarga Anak–Bapak–Ibu**, unggah paket JSON dan periksa pratinjau. Pratinjau menampilkan satu baris per keluarga dengan kolom anak, ayah, ibu, dan wali lain. Anak bersaudara dikelompokkan jika memiliki set orang tua sumber yang sama; anak dengan relasi orang tua yang belum lengkap tetap ditampilkan.
+4. Tinjau kandidat wali yang belum pasti. Nama saja tidak cukup. Tiga kecocokan—nama, HP, dan anak—memakai ID wali lama secara otomatis. Kandidat ganda, HP berubah, atau nama berbeda memerlukan pilihan ID lokal / buat orang baru. Pemetaan dipilih satu kali per wali sumber dan berlaku untuk seluruh anak yang terhubung kepadanya. Semua konflik harus selesai sebelum impor dijalankan.
 5. Klik **Impor Keluarga**. Server memeriksa ulang kondisi database dalam transaksi dan mengunci impor bersamaan. Pengulangan paket yang sama tidak menggandakan wali, anak, atau relasi.
-6. Penempatan Ibu ke kelompok dilakukan terpisah sesuai data pengajar/jadwal. Impor identitas tidak membuat penugasan atau catatan presensi/capaian.
+6. Setelah identitas keluarga masuk, buat akun guru Ustadzah dengan role `ustadz`, buat halaqoh program Ibu, tetapkan pengajar, lalu tambahkan peserta Ibu sesuai jadwal. Impor identitas tidak membuat akun, penugasan, atau catatan presensi/capaian.
 
 Pratinjau lokal membandingkan master dengan backup **30 Agustus 2026**, bukan keadaan produksi terkini: 150 wali cocok kuat, 32 perlu ditinjau, dan 236 baru. Angka ini bukan persetujuan untuk memakai ID backup di produksi. Pratinjau pada database tujuan harus dijalankan lagi.
 

@@ -33,6 +33,15 @@ $package=['format'=>'tahsin-family-v1','source'=>'school-export','snapshot_date'
 $plan=familyImportPlan($pdo,$package);
 fmCheck($plan['guardians'][100]['target_id']===7,'Strong match reuses old father ID');
 fmCheck($plan['conflicts']===1,'Ambiguous identity needs a choice');
+$familyRows=$plan['families'];
+$ahmadFamily=array_values(array_filter($familyRows,fn($f)=>in_array('200',array_column($f['students'],'source_id'),true)))[0];
+fmCheck(count($familyRows)===3,'Preview groups exact sibling parent sets into families');
+fmCheck(array_column($ahmadFamily['students'],'source_id')===['200','201'],'Siblings appear together in one family row');
+fmCheck($ahmadFamily['father_ids']===['100'] && $ahmadFamily['mother_ids']===['101'],'Family preview shows father and mother source identities');
+fmCheck(count(array_filter($familyRows,fn($f)=>$f['students'][0]['source_id']==='203' && !$f['father_ids'] && !$f['mother_ids']))===1,'Child without source parent links remains visible as its own family row');
+$twoOrphans=$package; $twoOrphans['students'][]=$s('204','Anak Tanpa Relasi Kedua');
+$orphanRows=array_values(array_filter(familyImportPreviewRows(familyValidatePackage($twoOrphans)),fn($f)=>!$f['father_ids'] && !$f['mother_ids'] && !$f['guardian_ids']));
+fmCheck(count($orphanRows)===2,'Unlinked children are never assumed to be siblings');
 fmCheck($before===fmLegacy($pdo),'Preview is read-only');
 fmReject(fn()=>familyImportApply($pdo,$package),'Conflict rejects entire import');
 fmCheck((int)$pdo->query('SELECT COUNT(*) FROM family_students')->fetchColumn()===0,'No partial write');
