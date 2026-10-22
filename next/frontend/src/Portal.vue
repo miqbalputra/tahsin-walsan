@@ -14,6 +14,7 @@ import ReportSettings from './ReportSettings.vue'
 import TahsinReport from './TahsinReport.vue'
 import BackupManagement from './BackupManagement.vue'
 import CapaianManagement from './CapaianManagement.vue'
+import DataIndukManagement from './DataIndukManagement.vue'
 import Account from './Account.vue'
 import FamilyPreview from './App.vue'
 import type { TeacherBoot } from './teacher'
@@ -52,7 +53,7 @@ const menus = computed(() => {
     { path: '/dashboard', label: 'Dashboard' }, { path: '/peserta', label: 'Peserta' }, { path: '/keluarga', label: 'Keluarga' }, { path: '/halaqoh', label: 'Kelompok' }, { path: '/users', label: 'Pengguna' }, { path: '/libur', label: 'Hari Libur' }, { path: '/pengumuman', label: 'Pengumuman' }, { path: '/capaian', label: 'Capaian' }, { path: '/progress', label: 'Progress' }, { path: '/rekap', label: 'Rekap' }, { path: '/laporan', label: 'Laporan' }, { path: '/backup', label: 'Backup' }, { path: '/akun', label: 'Akun' },
   ]
   if (role === 'admin') return [
-    { path: '/dashboard', label: 'Dashboard' }, { path: '/peserta', label: 'Peserta' }, { path: '/keluarga', label: 'Keluarga' }, { path: '/halaqoh', label: 'Kelompok' }, { path: '/users', label: 'Pengguna' }, { path: '/libur', label: 'Hari Libur' }, { path: '/pengumuman', label: 'Pengumuman' }, { path: '/capaian', label: 'Capaian' }, { path: '/progress', label: 'Progress' }, { path: '/rekap', label: 'Rekap' }, { path: '/laporan', label: 'Laporan' }, { path: '/backup', label: 'Backup' }, { path: '/logs', label: 'Log' }, { path: '/pengaturan-rapor', label: 'Pengaturan Rapor' }, { path: '/akun', label: 'Akun' },
+    { path: '/dashboard', label: 'Dashboard' }, { path: '/peserta', label: 'Peserta' }, { path: '/keluarga', label: 'Keluarga' }, { path: '/halaqoh', label: 'Kelompok' }, { path: '/users', label: 'Pengguna' }, { path: '/libur', label: 'Hari Libur' }, { path: '/pengumuman', label: 'Pengumuman' }, { path: '/capaian', label: 'Capaian' }, { path: '/progress', label: 'Progress' }, { path: '/rekap', label: 'Rekap' }, { path: '/laporan', label: 'Laporan' }, { path: '/backup', label: 'Backup' }, { path: '/logs', label: 'Log' }, { path: '/pengaturan-rapor', label: 'Pengaturan Rapor' }, { path: '/data-induk', label: 'Data Induk' }, { path: '/akun', label: 'Akun' },
   ]
   return [
     { path: '/dashboard', label: 'Dashboard' }, { path: '/peserta', label: 'Peserta' }, { path: '/keluarga', label: 'Keluarga' }, { path: '/halaqoh', label: 'Kelompok' }, { path: '/users', label: 'Pengguna' }, { path: '/libur', label: 'Hari Libur' }, { path: '/pengumuman', label: 'Pengumuman' }, { path: '/laporan', label: 'Laporan' }, { path: '/akun', label: 'Akun' },
@@ -200,6 +201,7 @@ function localDate() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia
     <section v-else-if="screen === 'pengaturan-rapor' && user.role === 'admin'" class="content"><ReportSettings :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'backup' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><BackupManagement :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'capaian' && (user.role === 'admin' || user.role === 'pj_tahfidz' || user.role === 'ustadz')" class="content"><CapaianManagement :role="user.role" :csrf="csrf" @unauthorized="expireLogin" /></section>
+    <section v-else-if="screen === 'data-induk' && user.role === 'admin'" class="content"><DataIndukManagement :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="(screen === 'progress' || screen === 'rekap') && user.role !== 'ustadz'" class="content"><TahsinReport :role="user.role" :mode="screen" :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'halaqoh' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><GroupManagement :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'peserta' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><Participants :csrf="csrf" @unauthorized="expireLogin" /></section>

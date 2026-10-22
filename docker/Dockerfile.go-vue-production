@@ -11,7 +11,8 @@ COPY next/backend/go.mod next/backend/go.sum ./
 RUN go mod download
 COPY next/backend/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/tahsin-app ./cmd/app \
-    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/tahsin-migrate ./cmd/migrate
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/tahsin-migrate ./cmd/migrate \
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/tahsin-data-induk-sync ./cmd/data-induk-sync
 
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata \
@@ -21,6 +22,7 @@ RUN apk add --no-cache ca-certificates tzdata \
     && chown -R 10001:10001 /var/lib/tahsin
 COPY --from=backend /out/tahsin-app /usr/local/bin/tahsin-app
 COPY --from=backend /out/tahsin-migrate /usr/local/bin/tahsin-migrate
+COPY --from=backend /out/tahsin-data-induk-sync /usr/local/bin/tahsin-data-induk-sync
 COPY --from=frontend /src/next/frontend/dist/ /app/web/
 COPY assets/js/tahsin-autosave.js /app/web/assets/js/tahsin-autosave.js
 COPY assets/css/tahsin-autosave.css /app/web/assets/css/tahsin-autosave.css

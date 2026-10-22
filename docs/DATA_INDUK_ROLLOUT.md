@@ -24,19 +24,25 @@
    setelah roster benar, aktifkan `DATA_INDUK_ENABLED=true` di produksi.
 
    ```sh
+   # Saat ini melalui PHP yang masih aktif
    php scripts/data-induk-sync.php references
    php scripts/data-induk-sync.php roster
    php scripts/data-induk-sync.php teachers
+
+   # Setelah cutover Go+Vue, binary yang sama tersedia di image produksi
+   tahsin-data-induk-sync references
+   tahsin-data-induk-sync roster
+   tahsin-data-induk-sync teachers
    ```
 
 5. Tambahkan Scheduled Task Coolify atau cron VPS berikut (jalankan di
    container aplikasi, bukan browser):
 
    ```cron
-   */15 * * * * php /var/www/html/scripts/data-induk-sync.php changes >> /proc/1/fd/2 2>&1
+   */15 * * * * tahsin-data-induk-sync changes >> /proc/1/fd/2 2>&1
    ```
 
-   Bila pusat tidak tersedia, job gagal dengan aman dan form presensi tetap
+   Pada Scheduled Task Coolify, jalankan `tahsin-data-induk-sync changes` dengan environment yang sama seperti service Go. Tombol admin dan task ini berbagi MySQL advisory lock. Bila pusat tidak tersedia, job gagal dengan aman dan form presensi tetap
    memakai snapshot lokal. Admin akan melihat waktu sync lama dan error terakhir
    pada halaman status.
 

@@ -23,12 +23,13 @@ type Server struct {
 	DB     *sql.DB
 	Reader sessionread.Reader
 	Writer sessionread.Writer
+	getenv func(string) string
 }
 
 var contentHashedAsset = regexp.MustCompile(`-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$`)
 
 func NewServer(config Config, db *sql.DB) *Server {
-	return &Server{Config: config, DB: db, Reader: sessionread.Reader{DB: db}, Writer: sessionread.Writer{DB: db}}
+	return &Server{Config: config, DB: db, Reader: sessionread.Reader{DB: db}, Writer: sessionread.Writer{DB: db}, getenv: os.Getenv}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -71,6 +72,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/reports/tahsin/verifications", s.requireRoles(http.HandlerFunc(s.handleTahsinVerification), "admin", "pj_tahfidz"))
 	mux.Handle("GET /api/v1/capaian", s.requireRoles(http.HandlerFunc(s.handleCapaians), "admin", "pj_tahfidz", "ustadz"))
 	mux.Handle("POST /api/v1/capaian", s.requireRoles(http.HandlerFunc(s.handleCapaianUpdate), "admin", "pj_tahfidz"))
+	mux.Handle("GET /api/v1/data-induk", s.requireRoles(http.HandlerFunc(s.handleDataInduk), "admin"))
+	mux.Handle("POST /api/v1/data-induk/sync", s.requireRoles(http.HandlerFunc(s.handleDataIndukSync), "admin"))
+	mux.Handle("POST /api/v1/data-induk/conflicts/{id}", s.requireRoles(http.HandlerFunc(s.handleDataIndukConflict), "admin"))
 	mux.Handle("GET /api/v1/backups", s.requireRoles(http.HandlerFunc(s.handleBackups), "admin", "pj_tahfidz"))
 	mux.Handle("POST /api/v1/backups", s.requireRoles(http.HandlerFunc(s.handleBackups), "admin", "pj_tahfidz"))
 	mux.Handle("GET /api/v1/backups/{name}", s.requireRoles(http.HandlerFunc(s.handleBackupDownloadRoute), "admin", "pj_tahfidz"))
