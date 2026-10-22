@@ -12,6 +12,7 @@ import Dashboard from './Dashboard.vue'
 import ActivityLogs from './ActivityLogs.vue'
 import ReportSettings from './ReportSettings.vue'
 import TahsinReport from './TahsinReport.vue'
+import TahsinRapor from './TahsinRapor.vue'
 import BackupManagement from './BackupManagement.vue'
 import CapaianManagement from './CapaianManagement.vue'
 import DataIndukManagement from './DataIndukManagement.vue'
@@ -175,7 +176,7 @@ watch(() => [route.path, route.query.id, route.query.tanggal], async ([path, gro
 onMounted(loadIdentity)
 
 const moduleLabel: Record<string, string> = {
-  dashboard: 'Dashboard', peserta: 'Data Peserta', keluarga: 'Keluarga Anak–Bapak–Ibu', halaqoh: 'Data Kelompok', users: 'Data User', riwayat: 'Riwayat Presensi', laporan: 'Laporan', progress: 'Progress', rekap: 'Rekap', akun: 'Akun', capaian: 'Capaian', libur: 'Hari Libur', pengumuman: 'Pengumuman', logs: 'Log Aktivitas', 'pengaturan-rapor': 'Pengaturan Rapor', 'data-induk': 'Sinkronisasi Data Induk', backup: 'Backup & Restore',
+  dashboard: 'Dashboard', peserta: 'Data Peserta', keluarga: 'Keluarga Anak–Bapak–Ibu', halaqoh: 'Data Kelompok', users: 'Data User', riwayat: 'Riwayat Presensi', laporan: 'Laporan', progress: 'Progress', rekap: 'Rekap', rapor: 'Rapor Tahsin', akun: 'Akun', capaian: 'Capaian', libur: 'Hari Libur', pengumuman: 'Pengumuman', logs: 'Log Aktivitas', 'pengaturan-rapor': 'Pengaturan Rapor', 'data-induk': 'Sinkronisasi Data Induk', backup: 'Backup & Restore',
 }
 const surahNames = ['Al-Fatihah','Al-Baqarah',"Ali 'Imran",'An-Nisa',"Al-Ma’idah",'Al-An’am','Al-A’raf','Al-Anfal','At-Taubah','Yunus','Hud','Yusuf','Ar-Ra’d','Ibrahim','Al-Hijr','An-Nahl','Al-Isra','Al-Kahf','Maryam','Taha','Al-Anbiya','Al-Hajj','Al-Mu’minun','An-Nur','Al-Furqan','Ash-Shu’ara','An-Naml','Al-Qasas','Al-Ankabut','Ar-Rum','Luqman','As-Sajdah','Al-Ahzab','Saba','Fatir','Yasin','As-Saffat','Sad','Az-Zumar','Ghafir','Fussilat','Ash-Shura','Az-Zukhruf','Ad-Dukhan','Al-Jathiyah','Al-Ahqaf','Muhammad','Al-Fath','Al-Hujurat','Qaf','Adh-Dhariyat','At-Tur','An-Najm','Al-Qamar','Ar-Rahman','Al-Waqi’ah','Al-Hadid','Al-Mujadilah','Al-Hashr','Al-Mumtahanah','As-Saff','Al-Jumu’ah','Al-Munafiqun','At-Taghabun','At-Talaq','At-Tahrim','Al-Mulk','Al-Qalam','Al-Haqqah','Al-Ma’arij','Nuh','Al-Jinn','Al-Muzzammil','Al-Muddaththir','Al-Qiyamah','Al-Insan','Al-Mursalat','An-Naba','An-Nazi’at','Abasa','At-Takwir','Al-Infitar','Al-Mutaffifin','Al-Inshiqaq','Al-Buruj','At-Tariq','Al-A’la','Al-Ghashiyah','Al-Fajr','Al-Balad','Ash-Shams','Al-Lail','Ad-Duha','Ash-Sharh','At-Tin','Al-Alaq','Al-Qadr','Al-Bayyinah','Az-Zalzalah','Al-Adiyat','Al-Qari’ah','At-Takathur','Al-Asr','Al-Humazah','Al-Fil','Quraysh','Al-Ma’un','Al-Kawthar','Al-Kafirun','An-Nasr','Al-Masad','Al-Ikhlas','Al-Falaq','An-Nas']
 function localDate() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) }
@@ -203,6 +204,7 @@ function localDate() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia
     <section v-else-if="screen === 'capaian' && (user.role === 'admin' || user.role === 'pj_tahfidz' || user.role === 'ustadz')" class="content"><CapaianManagement :role="user.role" :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'data-induk' && user.role === 'admin'" class="content"><DataIndukManagement :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="(screen === 'progress' || screen === 'rekap') && user.role !== 'ustadz'" class="content"><TahsinReport :role="user.role" :mode="screen" :csrf="csrf" @unauthorized="expireLogin" /></section>
+    <section v-else-if="screen === 'rapor'" class="content"><TahsinRapor :wali-id="String(route.query.wali_santri_id || '')" :start-date="String(route.query.start_date || '')" :end-date="String(route.query.end_date || '')" :viewer="displayName" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'halaqoh' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><GroupManagement :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'peserta' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><Participants :csrf="csrf" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'users' && (user.role === 'admin' || user.role === 'pj_tahfidz')" class="content"><UserManagement :csrf="csrf" @unauthorized="expireLogin" /></section>

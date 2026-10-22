@@ -2,6 +2,7 @@ package app
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,6 +15,31 @@ func TestTahsinSessionScheduleHonorsFirstSundayAndHolidays(t *testing.T) {
 	}
 	if session, err := tahsinSessionDate("2026-01-14"); err != nil || session != "2026-01-11" {
 		t.Fatalf("sessionDate = %q, err=%v", session, err)
+	}
+}
+
+func TestTahsinReportExcelExportPreservesConflictSourcesAndEscapesCells(t *testing.T) {
+	report := tahsinReportResult{
+		Filters: tahsinReportFilters{StartDate: "2026-01-01", EndDate: "2026-01-31"},
+		Rows: []tahsinReportRow{{
+			ID: 1, Name: "=HYPERLINK(\"https://example.test\")", ChildrenText: "<script>alert(1)</script>",
+			Category: "reguler", Active: true, QualityLabel: "Perlu verifikasi",
+			Details: []tahsinCell{{
+				SessionDate: "2026-01-11", State: "conflict", Records: []tahsinRecord{
+					{ID: 9, Date: "2026-01-11", Status: "H", Material: "Iqro", Level: "3", Page: "4-5", Result: "Lulus"},
+					{ID: 10, Date: "2026-01-11", Status: "H", Material: "Iqro", Level: "3", Page: "6", Result: "Ulang"},
+				},
+			}},
+		}},
+	}
+	got := renderTahsinReportExcel(report)
+	for _, want := range []string{"&#39;=HYPERLINK", "&lt;script&gt;", "Perlu verifikasi", "#9 2026-01-11 Hadir", "#10 2026-01-11 Hadir", "Alfa tercatat"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("export does not contain escaped/preserved value %q", want)
+		}
+	}
+	if strings.Contains(got, "<script>") || strings.Contains(got, "<script>alert") {
+		t.Fatal("untrusted report values were emitted as active HTML")
 	}
 }
 

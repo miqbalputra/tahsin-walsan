@@ -24,6 +24,7 @@ const router = createRouter({
     { path: '/laporan.php', redirect: '/laporan' },
     { path: '/laporan-bulanan.php', redirect: '/laporan' },
     { path: '/progress-wali.php', redirect: '/progress' },
+    { path: '/print-rapor.php', redirect: to => ({ path: '/rapor', query: { wali_santri_id: to.query.wali_santri_id, start_date: to.query.start_date, end_date: to.query.end_date } }) },
     { path: '/rekap-halaqoh.php', redirect: '/rekap' },
     { path: '/rekap-lengkap.php', redirect: '/rekap' },
     { path: '/persentase-keaktifan.php', redirect: '/progress' },

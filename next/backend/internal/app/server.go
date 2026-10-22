@@ -69,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/reports/attendance", s.requireRoles(http.HandlerFunc(s.handleAttendanceReport), "admin", "pj_tahfidz", "kepsek", "ustadz"))
 	mux.Handle("GET /api/v1/reports/attendance/options", s.requireRoles(http.HandlerFunc(s.handleAttendanceReportOptions), "admin", "pj_tahfidz", "kepsek", "ustadz"))
 	mux.Handle("GET /api/v1/reports/tahsin", s.requireRoles(http.HandlerFunc(s.handleTahsinReport), "admin", "pj_tahfidz", "kepsek", "ustadz"))
+	mux.Handle("GET /api/v1/reports/tahsin/export", s.requireRoles(http.HandlerFunc(s.handleTahsinReportExport), "admin", "pj_tahfidz", "kepsek", "ustadz"))
 	mux.Handle("POST /api/v1/reports/tahsin/verifications", s.requireRoles(http.HandlerFunc(s.handleTahsinVerification), "admin", "pj_tahfidz"))
 	mux.Handle("GET /api/v1/capaian", s.requireRoles(http.HandlerFunc(s.handleCapaians), "admin", "pj_tahfidz", "ustadz"))
 	mux.Handle("POST /api/v1/capaian", s.requireRoles(http.HandlerFunc(s.handleCapaianUpdate), "admin", "pj_tahfidz"))

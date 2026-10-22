@@ -178,7 +178,7 @@ func TestUserAdministrationEndpointsRequireAuthentication(t *testing.T) {
 
 func TestAdministrationReadEndpointsRequireAuthentication(t *testing.T) {
 	server := NewServer(Config{Environment: "development", CookieName: "tahsin_session", SessionDays: 30}, nil)
-	for _, path := range []string{"/api/v1/dashboard", "/api/v1/logs", "/api/v1/settings/report", "/api/v1/reports/tahsin", "/api/v1/capaian", "/api/v1/data-induk", "/api/v1/backups"} {
+	for _, path := range []string{"/api/v1/dashboard", "/api/v1/logs", "/api/v1/settings/report", "/api/v1/reports/tahsin", "/api/v1/reports/tahsin/export", "/api/v1/capaian", "/api/v1/data-induk", "/api/v1/backups"} {
 		t.Run(path, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			server.Handler().ServeHTTP(recorder, httptest.NewRequest("GET", path, nil))
