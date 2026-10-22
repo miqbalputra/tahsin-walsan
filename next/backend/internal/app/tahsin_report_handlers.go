@@ -129,7 +129,7 @@ func (s *Server) handleTahsinVerification(w http.ResponseWriter, r *http.Request
 		writeAPIError(w, http.StatusServiceUnavailable, "Wali belum dapat diperiksa.")
 		return
 	}
-	rows, err := tx.QueryContext(r.Context(), "SELECT id,wali_santri_id,halaqoh_id,DATE_FORMAT(tanggal,'%Y-%m-%d'),COALESCE(status,''),COALESCE(alasan,''),COALESCE(jenis_materi,''),CAST(COALESCE(jilid,'') AS CHAR),COALESCE(nama_surat,''),COALESCE(halaman,''),COALESCE(hasil_talaqqi,''),COALESCE(CAST(created_at AS CHAR),'') FROM presensi WHERE wali_santri_id=? AND tanggal BETWEEN ? AND ? ORDER BY id FOR UPDATE", input.WaliID, input.Session, last)
+	rows, err := tx.QueryContext(r.Context(), "SELECT id,wali_santri_id,COALESCE(halaqoh_id,0),DATE_FORMAT(tanggal,'%Y-%m-%d'),COALESCE(status,''),COALESCE(alasan,''),COALESCE(jenis_materi,''),CAST(COALESCE(jilid,'') AS CHAR),COALESCE(nama_surat,''),COALESCE(halaman,''),COALESCE(hasil_talaqqi,''),COALESCE(CAST(created_at AS CHAR),'') FROM presensi WHERE wali_santri_id=? AND tanggal BETWEEN ? AND ? ORDER BY id FOR UPDATE", input.WaliID, input.Session, last)
 	if err != nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "Catatan sumber belum dapat dibaca.")
 		return

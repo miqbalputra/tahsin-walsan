@@ -147,7 +147,7 @@ func fetchAttendanceReport(ctx context.Context, db *sql.DB, filters AttendanceRe
 		return nil, 0, err
 	}
 	where, args := attendanceReportWhere(filters)
-	where = fmt.Sprintf(where, childTable)
+	where = strings.ReplaceAll(where, "%s", childTable)
 	base := " FROM presensi p JOIN wali_santri w ON w.id=p.wali_santri_id JOIN halaqoh h ON h.id=p.halaqoh_id WHERE " + where
 	var total int64
 	if err = db.QueryRowContext(ctx, "SELECT COUNT(*)"+base, args...).Scan(&total); err != nil {

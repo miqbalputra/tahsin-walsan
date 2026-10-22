@@ -2,6 +2,7 @@ package app
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -46,5 +47,27 @@ func TestAttendanceReportWhereUsesBoundFiltersAndEscapedTablePlaceholder(t *test
 	}
 	if where == "" || len([]rune(where)) == 0 {
 		t.Fatal("empty report query predicate")
+	}
+}
+
+func TestAttendanceReportChildTablePlaceholderWorksWithOptionalFilters(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		filters    AttendanceReportFilters
+		wantTables int
+	}{
+		{name: "no child filters", filters: AttendanceReportFilters{StartDate: "2026-01-01", EndDate: "2026-01-31"}},
+		{name: "class and name filters", filters: AttendanceReportFilters{StartDate: "2026-01-01", EndDate: "2026-01-31", Class: "2A", Search: "Amin"}, wantTables: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			where, _ := attendanceReportWhere(tc.filters)
+			where = strings.ReplaceAll(where, "%s", "family_children")
+			if strings.Contains(where, "%s") || strings.Contains(where, "%!(EXTRA") {
+				t.Fatalf("child table placeholder was not safely resolved: %q", where)
+			}
+			if got := strings.Count(where, "family_children"); got != tc.wantTables {
+				t.Fatalf("child table references = %d, want %d: %q", got, tc.wantTables, where)
+			}
+		})
 	}
 }

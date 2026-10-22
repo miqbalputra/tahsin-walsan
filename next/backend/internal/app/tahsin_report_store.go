@@ -195,7 +195,7 @@ func loadTahsinReportDataset(ctx context.Context, db *sql.DB, endDate string, no
 	} else if !missingTable(err) {
 		return nil, err
 	}
-	query := "SELECT id,wali_santri_id,halaqoh_id,DATE_FORMAT(tanggal,'%Y-%m-%d'),COALESCE(status,''),COALESCE(alasan,''),COALESCE(jenis_materi,''),CAST(COALESCE(jilid,'') AS CHAR),COALESCE(nama_surat,''),COALESCE(halaman,''),COALESCE(hasil_talaqqi,''),COALESCE(CAST(created_at AS CHAR),'') FROM presensi WHERE tanggal<=? ORDER BY tanggal,id"
+	query := "SELECT id,wali_santri_id,COALESCE(halaqoh_id,0),DATE_FORMAT(tanggal,'%Y-%m-%d'),COALESCE(status,''),COALESCE(alasan,''),COALESCE(jenis_materi,''),CAST(COALESCE(jilid,'') AS CHAR),COALESCE(nama_surat,''),COALESCE(halaman,''),COALESCE(hasil_talaqqi,''),COALESCE(CAST(created_at AS CHAR),'') FROM presensi WHERE tanggal<=? ORDER BY tanggal,id"
 	rows, err = db.QueryContext(ctx, query, end)
 	if err != nil {
 		return nil, err

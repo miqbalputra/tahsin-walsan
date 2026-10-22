@@ -69,8 +69,11 @@ func main() {
 
 func verifySessionTable(ctx context.Context, db *sql.DB) error {
 	var count int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='tahsin_app_sessions' AND column_name IN ('session_hash','user_id','csrf_token','created_at','last_seen_at','expires_at','ip_address','user_agent')").Scan(&count); err != nil || count != 8 {
-		return fmt.Errorf("tahsin_app_sessions does not match the expected additive schema")
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='tahsin_app_sessions' AND column_name IN ('session_hash','user_id','csrf_token','created_at','last_seen_at','expires_at','ip_address','user_agent')").Scan(&count); err != nil {
+		return fmt.Errorf("cannot inspect tahsin_app_sessions; the temporary migration account needs SELECT on the target schema")
+	}
+	if count != 8 {
+		return fmt.Errorf("tahsin_app_sessions does not match the expected additive schema; check the temporary migration account's SELECT privilege")
 	}
 	return nil
 }

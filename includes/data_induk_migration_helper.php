@@ -31,7 +31,7 @@ function dataIndukMigrationIndex(PDO $pdo, string $table, string $index): array
 {
     $stmt = $pdo->prepare('SELECT column_name, non_unique, seq_in_index FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name=? AND index_name=? ORDER BY seq_in_index');
     $stmt->execute([$table, $index]);
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return array_map(static fn(array $row): array => array_change_key_case($row, CASE_LOWER), $stmt->fetchAll(PDO::FETCH_ASSOC));
 }
 
 function dataIndukMigrationEnsureIndex(PDO $pdo, string $table, string $index, array $columns, bool $unique = false): string
