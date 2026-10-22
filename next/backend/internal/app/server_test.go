@@ -46,13 +46,39 @@ func TestLegacyIntegrationPathDoesNotFallThroughToSPA(t *testing.T) {
 	handler := server.Handler()
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest("GET", "/api/hermes.php?action=status", nil))
-	if recorder.Code != 503 || !contains(recorder.Body.String(), "Integrasi ini belum dipindahkan") {
+	if recorder.Code != 503 || !contains(recorder.Body.String(), "API belum dikonfigurasi") {
 		t.Fatalf("legacy API returned %d %s", recorder.Code, recorder.Body.String())
 	}
 	preflight := httptest.NewRecorder()
 	handler.ServeHTTP(preflight, httptest.NewRequest("OPTIONS", "/api/hermes.php", nil))
 	if preflight.Code != 204 {
 		t.Fatalf("CORS preflight status = %d, want 204", preflight.Code)
+	}
+}
+
+func TestHermesIntegrationAuthenticatesBeforeDatabaseAccess(t *testing.T) {
+	server := NewServer(Config{Environment: "development", HermesAPIKey: "hermes-test-key", N8NAPIKey: "n8n-test-key"}, nil)
+	handler := server.Handler()
+	for _, test := range []struct {
+		name   string
+		key    string
+		status int
+	}{
+		{name: "missing key", status: 401},
+		{name: "wrong key", key: "wrong", status: 401},
+		{name: "correct key reaches readiness", key: "hermes-test-key", status: 503},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api/hermes.php?action=status", nil)
+			if test.key != "" {
+				req.Header.Set("X-API-Key", test.key)
+			}
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			if recorder.Code != test.status {
+				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, test.status, recorder.Body.String())
+			}
+		})
 	}
 }
 

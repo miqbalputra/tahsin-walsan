@@ -127,6 +127,8 @@ type tahsinReportRow struct {
 	TeacherName    string        `json:"nama_ustadz"`
 	LastAttendance string        `json:"terakhir_hadir"`
 	LatestMaterial string        `json:"materi_terakhir"`
+	LatestRecord   *tahsinRecord `json:"-"`
+	BaselineRecord *tahsinRecord `json:"-"`
 	Quality        string        `json:"quality"`
 	QualityLabel   string        `json:"quality_label"`
 	Risk           string        `json:"risk_level"`

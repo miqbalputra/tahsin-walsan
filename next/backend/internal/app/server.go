@@ -77,9 +77,9 @@ func (s *Server) Handler() http.Handler {
 	// Keep the old autosave URL alive so IndexedDB queues and already-open tabs
 	// can replay their original payloads through the same Go session.
 	mux.Handle("/ustadz/api-autosave.php", bodyCSRFHeader(s.requireRoles(http.HandlerFunc(s.handleLegacyAutosave), "ustadz")))
-	mux.HandleFunc("/api/hermes.php", s.handleUnportedIntegration)
-	mux.HandleFunc("/api/notifications-pending.php", s.handleUnportedIntegration)
-	mux.HandleFunc("/api/daily-reminder.php", s.handleUnportedIntegration)
+	mux.HandleFunc("/api/hermes.php", s.handleHermes)
+	mux.HandleFunc("/api/notifications-pending.php", s.handleTahsinReminder(false))
+	mux.HandleFunc("/api/daily-reminder.php", s.handleTahsinReminder(true))
 	mux.HandleFunc("/api/", s.handleUnknownAPI)
 	mux.Handle("/", s.staticOrSPA())
 	return secureHeaders(s.releaseGate(mux))

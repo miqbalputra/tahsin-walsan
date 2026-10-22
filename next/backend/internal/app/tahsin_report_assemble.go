@@ -7,6 +7,10 @@ import (
 )
 
 func assembleTahsinReport(data *tahsinReportDataset, filters tahsinReportFilters, role string, userID int64, now time.Time) tahsinReportResult {
+	return assembleTahsinReportWithReminderSession(data, filters, role, userID, now, "")
+}
+
+func assembleTahsinReportWithReminderSession(data *tahsinReportDataset, filters tahsinReportFilters, role string, userID int64, now time.Time, reminderSession string) tahsinReportResult {
 	loc := mustLocation("Asia/Jakarta")
 	now = now.In(loc)
 	end := min(filters.EndDate, now.Format("2006-01-02"))
@@ -127,6 +131,13 @@ func assembleTahsinReport(data *tahsinReportDataset, filters tahsinReportFilters
 					}
 				}
 			}
+			currentRosterFallback := false
+			if len(owners) == 0 && reminderSession != "" && session == reminderSession {
+				for _, owner := range current {
+					owners = appendUniqueOwner(owners, owner)
+				}
+				currentRosterFallback = len(owners) > 0
+			}
 			raw := recordsByWali[wali.ID][session]
 			if len(owners) == 0 && len(raw) == 0 {
 				continue
@@ -206,6 +217,8 @@ func assembleTahsinReport(data *tahsinReportDataset, filters tahsinReportFilters
 			verifiedSource := "Histori belum tersedia"
 			if known {
 				verifiedSource = "Histori roster pada sesi"
+			} else if currentRosterFallback {
+				verifiedSource = "Roster aktif untuk pekan berjalan"
 			}
 			cell := tahsinCell{SessionDate: session, State: resolved.State, Complete: resolved.Complete, MissingFields: resolved.Missing, Records: resolved.Records, Record: resolved.Record,
 				Owner: owner, Expected: inSchedule && len(owners) >= 1, InSchedule: inSchedule, VerifiedRoster: known, DeadlineAt: tahsinDeadlineString(session), RosterSource: verifiedSource,
@@ -216,6 +229,8 @@ func assembleTahsinReport(data *tahsinReportDataset, filters tahsinReportFilters
 				}
 				if resolved.Complete {
 					row.LatestMaterial = tahsinMaterial(resolved.Record)
+					latest := *resolved.Record
+					row.LatestRecord = &latest
 				}
 			}
 			if inPeriod {
@@ -241,6 +256,8 @@ func assembleTahsinReport(data *tahsinReportDataset, filters tahsinReportFilters
 		if row.LatestMaterial == "—" {
 			if baseline, ok := data.Baselines[wali.ID]; ok && baseline.CreatedAt != "" && baseline.CreatedAt[:min(len(baseline.CreatedAt), 10)] <= end {
 				row.LatestMaterial = "Capaian awal: " + tahsinMaterial(&baseline)
+				initial := baseline
+				row.BaselineRecord = &initial
 			}
 		}
 		row.tahsinTotals = finalizeTahsinTotals(row.tahsinTotals)

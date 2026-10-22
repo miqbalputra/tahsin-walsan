@@ -25,6 +25,8 @@ type Config struct {
 	DatabaseTLSCA   string
 	DatabaseCharset string
 	Timezone        string
+	HermesAPIKey    string
+	N8NAPIKey       string
 	CookieName      string
 	SessionDays     int
 	MaxUploadMB     int64
@@ -48,6 +50,8 @@ func LoadConfigFrom(getenv func(string) string) (Config, error) {
 		DatabaseTLSCA:   strings.TrimSpace(getenv("DB_TLS_CA_FILE")),
 		DatabaseCharset: value(getenv, "DB_CHARSET", "utf8mb4"),
 		Timezone:        value(getenv, "APP_TIMEZONE", "Asia/Jakarta"),
+		HermesAPIKey:    strings.TrimSpace(getenv("HERMES_API_KEY")),
+		N8NAPIKey:       strings.TrimSpace(getenv("N8N_API_KEY")),
 		CookieName:      value(getenv, "AUTH_COOKIE_NAME", "tahsin_session"),
 		SessionDays:     30,
 		MaxUploadMB:     512,
