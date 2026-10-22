@@ -13,6 +13,7 @@ import ActivityLogs from './ActivityLogs.vue'
 import ReportSettings from './ReportSettings.vue'
 import TahsinReport from './TahsinReport.vue'
 import BackupManagement from './BackupManagement.vue'
+import Account from './Account.vue'
 import FamilyPreview from './App.vue'
 import type { TeacherBoot } from './teacher'
 import { loadLegacyAutosave } from './autosave-loader'
@@ -206,6 +207,7 @@ function localDate() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia
     <section v-else-if="screen === 'keluarga'" class="content"><div id="go-vue-preview"><FamilyPreview endpoint="/api/v1/families" :hide-back-link="true" /></div></section>
     <section v-else-if="screen === 'laporan'" class="content"><AttendanceReport :csrf="csrf" :role="user.role" @unauthorized="expireLogin" /></section>
     <section v-else-if="screen === 'riwayat' && user.role === 'ustadz'" class="content"><AttendanceReport :csrf="csrf" :role="user.role" @unauthorized="expireLogin" /></section>
+    <section v-else-if="screen === 'akun'" class="content"><Account :user="user" @logout="signOut" /></section>
     <section v-else-if="screen === 'hari-ini' || screen === 'sesi'" class="content">
       <div class="page-heading"><p class="eyebrow">{{ user.role === 'ustadz' ? 'HARI INI' : 'TAHSIN' }}</p><h1>{{ user.role === 'ustadz' ? 'Sesi mengajar' : 'Ringkasan Tahsin' }}</h1><p class="muted">Pilih kelompok dan tanggal untuk membuka daftar peserta.</p></div>
       <div v-if="busy" class="panel">Memuat peserta dan capaian…</div>
