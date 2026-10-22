@@ -6,6 +6,7 @@ require_once __DIR__ . '/../includes/tahsin_report_helper.php';
 require_once __DIR__ . '/../includes/tahsin_migration_helper.php';
 require_once __DIR__ . '/../includes/autosave_migration_helper.php';
 require_once __DIR__ . '/../includes/family_migration_helper.php';
+require_once __DIR__ . '/../includes/data_induk_migration_helper.php';
 date_default_timezone_set('Asia/Jakarta');
 $guard = json_decode(file_get_contents('/work/clone-guard.json'), true, 512, JSON_THROW_ON_ERROR);
 $manifest = json_decode(file_get_contents('/work/source-manifest.json'), true, 512, JSON_THROW_ON_ERROR);
@@ -39,19 +40,26 @@ $range = $pdo->query('SELECT MIN(tanggal) AS first_date,MAX(tanggal) AS last_dat
 $now = tahsinNow();
 $filters = $range['first_date'] ? tahsinFilters(['start_date' => tahsinSessionDate($range['first_date']), 'end_date' => $range['last_date']], $now) : null;
 $beforeReport = $filters ? tahsinFetchReport($pdo, $filters, 'admin', 0, $now)['summary'] : null;
+$attendanceIndexBefore = (int) $pdo->query("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='presensi' AND index_name='uq_presensi_halaqoh_wali_tanggal'")->fetchColumn();
 // Only the guarded recovery clone receives these additive schema operations. No family data is imported.
-tahsinApplyMigration($pdo); autosaveApplyMigration($pdo); familyApplyMigration($pdo);
+tahsinApplyMigration($pdo); autosaveApplyMigration($pdo); familyApplyMigration($pdo); dataIndukApplyMigration($pdo);
 $preserved = preservedLegacyRows($pdo, $expected);
 $afterReport = $filters ? tahsinFetchReport($pdo, $filters, 'admin', 0, $now)['summary'] : null;
 $reportKeys = ['hadir', 'sakit', 'izin', 'alpha', 'total_presensi', 'conflicts'];
 if ($filters) foreach ($reportKeys as $key) if ($beforeReport[$key] !== $afterReport[$key]) throw new RuntimeException('Historical report changed in clone: ' . $key);
 $historyCount = $pdo->query('SELECT COUNT(*) FROM tahsin_roster_history')->fetchColumn();
-tahsinApplyMigration($pdo); autosaveApplyMigration($pdo); familyApplyMigration($pdo);
+$syncRunCount = $pdo->query('SELECT COUNT(*) FROM data_induk_sync_runs')->fetchColumn();
+$referenceCount = $pdo->query('SELECT COUNT(*) FROM data_induk_references')->fetchColumn();
+tahsinApplyMigration($pdo); autosaveApplyMigration($pdo); familyApplyMigration($pdo); dataIndukApplyMigration($pdo);
 preservedLegacyRows($pdo, $expected);
 if ($pdo->query('SELECT COUNT(*) FROM tahsin_roster_history')->fetchColumn() !== $historyCount) throw new RuntimeException('Repeated schema application duplicated roster history.');
+if ($pdo->query('SELECT COUNT(*) FROM data_induk_sync_runs')->fetchColumn() !== $syncRunCount || $pdo->query('SELECT COUNT(*) FROM data_induk_references')->fetchColumn() !== $referenceCount) throw new RuntimeException('Repeated Data Induk schema application changed integration data.');
 if ((int)$pdo->query('SELECT COUNT(*) FROM family_students')->fetchColumn() !== 0) throw new RuntimeException('Clone verification must not import family identities.');
+$attendanceIndexAfter = (int) $pdo->query("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='presensi' AND index_name='uq_presensi_halaqoh_wali_tanggal'")->fetchColumn();
+if ($attendanceIndexAfter !== $attendanceIndexBefore) throw new RuntimeException('Data Induk migration changed the legacy attendance uniqueness index.');
 $result = ['ok' => true, 'scope' => 'isolated-recovery-only', 'legacy_tables' => $preserved,
     'historical_report' => $afterReport ? array_intersect_key($afterReport, array_flip($reportKeys)) : null,
-    'schema_repeatable' => true, 'family_imported' => false, 'production_changed' => false];
+    'schema_repeatable' => true, 'family_imported' => false, 'attendance_rows_rewritten' => false,
+    'attendance_unique_index_changed' => false, 'production_changed' => false];
 safetyJson('/evidence/clone-migration.json', $result);
 echo json_encode(['ok' => true, 'legacy_tables' => count($preserved), 'historical_report_preserved' => true], JSON_THROW_ON_ERROR) . "\n";

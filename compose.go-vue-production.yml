@@ -22,12 +22,12 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?Set the dedicated Go application password}
       DB_CHARSET: ${DB_CHARSET:-utf8mb4}
       DB_TLS_CA_FILE: ${DB_TLS_CA_FILE:-}
-      HERMES_API_KEY: ${HERMES_API_KEY:?Copy the existing Hermes secret}
-      N8N_API_KEY: ${N8N_API_KEY:?Copy the existing n8n secret}
-      DATA_INDUK_ENABLED: ${DATA_INDUK_ENABLED:?Copy the existing Data Induk enabled value}
-      DATA_INDUK_BASE_URL: ${DATA_INDUK_BASE_URL:?Copy the existing Data Induk URL}
-      DATA_INDUK_API_KEY: ${DATA_INDUK_API_KEY:?Copy the existing Data Induk secret}
-      DATA_INDUK_UNIT_ID: ${DATA_INDUK_UNIT_ID:?Copy the existing Data Induk unit ID}
+      HERMES_API_KEY: ${HERMES_API_KEY:-}
+      N8N_API_KEY: ${N8N_API_KEY:-}
+      DATA_INDUK_ENABLED: ${DATA_INDUK_ENABLED:-false}
+      DATA_INDUK_BASE_URL: ${DATA_INDUK_BASE_URL:-}
+      DATA_INDUK_API_KEY: ${DATA_INDUK_API_KEY:-}
+      DATA_INDUK_UNIT_ID: ${DATA_INDUK_UNIT_ID:-}
       DATA_INDUK_SYNC_STALE_MINUTES: ${DATA_INDUK_SYNC_STALE_MINUTES:-60}
       BACKUP_MAX_UPLOAD_MB: ${BACKUP_MAX_UPLOAD_MB:-512}
       APP_VERSION: ${APP_VERSION:-go-vue}

@@ -9,11 +9,19 @@
    php migrate_data_induk.php
    ```
 
-2. Setelah duplikasi presensi sudah nol, terapkan migrasi sekali:
+2. Terapkan migrasi aditif setelah hasil restore clone diverifikasi:
 
    ```sh
    php migrate_data_induk.php --apply
    ```
+
+   Migrasi memeriksa setiap kolom dan indeks secara terpisah agar aman
+   dilanjutkan setelah penerapan parsial. Migrasi ini tidak mengubah atau
+   menghapus baris presensi, tidak mengimpor keluarga, dan tidak menambahkan
+   indeks unik ke `presensi`. Jalankan `php scripts/audit-presensi-duplicates.php`
+   untuk meninjau duplikasi historis; jangan menghapus atau menggabungkannya
+   otomatis. Catatan yang nilainya berbeda akan tetap ditandai untuk verifikasi
+   melalui rekap Tahsin.
 
 3. Di VPS/Coolify masukkan secret `DATA_INDUK_ENABLED`, `DATA_INDUK_BASE_URL`,
    `DATA_INDUK_API_KEY`, dan `DATA_INDUK_UNIT_ID`. Nilai tersebut tidak boleh
