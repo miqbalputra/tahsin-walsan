@@ -1,4 +1,5 @@
-FROM php:8.2-apache
+# Security fixes for CVE-2026-109618 and CVE-2026-109619 (2026-10-21).
+FROM php:8.2.35-apache
 
 WORKDIR /var/www/html
 

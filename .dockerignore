@@ -11,3 +11,11 @@ temp_excel/node_modules
 temp_excel/*.xlsx
 node_modules
 docker-compose*.yml
+
+# Keep local database archives and working artifacts out of application images.
+*.gz
+backup/
+outputs/
+.codex-build/
+next/
+**/__pycache__/

@@ -1,6 +1,6 @@
 # 📖 Presensi Tahsin Bapak — Griya Qur'an
 
-Sistem pencatatan kehadiran dan perkembangan materi **Tahsin Al-Qur'an** untuk para **Bapak/Wali Santri** di **Griya Qur'an**. Dibangun dengan PHP 8.2 + MySQL, Tailwind CSS, Alpine.js, dan PWA support.
+Sistem pencatatan kehadiran dan perkembangan materi **Tahsin Al-Qur'an** untuk para **Bapak/Wali Santri** di **Griya Qur'an**. Dibangun dengan PHP 8.2.35 + MySQL, Tailwind CSS, Alpine.js, dan PWA support.
 
 ---
 
@@ -61,11 +61,11 @@ Admin/PJ Tahfidz dapat memantau progress, mencetak rapor, dan mendapatkan pering
 
 | Komponen | Teknologi |
 |----------|-----------|
-| **Backend** | PHP 8.2 (Native, PDO) |
+| **Backend** | PHP 8.2.35 (Native, PDO) |
 | **Database** | MySQL / MariaDB |
 | **Frontend** | Tailwind CSS 3, Alpine.js 3, Chart.js 4 |
 | **PWA** | Service Worker + Web Manifest |
-| **Container** | Docker (php:8.2-apache) |
+| **Container** | Docker (php:8.2.35-apache) |
 | **Otomasi** | n8n workflows |
 | **Deploy** | Coolify |
 
@@ -75,7 +75,7 @@ Admin/PJ Tahfidz dapat memantau progress, mencetak rapor, dan mendapatkan pering
 
 ### Prasyarat
 
-- PHP 8.2+
+- PHP 8.2.35 pada cabang 8.2 (lihat [panduan keamanan PHP](docs/PHP_SECURITY_UPDATE.md) untuk cabang lain)
 - MySQL 8.0+
 - Composer / npm
 - Docker (opsional)
@@ -106,7 +106,7 @@ php -S localhost:8000
 
 ```bash
 # Build & run
-docker build -t tahsin-walsan .
+docker build --pull -t tahsin-walsan .
 docker run -p 80:80 tahsin-walsan
 ```
 

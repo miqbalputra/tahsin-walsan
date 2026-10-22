@@ -170,7 +170,7 @@ Di Coolify:
 
 Dockerfile project ini sudah menyiapkan:
 
-- PHP 8.2 Apache
+- PHP 8.2.35 Apache (patch CVE-2026-109618 dan CVE-2026-109619)
 - extension `pdo_mysql`, `mysqli`, `intl`, `zip`
 - Apache module `headers` dan `rewrite`
 - `.htaccess` aktif lewat `AllowOverride All`
@@ -326,6 +326,11 @@ mysqldump -h mysql-presensi -P 3306 -u tahsinbpk -p db_tahsinbpk > backup-db_tah
 Simpan backup di luar container aplikasi.
 
 ## 10. Troubleshooting
+
+Untuk pembaruan keamanan PHP pada aplikasi existing, ikuti
+[panduan pembaruan PHP](docs/PHP_SECURITY_UPDATE.md). Buat cadangan database
+di luar container aplikasi, pertahankan resource database serta volume sesi,
+dan periksa versi PHP di container aktif setelah deployment.
 
 Jika muncul pesan:
 
