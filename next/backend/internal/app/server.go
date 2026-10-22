@@ -69,6 +69,12 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/reports/attendance/options", s.requireRoles(http.HandlerFunc(s.handleAttendanceReportOptions), "admin", "pj_tahfidz", "kepsek", "ustadz"))
 	mux.Handle("GET /api/v1/reports/tahsin", s.requireRoles(http.HandlerFunc(s.handleTahsinReport), "admin", "pj_tahfidz", "kepsek", "ustadz"))
 	mux.Handle("POST /api/v1/reports/tahsin/verifications", s.requireRoles(http.HandlerFunc(s.handleTahsinVerification), "admin", "pj_tahfidz"))
+	mux.Handle("GET /api/v1/backups", s.requireRoles(http.HandlerFunc(s.handleBackups), "admin", "pj_tahfidz"))
+	mux.Handle("POST /api/v1/backups", s.requireRoles(http.HandlerFunc(s.handleBackups), "admin", "pj_tahfidz"))
+	mux.Handle("GET /api/v1/backups/{name}", s.requireRoles(http.HandlerFunc(s.handleBackupDownloadRoute), "admin", "pj_tahfidz"))
+	mux.Handle("POST /api/v1/backups/restore-preview", s.requireRoles(http.HandlerFunc(s.handleBackupRestorePreview), "admin", "pj_tahfidz"))
+	mux.Handle("POST /api/v1/backups/restore", s.requireRoles(http.HandlerFunc(s.handleBackupRestore), "admin", "pj_tahfidz"))
+	mux.HandleFunc("GET /backup-restore.php", s.handleLegacyBackupPage)
 	mux.Handle("GET /export-excel.php", s.requireRoles(http.HandlerFunc(s.handleAttendanceExport), "admin", "pj_tahfidz", "kepsek", "ustadz"))
 	mux.Handle("DELETE /api/v1/attendance/records/{id}", s.requireRoles(http.HandlerFunc(s.handleDeleteAttendance), "admin", "pj_tahfidz", "ustadz"))
 	mux.Handle("GET /api/v1/attendance/state", s.requireRoles(http.HandlerFunc(s.handleAttendanceState), "ustadz"))
@@ -110,6 +116,9 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var missing []string
+	if _, err := backupDir(s.Config); err != nil {
+		missing = append(missing, "APP_DATA_DIR/backups")
+	}
 	for _, table := range []string{"users", "halaqoh", "halaqoh_members", "wali_santri", "santri_detail", "presensi", "activity_logs", "login_attempts", "holidays", "pengumuman", "settings", "tahsin_tracking", "tahsin_roster_history", "tahsin_verifications", "tahsin_autosave_drafts", "tahsin_autosave_operations", "tahsin_autosave_revisions", "tahsin_autosave_sessions", "tahsin_app_sessions"} {
 		var exists int
 		if err := s.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?", table).Scan(&exists); err != nil || exists != 1 {

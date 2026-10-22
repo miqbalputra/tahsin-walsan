@@ -22,9 +22,10 @@ Paket produksi terpisah dari paket staging: `docker/Dockerfile.go-vue-production
 - Halaman Riwayat guru memakai laporan presensi berfilter yang sama, tetapi server membatasi hasil dan pilihan filter ke kelompok guru yang sedang login. Guru hanya dapat menghapus catatan dari kelompoknya; perubahan menaikkan revisi autosave dan mencatat audit.
 - Modul libur memakai tabel lama: tanggal ganda memperbarui keterangan, dan menghapus penanda libur tidak menghapus catatan presensi. Operasi “bersihkan Alfa” tidak tersedia di Go.
 - Pengumuman dapat dibuat, diaktifkan, atau diarsipkan tanpa menghapus riwayat; pengumuman aktif ditampilkan pada akun guru.
-- Dashboard admin/PJ/kepala sekolah, log audit berpaginasi, dan baca/simpan pengaturan tanda tangan/template rapor kini tersedia pada API Go. Dashboard memberi label jelas bahwa hitungan Alfa adalah catatan mentah; laporan canonical Tahsin masih perlu dipindahkan.
+- Dashboard admin/PJ/kepala sekolah, log audit berpaginasi, dan baca/simpan pengaturan tanda tangan/template rapor kini tersedia pada API Go. Dashboard memberi label jelas bahwa hitungan Alfa adalah catatan mentah; rekap canonical Tahsin sudah tersedia di `/api/v1/reports/tahsin`, tetapi hasilnya tetap perlu dicocokkan dengan PHP pada clone.
 - Nilai template rapor PHP lama dibaca dan disimpan tanpa dieksekusi. Hasil cetak Go dan migrasi template ke renderer aman belum tersedia; halaman pengaturan menampilkan batas ini.
 - Ekspor daftar presensi dasar pada path lama `export-excel.php` menghasilkan tabel Excel HTML `.xls` dengan filter role yang sama, batas 50.000 baris, escaping HTML, dan perlindungan formula. Ekspor rekap canonical Tahsin masih belum dipindahkan.
+- Backup/restore Go kini menyediakan daftar dan unduh arsip, ekspor ZIP v2, preview checksum/kolom/baris, safety backup otomatis, serta restore merge-only. CSV diproses streaming; restore mensyaratkan konfirmasi `RESTORE`, tidak mengubah atau menghapus ID lama, dan wajib lolos preview lebih dahulu. Paritas arsip dan latihan restore tetap harus lulus pada clone MySQL.
 - File versi PHP, Compose staging, migration lama, ID, dan data tidak diubah oleh pekerjaan ini.
 
 ## Environment
@@ -44,7 +45,7 @@ Ganti nama schema dan host sesuai resource lama; jangan memakai `*.*`, `WITH GRA
 
 ## Batas kesiapan
 
-Image ini **belum memenuhi syarat redeploy produksi**. Login, fondasi sesi guru, autosave, laporan presensi dasar, baca keluarga, dan pengelolaan dasar kelompok/keanggotaannya sudah ada, tetapi port dashboard dan pemantauan Tahsin penuh, tulis/arsip keluarga-anak, CRUD pengguna, capaian/rapor/ekspor, backup-restore merge-only, Hermes, reminder, Data Induk, dan kontrak API lama masih harus dipindahkan serta diuji paritasnya. Handler untuk modul yang belum dipindahkan tidak boleh dianggap pengganti aplikasi PHP.
+Image ini **belum memenuhi syarat redeploy produksi**. Modul yang masih kurang mencakup impor keluarga dan sinkronisasi Data Induk, renderer rapor/PDF dan seluruh ekspor canonical, serta sejumlah alur administrasi lama. Modul Go yang sudah tersedia pun masih memerlukan uji paritas dan integrasi pada clone produksi. Handler yang belum dipindahkan atau belum dibandingkan tidak boleh dianggap pengganti aplikasi PHP.
 
 Status modul agar keputusan cutover terukur:
 
@@ -56,11 +57,12 @@ Status modul agar keputusan cutover terukur:
 | Kelompok dan anggota | Daftar, tambah/edit, tambah anggota, dan arsip keanggotaan tersedia; hapus kelompok belum ada | Uji pada clone dengan histori/draft, alumni, dan perubahan roster serentak |
 | Peserta/anak | Daftar, tambah, ubah, penempatan kelompok, dan arsip lunak tersedia; tidak ada hapus fisik anak | Uji pada clone untuk keluarga legacy/Data Induk, alumni, relasi, dan membership; port import serta manajemen arsip lanjutan |
 | Pengguna | Daftar, tambah, dan ubah akun/role tersedia; penghapusan akun belum dipindahkan | Uji hash/password/role serta relasi user pada clone; implementasikan penghapusan atau penonaktifan yang aman |
-| Dashboard, histori, capaian, rapor, rekap, ekspor | Dashboard hitungan mentah, laporan presensi berfilter, histori guru, dan ekspor daftar presensi tersedia; progress/rekap canonical, capaian, rapor/print, dan ekspor rekap belum tersedia | Port algoritme canonical tanpa mengubah definisi Alfa/kelengkapan; cocokkan hasil PHP dan Go pada clone |
+| Dashboard, histori, capaian, rapor, rekap, ekspor | Dashboard, laporan presensi, histori guru, ekspor daftar, dan rekap canonical tersedia; renderer rapor/PDF serta ekspor canonical belum tersedia | Cocokkan laporan dan ekspor pada clone; port renderer template ke keluaran PDF yang setara |
 | Libur dan pengumuman | Tambah/daftar/hapus penanda libur dan buat/aktif/arsip pengumuman tersedia; penghapusan Alfa massal belum dipindahkan | Uji efek tanggal libur pada sesi/laporan dan paritas pesan aktif di clone |
 | Log dan pengaturan | Log audit berpaginasi serta baca/simpan pengaturan rapor tersedia; renderer template PHP belum dipindahkan | Uji audit pada clone dan migrasikan template rapor ke renderer aman sebelum mengganti fungsi print |
-| Backup dan restore | Belum dipindahkan | Implementasikan pratinjau dan merge-only, lalu latihan restore di clone |
-| Hermes, n8n, pengingat, Data Induk | Belum dipindahkan | Pertahankan kontrak, rahasia, retry, dan uji endpoint lama |
+| Backup dan restore | ZIP v2, daftar/unduh, preview, safety backup, dan merge-only tersedia | Cocokkan arsip Go↔PHP dan jalankan restore drill pada clone; backup lokal aplikasi tidak menggantikan backup independen host |
+| Hermes dan pengingat | Handler Go untuk API Hermes, pending notification, dan daily reminder tersedia | Cocokkan kontrak respons dan workflow n8n pada clone; gunakan pengiriman sintetis saja saat tes |
+| Impor keluarga dan Data Induk | Belum dipindahkan penuh | Pertahankan format/ID, preview, conflict, retry, dan rollback; uji di clone |
 | Backup produksi dan pemulihan | Gerbang operasional | Salinan di luar home server, restore drill, dan replay delta/binlog yang teruji |
 
 Karena modul-modul tersebut belum lengkap, mengganti resource aplikasi aktif sekarang akan menghilangkan akses operasional ke fitur yang masih dipakai meskipun isi database tidak terhapus. Jangan membuka `APP_PRODUCTION_READY` atau mengganti domain/proxy ke Go sebelum semua baris tabel di atas lulus uji.

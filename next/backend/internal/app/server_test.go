@@ -1,6 +1,7 @@
 package app
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -177,7 +178,7 @@ func TestUserAdministrationEndpointsRequireAuthentication(t *testing.T) {
 
 func TestAdministrationReadEndpointsRequireAuthentication(t *testing.T) {
 	server := NewServer(Config{Environment: "development", CookieName: "tahsin_session", SessionDays: 30}, nil)
-	for _, path := range []string{"/api/v1/dashboard", "/api/v1/logs", "/api/v1/settings/report", "/api/v1/reports/tahsin"} {
+	for _, path := range []string{"/api/v1/dashboard", "/api/v1/logs", "/api/v1/settings/report", "/api/v1/reports/tahsin", "/api/v1/backups"} {
 		t.Run(path, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			server.Handler().ServeHTTP(recorder, httptest.NewRequest("GET", path, nil))
@@ -186,14 +187,30 @@ func TestAdministrationReadEndpointsRequireAuthentication(t *testing.T) {
 			}
 		})
 	}
-	for _, method := range []string{"PATCH"} {
+	for _, target := range []struct{ method, path string }{
+		{method: "PATCH", path: "/api/v1/settings/report"},
+		{method: "POST", path: "/api/v1/backups"},
+		{method: "POST", path: "/api/v1/backups/restore-preview"},
+		{method: "POST", path: "/api/v1/backups/restore"},
+		{method: "GET", path: "/api/v1/backups/backup_20261022.zip"},
+	} {
 		recorder := httptest.NewRecorder()
-		server.Handler().ServeHTTP(recorder, httptest.NewRequest(method, "/api/v1/settings/report", nil))
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(target.method, target.path, nil))
 		if recorder.Code != 401 {
-			t.Fatalf("status = %d, want 401; body=%s", recorder.Code, recorder.Body.String())
+			t.Fatalf("%s %s status = %d, want 401; body=%s", target.method, target.path, recorder.Code, recorder.Body.String())
 		}
 	}
 	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest("GET", "/backup-restore.php?export=1", nil))
+	if recorder.Code != 401 {
+		t.Fatalf("legacy backup export status = %d, want 401", recorder.Code)
+	}
+	recorder = httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest("GET", "/backup-restore.php", nil))
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/backup" {
+		t.Fatalf("legacy backup page status=%d location=%q", recorder.Code, recorder.Header().Get("Location"))
+	}
+	recorder = httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest("POST", "/api/v1/reports/tahsin/verifications", strings.NewReader(`{}`)))
 	if recorder.Code != 401 {
 		t.Fatalf("Tahsin verification status = %d, want 401; body=%s", recorder.Code, recorder.Body.String())
