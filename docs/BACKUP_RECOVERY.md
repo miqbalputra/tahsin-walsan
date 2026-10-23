@@ -42,7 +42,8 @@ penyimpanan terpisah sebelum redeploy atau penggantian server.
 100 MB). Batas `upload_max_filesize` dan `post_max_size` PHP juga berlaku.
 `BACKUP_MAX_EXPANDED_MB` membatasi total isi ZIP setelah didekompresi
 (default 512 MB, dapat diatur 1–2048 MB). Manifest maksimal 1 MB, maksimal
-1000 berkas, dan satu record CSV maksimal 1 MB termasuk kutip/pemisah.
+1000 berkas, dan satu record CSV maksimal 32 MB termasuk kutip/pemisah.
+Ukuran record ini juga menampung jurnal impor beserta data sebelum/sesudahnya.
 Cadangan yang melampaui batas aplikasi memerlukan alat database oleh pengelola.
 
 ## Format dan validasi
@@ -84,7 +85,8 @@ mengulang validasi arsip; keberhasilan pratinjau tidak melewati validasi.
    Periksa `error`, jumlah baris, serta tabel yang dilewati pada hasil.
 4. Setelah data masuk, pasang ulang view/trigger dengan migrasi versi yang
    sama: `tahsinApplyMigration()`, `autosaveApplyMigration()`, dan
-   `familyApplyMigration()`. Jangan menjalankan reset atau migrasi bootstrap
+   `familyApplyMigration()`, serta `participantImportApplyMigration()` jika
+   versi aplikasi tersebut memakai jurnal impor. Jangan menjalankan reset atau migrasi bootstrap
    yang mengganti tabel/data. Helper migrasi bersifat additive.
 5. Bandingkan jumlah dan hash isi **setiap** tabel, primary key, serta relasi.
    Periksa pembacaan keluarga, presensi, histori, draft dan pengaturan.

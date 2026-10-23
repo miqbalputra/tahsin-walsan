@@ -536,6 +536,12 @@ APPLY_MIGRATIONS=1 php migrate_performance_indexes.php
 
 Backup ZIP dari menu **Backup & Restore** mencakup seluruh base table dan memakai checksum. Restore menambahkan baris yang belum ada dan melewati primary key yang sudah ada. Pilihan folder persisten, validasi, batas format lama, serta pemulihan penuh dijelaskan pada [panduan cadangan dan pemulihan](docs/BACKUP_RECOVERY.md).
 
+### Impor Peserta dengan Pratinjau
+
+Impor CSV peserta kini memakai pratinjau, pilihan identitas, pengulangan tanpa
+anak ganda, dan jurnal sebelum/sesudah. Persiapan skema serta perilaku pembaruan
+ada pada [panduan impor peserta](docs/PARTICIPANT_IMPORT.md).
+
 ### Arsip Wali Alumni Otomatis
 
 Wali akan otomatis diarsipkan setelah seluruh anaknya berstatus `Lulus`. Sistem hanya mengubah `status_aktif` wali dan menandai membership halaqoh dengan `archived_at`; data wali, anak, presensi, dan relasi lama tetap tersimpan.

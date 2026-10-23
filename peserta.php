@@ -10,8 +10,8 @@ require_once 'includes/family_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
-$message = $_GET['msg'] ?? '';
-$error = $_GET['err'] ?? '';
+$message = is_string($_GET['msg']??null) ? $_GET['msg'] : '';
+$error = is_string($_GET['err']??null) ? $_GET['err'] : '';
 
 // Handle Create/Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -128,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->rollBack();
             }
             reportApplicationError($e, 'peserta-save');
-            $error = $e instanceof RuntimeException ? $e->getMessage() : 'Data peserta tidak dapat disimpan. Periksa log server.';
+            $error = $e instanceof RuntimeException && !($e instanceof PDOException) ? $e->getMessage() : 'Data peserta belum dapat disimpan. Periksa isian atau hubungi pengelola.';
         }
     } elseif ($action === 'delete' && $id) {
         // Tombol lama tetap kompatibel, tetapi tidak lagi melakukan hard delete.
@@ -154,7 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->rollBack();
             }
             reportApplicationError($e, 'peserta-archive');
-            $error = $e instanceof RuntimeException ? $e->getMessage() : 'Gagal mengarsipkan peserta. Periksa log server.';
+            $error = $e instanceof RuntimeException && !($e instanceof PDOException) ? $e->getMessage() : 'Peserta belum dapat diarsipkan. Coba lagi atau hubungi pengelola.';
         }
     }
 }
@@ -231,7 +231,7 @@ $daftar_halaqoh = $pdo->query("SELECT h.id, h.nama_halaqoh, u.nama_lengkap as na
 $childrenData = $pdo->query("SELECT wali_santri_id, nama_anak as nama, kelas FROM {$childTable}")->fetchAll(PDO::FETCH_GROUP);
 
 // Convert grouped data to a format easy for Alpine.js
-$jsonChildren = json_encode($childrenData);
+$jsonChildren = json_encode($childrenData,JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
 
 // Check if any filter is active
 $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !empty($kelas_filter) || !empty($kategori_filter) || !empty($halaqoh_filter);
@@ -239,7 +239,6 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
 
 <div x-data="{ 
     showModal: false, 
-    showImportModal: false,
     showFilterPanel: <?php echo $hasActiveFilter ? 'true' : 'false'; ?>,
     editMode: false,
     formData: { id: '', nama_bapak: '', no_hp: '', alamat: '', kategori: 'reguler', tempat_tahsin: '', ustadz_luar: '', halaqoh_id: '', lanjut_tahsin: 0 },
@@ -309,15 +308,15 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                 Gabung Duplikat
             </a>
 
-            <button @click="showImportModal = true"
+            <a href="import-peserta.php"
                 class="bg-emerald-100 text-emerald-700 px-4 py-2 rounded-xl flex items-center hover:bg-emerald-200 transition shadow-sm font-semibold text-sm">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
                     </path>
                 </svg>
-                Import
-            </button>
+                Impor CSV
+            </a>
             <button @click="openAdd()"
                 class="bg-blue-600 text-white px-4 py-2 rounded-xl flex items-center hover:bg-blue-700 transition shadow-sm font-semibold text-sm">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -428,7 +427,7 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
             </svg>
-            <?php echo $message; ?>
+            <?php echo appEscape($message); ?>
         </div>
     <?php endif; ?>
     <?php if ($error): ?>
@@ -519,7 +518,7 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                             </td>
                             <td class="px-6 py-4 text-right align-middle">
                                 <div class="flex justify-end items-center gap-2">
-                                    <button @click="openEdit(<?php echo htmlspecialchars(json_encode($p)); ?>)"
+                                    <button @click="openEdit(<?php echo appJsonAttribute($p); ?>)"
                                         class="text-blue-600 hover:bg-blue-600 hover:text-white font-bold text-[10px] uppercase transition bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
                                         Edit
                                     </button>
@@ -672,38 +671,6 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                         Data</button>
                 </div>
             </form>
-        </div>
-        <!-- Import Modal -->
-        <div x-show="showImportModal"
-            class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" x-cloak>
-            <div class="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl" @click.away="showImportModal = false">
-                <h3 class="text-xl font-bold text-slate-800 mb-4">Import Peserta dari Excel</h3>
-                <p class="text-sm text-slate-500 mb-6">Silakan unggah file format <strong>.csv</strong>. Jika belum
-                    punya
-                    formatnya, silakan download template di bawah.</p>
-
-                <form action="import-peserta.php" method="POST" enctype="multipart/form-data">
-                    <?php csrfField(); ?>
-                    <div class="mb-6">
-                        <label class="block text-sm font-semibold text-slate-700 mb-2">Pilih File CSV</label>
-                        <input type="file" name="file_csv" accept=".csv" required
-                            class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-slate-200 rounded-xl p-2">
-                    </div>
-
-                    <div class="flex flex-col gap-3">
-                        <button type="submit"
-                            class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-100 transition">
-                            Mulai Import Data
-                        </button>
-                        <a href="template_import_peserta.csv" download
-                            class="text-center text-sm font-semibold text-slate-500 hover:text-blue-600 py-2">
-                            Download Template CSV
-                        </a>
-                        <button type="button" @click="showImportModal = false"
-                            class="w-full py-2 text-sm text-slate-400 hover:text-slate-600">Batal</button>
-                    </div>
-                </form>
-            </div>
         </div>
     </div>
 

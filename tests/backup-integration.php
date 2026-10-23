@@ -2,6 +2,7 @@
 /** Recovery drills against new localhost-only databases, never production. */
 if (PHP_SAPI !== 'cli') exit;
 require_once __DIR__ . '/../includes/backup_helper.php';
+require_once __DIR__ . '/../includes/participant_import_helper.php';
 function reportApplicationError(Throwable $error,$context=''): void { $GLOBALS['backup_test_last_error']='[' . $context . '] ' . $error->getMessage(); }
 foreach (['tahsin','autosave','family'] as $name) require_once __DIR__ . '/../includes/' . $name . '_migration_helper.php';
 putenv('DATA_INDUK_ENABLED=0');
@@ -35,6 +36,12 @@ INSERT INTO composite_probe VALUES(1,2,'Original'); INSERT INTO composite_child 
 tahsinApplyMigration($pdo);
 autosaveApplyMigration($pdo);
 familyApplyMigration($pdo);
+participantImportApplyMigration($pdo);
+$largeJournalRows=[];
+for ($index=0;$index<1500;$index++) $largeJournalRows[]=['nama_bapak'=>'Keluarga '.($index%500),'no_hp'=>'08123456789','alamat'=>str_repeat('x',1024),'kategori'=>'reguler','nama_anak'=>'Anak '.$index,'kelas'=>'1A','tempat_tahsin'=>'','ustadz_luar'=>''];
+$largeJournalJson=json_encode($largeJournalRows,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+$pdo->prepare('INSERT INTO participant_import_batches(id,user_id,actor_name,source_name,source_sha256,request_hash,source_rows_json,changes_json,summary_json) VALUES(?,?,?,?,?,?,?,?,?)')->execute([str_repeat('a',32),1,'Admin Uji','large-fixture.csv',str_repeat('b',64),str_repeat('c',64),$largeJournalJson,'[]','{"fixture":true}']);
+unset($largeJournalRows,$largeJournalJson);
 $pdo->exec("INSERT INTO settings(setting_key,setting_value) VALUES('rapor_template','<p>{{nama_wali}}</p>');
 INSERT INTO holidays(tanggal,keterangan) VALUES('2026-10-25','Libur fixture');
 INSERT INTO pengumuman(judul,isi,is_aktif) VALUES('Pengumuman fixture','Isi dengan kutip dan baris baru',1);
@@ -109,7 +116,7 @@ $freshRecovery=bkSnapshot($target);
 $repeat=executeMergeRestore($target,$directory.'/original.zip',$tables,'\\N');
 bkCheck($repeat['error']===null && array_sum($repeat['counts'])===0,'Repeated merge is idempotent');
 bkCheck(bkSnapshot($target)===$before,'Repeated merge preserves every existing row');
-tahsinApplyMigration($target); autosaveApplyMigration($target); familyApplyMigration($target);
+tahsinApplyMigration($target); autosaveApplyMigration($target); familyApplyMigration($target); participantImportApplyMigration($target);
 bkCheck(bkSnapshot($target)===$before,'Reinstalling views and triggers after fresh recovery preserves table contents');
 bkCheck($target->query('SELECT * FROM family_children ORDER BY wali_santri_id,nama_anak')->fetchAll(PDO::FETCH_ASSOC)===$pdo->query('SELECT * FROM family_children ORDER BY wali_santri_id,nama_anak')->fetchAll(PDO::FETCH_ASSOC),'Recovered family view retains shared father/mother child links without duplication');
 $cases=[
@@ -232,5 +239,5 @@ putenv('BACKUP_STORAGE_PATH='.$directory.'/not-a-directory');
 try { resolveTempDir(); throw new LogicException('Unavailable persistent storage silently fell back'); }
 catch (RuntimeException $error) { bkCheck(true,'Unavailable configured storage fails clearly instead of falling back to ephemeral storage'); }
 if ($previousStorage===false) putenv('BACKUP_STORAGE_PATH'); else putenv('BACKUP_STORAGE_PATH='.$previousStorage);
-file_put_contents($directory.'/results.json',json_encode(['passed'=>true,'checks'=>$checks,'source'=>$database,'restored'=>$restoredDatabase,'tables'=>count($tables),'source_baseline'=>$recoveryBaseline,'fresh_recovery'=>$freshRecovery,'final'=>bkSnapshot($target)],JSON_PRETTY_PRINT));
+file_put_contents($directory.'/results.json',json_encode(['passed'=>true,'checks'=>$checks,'source'=>$database,'restored'=>$restoredDatabase,'php'=>PHP_VERSION,'peak_memory_bytes'=>memory_get_peak_usage(true),'tables'=>count($tables),'source_baseline'=>$recoveryBaseline,'fresh_recovery'=>$freshRecovery,'final'=>bkSnapshot($target)],JSON_PRETTY_PRINT));
 echo "PASS $checks backup/recovery assertions\nBACKUP_EVIDENCE=$directory\n";

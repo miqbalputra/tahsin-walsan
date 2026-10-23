@@ -1,6 +1,10 @@
 <?php
+require_once __DIR__ . '/csv_helper.php';
+require_once __DIR__ . '/database_helper.php';
 /** Bounded archive parsing and transactional preserve-ID merge; no extraction. */
-const BACKUP_MAX_ROW_BYTES = 1024 * 1024;
+// One import batch retains its before/after journal. Its bounded JSON payload
+// can exceed a normal attendance row; leave room for CSV quote doubling.
+const BACKUP_MAX_ROW_BYTES = 32 * 1024 * 1024;
 
 function backupExpandedLimit(): int
 {
@@ -9,10 +13,7 @@ function backupExpandedLimit(): int
 
 function backupRequireTransactionalTables(PDO $pdo, array $tables): void
 {
-    $engines = $pdo->query("SELECT TABLE_NAME,ENGINE FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'")->fetchAll(PDO::FETCH_KEY_PAIR);
-    foreach ($tables as $table) {
-        if (strtoupper($engines[$table] ?? '') !== 'INNODB') throw new InvalidArgumentException('Tabel ' . $table . ' belum mendukung pemulihan atomik. Hubungi pengelola; cadangan belum diproses.');
-    }
+    appRequireTransactionalTables($pdo,$tables);
 }
 
 function backupOpenArchive(string $path): array
@@ -97,50 +98,8 @@ function backupCsvStream(ZipArchive $zip, array $manifest, string $table)
 
 function backupCsvRows($stream, int $version): Generator
 {
-    $escape = $version < 3 ? '\\' : '';
-    $raw = '';
-    $state = 'start';
-    // Bound the logical record before str_getcsv allocates its fields. CSVs
-    // themselves may be large: only a physical line and one record live in RAM.
-    while (($line = fgets($stream, BACKUP_MAX_ROW_BYTES + 2)) !== false) {
-        $raw .= $line;
-        if (strlen($raw) > BACKUP_MAX_ROW_BYTES) throw new InvalidArgumentException('Satu baris CSV terlalu panjang; pemulihan dibatalkan.');
-        $complete = false;
-        for ($index = 0, $length = strlen($line); $index < $length; $index++) {
-            $char = $line[$index];
-            if ($state === 'quoted') {
-                if ($version < 3 && $char === '\\' && ($line[$index + 1] ?? '') === '"') { $index++; continue; }
-                if ($char === '"') $state = 'closed';
-                continue;
-            }
-            if ($char === "\r" && ($line[$index + 1] ?? '') === "\n") continue;
-            if ($char === "\n") { $complete = true; continue; }
-            if ($state === 'closed') {
-                if ($char === '"') $state = 'quoted';
-                elseif ($char === ',') $state = 'start';
-                else throw new InvalidArgumentException('Struktur tanda kutip CSV rusak.');
-            } elseif ($char === ',') {
-                $state = 'start';
-            } elseif ($char === '"') {
-                if ($state !== 'start') throw new InvalidArgumentException('Struktur tanda kutip CSV rusak.');
-                $state = 'quoted';
-            } else {
-                if ($char === "\r") throw new InvalidArgumentException('Pemisah baris CSV tidak valid.');
-                $state = 'plain';
-            }
-        }
-        if ($complete) {
-            $record = str_getcsv(preg_replace('/\r?\n$/D', '', $raw), ',', '"', $escape);
-            if ($record !== [null]) yield $record;
-            $raw = '';
-            $state = 'start';
-        }
-    }
-    if (!feof($stream)) throw new RuntimeException('CSV sementara tidak dapat dibaca hingga selesai.');
-    if ($state === 'quoted') throw new InvalidArgumentException('Tanda kutip CSV belum ditutup.');
-    if ($raw !== '') yield str_getcsv($raw, ',', '"', $escape);
+    yield from appCsvRows($stream, ',', $version < 3 ? '\\' : '', BACKUP_MAX_ROW_BYTES);
 }
-
 function backupDecodeValue(?string $value, int $version, string $nullToken): ?string
 {
     if ($value === $nullToken) return null;
@@ -284,10 +243,7 @@ function executeMergeRestore(PDO $pdo, string $zipPath, array $tables, string $n
     try {
         [$zip, $manifest] = backupOpenArchive($zipPath);
         backupInspect($pdo, $zip, $manifest, $tables, $nullToken);
-        $originalSqlMode = $pdo->query('SELECT @@SESSION.sql_mode')->fetchColumn();
-        $sqlModes = array_filter(explode(',', $originalSqlMode));
-        $sqlModes = array_unique(array_merge($sqlModes, ['STRICT_ALL_TABLES', 'NO_AUTO_VALUE_ON_ZERO']));
-        $pdo->prepare('SET SESSION sql_mode=?')->execute([implode(',', $sqlModes)]);
+        $originalSqlMode = appUseStrictSqlMode($pdo,true);
         $pdo->beginTransaction();
         $foreignKeys = backupForeignKeys($pdo);
         $changedParents = backupChangedParentKeys($pdo,$zip,$manifest,$foreignKeys,$nullToken);

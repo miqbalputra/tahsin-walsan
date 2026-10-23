@@ -58,6 +58,14 @@ async function previewBackup(jar, token, bytes) {
   const response = await fetch(base+'/backup-restore.php',{method:'POST',redirect:'manual',headers:{Cookie:jar.cookie},body});
   return {status:response.status,body:await response.text()};
 }
+async function previewParticipants(jar, token, csv) {
+  const body=new FormData(); body.set('csrf_token',token); body.set('action','preview');
+  body.set('file_csv',new Blob([csv],{type:'text/csv'}),'import-<img src=x onerror=alert(5)>.csv');
+  const response=await fetch(base+'/import-peserta.php',{method:'POST',redirect:'manual',headers:{Cookie:jar.cookie},body});
+  return {status:response.status,body:await response.text()};
+}
+const importToken = body => body.match(/name="batch_id" value="([a-f0-9]{32})"/)?.[1];
+const importGroup = body => body.match(/name="targets\[([a-f0-9]{64})\]"/)?.[1];
 (async()=>{
   let ready = false;
   for(let retry=0;retry<40;retry++) {
@@ -189,6 +197,85 @@ async function previewBackup(jar, token, bytes) {
   check((await req('/backup-restore.php',admin,{csrf_token:backupCsrf,action:'restore',restore_token:freshToken,confirm_text:'RESTORE'})).status===422,'A completed restore token cannot be replayed');
   check((await previewBackup(admin,backupCsrf,Buffer.from('not-a-zip'))).status===422,'Invalid ZIP upload returns a visible validation error');
   check((await req('/backup-restore.php',admin,{csrf_token:backupCsrf,'action[]':'restore'})).status===422,'Malformed restore action does not crash');
+  const notReadyImport=await req('/import-peserta.php',admin);
+  check(notReadyImport.status===200 && notReadyImport.body.includes('Impor perlu disiapkan'),'Import explains required setup before its additive migration is applied');
+  const prepareImport=path.join(env.SESSION_SAVE_PATH,'prepare-import.php');
+  fs.writeFileSync(prepareImport,`<?php
+$p=new PDO('mysql:host=127.0.0.1;port=13317;dbname=${database};charset=utf8mb4','root','tahsin_local_test',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+require 'includes/participant_import_helper.php'; participantImportApplyMigration($p);
+$p->exec('ALTER TABLE halaqoh_members ADD archived_at DATETIME NULL, ADD archive_reason VARCHAR(50) NULL');
+`);
+  const prepareResult=spawnSync(php,['-d','extension=pdo_mysql',prepareImport],{cwd:root,encoding:'utf8',windowsHide:true,env});
+  assert.equal(prepareResult.status,0,prepareResult.stderr);
+  const importPage=await req('/import-peserta.php',admin);
+  check(importPage.status===200 && importPage.body.includes('for="participant-csv"'),'Import opens with an accessible upload after migration');
+  check((await req('/import-peserta.php',reportTeacher)).status===302 && (await req('/import-peserta.php',pj)).status===200,'Import access follows the admin/PJ role boundary');
+  const csvToken=csrf(importPage.body);
+  check((await req('/import-peserta.php',admin,{'csrf_token[]':'bad',action:'preview'})).status===403,'Malformed import CSRF receives an actionable rejection');
+  const csvHeader='nama_bapak,no_hp,alamat,kategori,nama_anak,kelas,tempat_tahsin,ustadz_luar\n';
+  const participantCsv=csvHeader+'Wali HTTP <script>alert(2)</script>,08911112222,Alamat HTTP,reguler,Anak </script><script>alert(3)</script>,1A,,\n';
+  const beforeImport=domainDigest();
+  let importPreview=await previewParticipants(admin,csvToken,participantCsv);
+  check(importPreview.status===200 && importPreview.body.includes('Pratinjau — data belum disimpan'),'CSV upload produces a preview before writing domain data');
+  check(domainDigest()===beforeImport,'Participant preview leaves all domain tables unchanged');
+  check(!importPreview.body.includes('<script>alert(2)') && !importPreview.body.includes('<img src=x onerror=alert(5)>') && importPreview.body.includes('&lt;script&gt;'),'Untrusted CSV names and filenames are escaped in preview');
+  let csvBatch=importToken(importPreview.body), csvGroup=importGroup(importPreview.body);
+  check(Boolean(csvBatch && csvGroup),'Preview is tied to a server-held batch token and group key');
+  const badHistoryRead=await req('/import-peserta.php?batch[]=bad',admin);
+  check(badHistoryRead.status===422 && importToken(badHistoryRead.body)===csvBatch,'Malformed read-only history request does not rotate the active preview token');
+  const importSecond=await req('/import-peserta.php',secondAdmin);
+  check((await req('/import-peserta.php',secondAdmin,{csrf_token:csrf(importSecond.body),action:'apply',batch_id:csvBatch,reviewed:'1',[`targets[${csvGroup}]`]:'new'})).status===422,'Another session cannot apply this participant preview');
+  const noReview=await req('/import-peserta.php',admin,{csrf_token:csvToken,action:'apply',batch_id:csvBatch,[`targets[${csvGroup}]`]:'new'});
+  check(noReview.status===422 && domainDigest()===beforeImport,'Review confirmation is validated on the server before importing');
+  csvBatch=importToken(noReview.body); csvGroup=importGroup(noReview.body);
+  const malformedTarget=await req('/import-peserta.php',admin,{csrf_token:csvToken,action:'apply',batch_id:csvBatch,reviewed:'1',[`targets[${csvGroup}][]`]:'new'});
+  check(malformedTarget.status===422 && domainDigest()===beforeImport,'Array target cannot bypass participant matching validation');
+  csvBatch=importToken(malformedTarget.body); csvGroup=importGroup(malformedTarget.body);
+  const importSaved=await req('/import-peserta.php',admin,{csrf_token:csvToken,action:'apply',batch_id:csvBatch,reviewed:'1',[`targets[${csvGroup}]`]:'new',class_policy:'preserve',profile_policy:'preserve'});
+  check(importSaved.status===302 && /import-peserta\.php$/.test(importSaved.headers.get('location')),'Confirmed import saves atomically and redirects');
+  const importResult=await req('/import-peserta.php',admin);
+  check(importResult.status===200 && importResult.body.includes('1 peserta baru') && importResult.body.includes('1 anak ditambahkan'),'Import outcome shows real created and skipped counts');
+  const importId=importResult.body.match(/href="\?download=([a-f0-9]{32})"/)?.[1];
+  const importDownload=await req('/import-peserta.php?download='+importId,admin);
+  const importJournal=JSON.parse(importDownload.body);
+  check(importDownload.status===200 && /attachment/.test(importDownload.headers.get('content-disposition')) && importJournal.source_rows[0].nama_bapak==='Wali HTTP <script>alert(2)</script>','Protected journal download retains original CSV values and before/after records');
+  check((await req('/import-peserta.php?download='+importId,reportTeacher)).status===302,'Teacher cannot download participant import journals');
+  const readableJournal=await req('/import-peserta.php?batch='+importId,admin);
+  check(readableJournal.status===200 && readableJournal.body.includes('Sebelum impor') && readableJournal.body.includes('Sesudah impor') && !readableJournal.body.includes('<script>alert(2)'),'Journal has a readable and escaped before/after page');
+  check((await req('/import-peserta.php?batch='+importId,reportTeacher)).status===302,'Teacher cannot view participant import snapshots');
+  const listing=await req('/peserta.php',admin);
+  check(listing.status===200 && listing.body.includes('href="import-peserta.php"') && !listing.body.includes('showImportModal'),'Participant list links to the shared import workflow');
+  check(listing.body.includes('\\u003C') && !listing.body.includes('<script>alert(2)') && !listing.body.includes('</script><script>alert(3)'),'Imported text remains inert in participant attributes and embedded child JSON');
+  const reflected=await req('/peserta.php?msg='+encodeURIComponent('<script>alert(4)</script>'),admin);
+  check(reflected.status===200 && reflected.body.includes('&lt;script&gt;alert(4)&lt;/script&gt;') && !reflected.body.includes('<script>alert(4)'),'Participant flash text cannot execute HTML from query parameters');
+  const savedDomain=domainDigest();
+  check((await req('/import-peserta.php',admin,{csrf_token:csvToken,action:'apply',batch_id:csvBatch,reviewed:'1',[`targets[${csvGroup}]`]:'new'})).status===422,'Completed participant preview token cannot be replayed');
+  check(domainDigest()===savedDomain,'Rejected replay preserves the completed import');
+  importPreview=await previewParticipants(admin,csvToken,participantCsv);
+  csvBatch=importToken(importPreview.body); csvGroup=importGroup(importPreview.body);
+  const importedWali=importJournal.changes[0].wali_id;
+  const repeatedCsv=await req('/import-peserta.php',admin,{csrf_token:csvToken,action:'apply',batch_id:csvBatch,reviewed:'1',[`targets[${csvGroup}]`]:String(importedWali),class_policy:'preserve',profile_policy:'preserve'});
+  check(repeatedCsv.status===302 && domainDigest()===savedDomain,'Uploading the same CSV again skips existing children and preserves domain contents');
+  await req('/import-peserta.php',admin);
+  importPreview=await previewParticipants(admin,csvToken,participantCsv);
+  csvBatch=importToken(importPreview.body); csvGroup=importGroup(importPreview.body);
+  localSql("UPDATE wali_santri SET alamat='Concurrent edit' WHERE id="+Number(importedWali));
+  const afterConcurrent=domainDigest();
+  const staleImport=await req('/import-peserta.php',admin,{csrf_token:csvToken,action:'apply',batch_id:csvBatch,reviewed:'1',[`targets[${csvGroup}]`]:String(importedWali)});
+  check(staleImport.status===422 && staleImport.body.includes('Data peserta berubah') && domainDigest()===afterConcurrent,'A stale import preview cannot overwrite a concurrent edit');
+  check((await req('/import-peserta.php',admin,{csrf_token:csvToken,action:'cancel'})).status===302,'Cancel discards participant preview without changing domain data');
+  check((await previewParticipants(admin,csvToken,csvHeader+'Bad,08123,,invalid,Child,1A,,\n')).status===422 && domainDigest()===afterConcurrent,'Invalid CSV is rejected before any parent or child insertion');
+  for(let index=0;index<12;index++) {
+    const historyId=(7000000+index).toString(16).padStart(32,'0');
+    localSql("INSERT INTO participant_import_batches SELECT '"+historyId+"',user_id,actor_name,'Older fixture.csv',source_sha256,request_hash,source_rows_json,changes_json,summary_json,created_at - INTERVAL "+(index+1)+" DAY FROM participant_import_batches WHERE id='"+importId+"'");
+  }
+  const olderImports=await req('/import-peserta.php?page=2',admin);
+  check(olderImports.status===200 && olderImports.body.includes('halaman 2 dari') && olderImports.body.includes('Older fixture.csv'),'Older import journals remain reachable through pagination');
+  check((await req('/import-peserta.php?page[]=2',admin)).status===422,'Malformed history pagination has an actionable validation error');
+  const corruptJournalId='00000000000000000000000000badbad';
+  localSql("INSERT INTO participant_import_batches SELECT '"+corruptJournalId+"',user_id,actor_name,source_name,source_sha256,request_hash,source_rows_json,'[\"bad snapshot\"]',summary_json,created_at FROM participant_import_batches WHERE id='"+importId+"'");
+  const corruptJournal=await req('/import-peserta.php?batch='+corruptJournalId,admin);
+  check(corruptJournal.status===503 && corruptJournal.body.includes('Rincian impor belum dapat dibuka'),'Malformed stored journal shows a clear error instead of PHP warnings or fabricated before/after data');
   localSql("UPDATE users SET role='kepsek' WHERE id=2");
   check((await req('/users.php',pj)).status===302,'Role changes revoke an existing management session');
   const teacher = await login('audit_teacher');
@@ -198,7 +285,7 @@ async function previewBackup(jar, token, bytes) {
   const temporary = await login('http_created');
   localSql("DELETE FROM users WHERE username='http_created'");
   check((await req('/ustadz/api-autosave.php?halaqoh_id=1&tanggal=2026-10-18',temporary)).status===401,'Deleted account is rejected by API despite its old cookie');
-  for (const route of ['/config/database.php','/includes/auth_helper.php','/.sessions/audit-20261023/test-database.txt','/tests/security-integration.php','/n8n_workflow_tahsin.json','/database.sql','/composer.json','/migrate.php']) {
+  for (const route of ['/config/database.php','/includes/auth_helper.php','/includes/participant_import_helper.php','/.sessions/audit-20261023/test-database.txt','/tests/security-integration.php','/tests/participant-import-integration.php','/n8n_workflow_tahsin.json','/database.sql','/composer.json','/migrate.php','/migrate_participant_import.php']) {
     check((await req(route,admin)).status===403,'Development router denies private path: '+route);
   }
   check((await req('/assets/css/app.css',admin)).status===200,'Public application CSS remains accessible');

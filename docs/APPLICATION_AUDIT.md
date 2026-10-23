@@ -162,6 +162,43 @@ PHP tidak mengganti prototipe tersebut.
 - Rincian batas, perilaku format legacy dan prosedur pemulihan tersedia
   pada [BACKUP_RECOVERY.md](BACKUP_RECOVERY.md). Belum ada deployment batch ini.
 
+## Perubahan dan bukti batch impor CSV
+
+- Impor dipisahkan menjadi parsing, pratinjau server, pilihan pengguna,
+  transaksi dan jurnal. UTF-8/BOM, koma/titik koma, enam kolom legacy,
+  multiline dan sel di atas 1000 byte didukung tanpa pemotongan diam-diam.
+- Pengulangan CSV melewati anak yang sudah cocok. Nama/telepon ambigu
+  memerlukan pilihan. Pembaruan kelas mempertahankan ID anak, menolak
+  kelas bertentangan dan membedakan anak baru bernama sama pada kelas berbeda.
+- Biodata existing dipertahankan secara default. Penggantian eksplisit
+  menyimpan snapshot lama; kolom opsional yang tidak disertakan tidak
+  mengosongkan nilai existing. Impor ulang tidak membatalkan arsip manual.
+- Mapping master keluarga/UUID anak dan wali dilindungi bahkan ketika
+  integrasi dimatikan atau view belum siap. Kelompok tersebut dapat dilewati
+  sementara keluarga lokal lain tetap diproses. Tidak ada panggilan API pusat.
+- Peran diperiksa ulang di service, preview memiliki fingerprint, nonce dan
+  masa berlaku, serta seluruh data/jurnal disimpan dalam transaksi InnoDB.
+  Error database setelah insert pertama dan batas ukuran jurnal membuktikan
+  rollback. Receipt mencegah pengulangan operasi menambah data lagi.
+- Riwayat memiliki halaman sebelum/sesudah yang dapat dibaca dan pagination,
+  selain unduhan JSON privat. Snapshot yang tidak berubah memakai penanda
+  ringkas; keluarga yang dilewati tetap disebut. Jurnal tidak menghapus data.
+- JSON/atribut halaman peserta dan pesan query diperbaiki untuk mencegah
+  HTML/JavaScript dari nama anak, nama wali atau parameter pesan dieksekusi.
+- Parser CSV dan pengaturan transaksi/SQL mode dipakai bersama backup.
+  Jurnal impor dibatasi 12 MB; record backup 32 MB menampungnya termasuk
+  quote CSV. Pemulihan kini mencakup jurnal di antara 31 tabel uji terisi,
+  dengan hash penuh yang sama setelah restore dan pemasangan ulang migrasi.
+- Lulus: 76 assertion impor, 98 assertion pemulihan, 42 assertion akun/data,
+  serta 118 pemeriksaan HTTP. Suite impor dan backup juga dijalankan dengan
+  `memory_limit=256M`. Hasil tersimpan pada artefak `.sessions/audit-20261023/`.
+- Diperlukan migrasi additive `migrate_participant_import.php --apply` sebelum
+  fitur rilis. Panduan ada pada [PARTICIPANT_IMPORT.md](PARTICIPANT_IMPORT.md).
+- **Belum dideploy.** CRUD peserta melalui formulir lama dan penggabungan
+  duplikat masih perlu diperbaiki: penggantian anak dapat mengganti ID,
+  sedangkan merge belum menangani semua draft/baseline serta mapping pusat.
+  Tampilan browser dan pemulihan cadangan produksi nyata juga belum terbukti.
+
 ## Menjalankan pemeriksaan lokal
 
 Database uji harus berjalan hanya pada `127.0.0.1:13317`, dengan akun fixture
@@ -175,6 +212,7 @@ php tests/rapor-tests.php
 php tests/tahsin-reminder-tests.php
 php -d extension=pdo_mysql tests/security-integration.php
 php -d extension=pdo_mysql tests/backup-integration.php
+php -d extension=pdo_mysql -d memory_limit=256M tests/participant-import-integration.php
 node tests/security-http-tests.cjs
 node tests/service-worker-tests.cjs
 node tests/n8n-reminder-workflow.cjs
