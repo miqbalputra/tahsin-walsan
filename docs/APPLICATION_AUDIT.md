@@ -238,6 +238,47 @@ PHP tidak mengganti prototipe tersebut.
   cadangan produksi nyata, penggabungan duplikat dan fitur lain dalam matriks
   tetap harus diselesaikan sebelum klaim audit lengkap atau rilis keseluruhan.
 
+## Perubahan dan bukti batch penggabungan peserta
+
+- Front controller penggabungan dipisah dari service dan renderer. Halaman
+  native memakai pencarian, pagination kandidat/nama berulang, pilihan sumber
+  biodata, program Bapak/Ibu, baseline serta draft yang berbenturan. Nama sama
+  ditampilkan sebagai kandidat untuk ditinjau, bukan bukti identitas sama.
+- Semua anak berpindah dengan ID, nama dan kelas yang sama. Membership lama
+  diarsipkan saat tidak aktif/duplikat, bukan dihapus. Seluruh presensi dan
+  interval historis tetap tercatat pada identitas hasil.
+- Benturan capaian awal dan draft memerlukan pilihan; kedua versi asal
+  disimpan dalam jurnal dan dapat dibaca di halaman riwayat. Draft terpilih
+  dipindahkan dengan revisi lebih baru dan konteks kedaluwarsa untuk ditinjau
+  ulang. Revisi resmi digabung secara monoton. Bukti INIT_CAPAIAN tetap
+  meminta verifikasi setelah ID wali berubah.
+- Jurnal mengikutkan biodata sumber lengkap dan data terkait sebelum/sesudah.
+  Riwayat juga menampilkan hitungan perpindahan dan baseline/draft hasil.
+  Jurnal terdahulu dipindahkan metadata identitasnya tanpa menulis ulang isi
+  snapshot; hash isi digunakan agar rantai merge tidak menggandakan jurnal.
+- Pengalihan ID diratakan saat hasil digabung lagi. Editor/riwayat lama tetap
+  dapat dibuka; tautan arsip lama membuka pemeriksaan editor hasil. Pengiriman
+  ulang memperoleh receipt, sementara operator dapat memilih pasangan baru.
+- Mapping master keluarga, bridge anak, guardian/student/enrollment/class
+  Data Induk, konfigurasi parsial dan pemetaan guardian pending dilindungi.
+  Relasi FK/non-FK yang belum memiliki aturan pemindahan dan relasi gabungan
+  anak ditolak sebelum menulis. Foreign key tidak dinonaktifkan.
+- Restore merge menolak menghidupkan ID sumber atau mengalihkan peserta yang
+  masih hidup. Cadangan/pemulihan kini mencakup 33 tabel terisi, termasuk
+  jurnal penggabungan dan pengalihan ID, dengan hash seluruh tabel sama.
+- Lulus: 47 assertion merge, 48 assertion formulir, 76 assertion impor,
+  42 assertion akun/data, 102 assertion backup dan 174 pemeriksaan HTTP.
+  Lint 122 berkas PHP, build aset, dan dry-run CLI migrasi lulus. Pengujian
+  service/backup memakai `memory_limit=256M`. Seluruh database pengujian
+  memakai fixture sintetis loopback; artefak di `.sessions/audit-20261023/`.
+- Migrasi additive `migrate_participant_merge.php --apply` diperlukan sebelum
+  rilis. Perilaku dan pemulihan dijelaskan pada
+  [PARTICIPANT_MERGE.md](PARTICIPANT_MERGE.md).
+- **Belum dideploy.** Pemeriksaan browser dan alur draft offline yang hanya
+  ada di perangkat pengguna masih terbuka, bersama cakupan fitur lainnya,
+  Apache/PHP 8.2, serta pemulihan cadangan produksi nyata. Hasil ini belum
+  membuktikan seluruh aplikasi selesai diaudit.
+
 ## Menjalankan pemeriksaan lokal
 
 Database uji harus berjalan hanya pada `127.0.0.1:13317`, dengan akun fixture
@@ -253,6 +294,7 @@ php -d extension=pdo_mysql tests/security-integration.php
 php -d extension=pdo_mysql tests/backup-integration.php
 php -d extension=pdo_mysql -d memory_limit=256M tests/participant-import-integration.php
 php -d extension=pdo_mysql -d memory_limit=256M tests/participant-management-integration.php
+php -d extension=pdo_mysql -d memory_limit=256M tests/participant-merge-integration.php
 node tests/security-http-tests.cjs
 node tests/service-worker-tests.cjs
 node tests/n8n-reminder-workflow.cjs

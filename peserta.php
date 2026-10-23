@@ -106,6 +106,7 @@ $hasActiveFilter = $nama_ayah_filter !== '' || $nama_anak_filter !== '' || $kela
         <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
 
 
+            <?php if (($_SESSION['role']??'')==='admin'): ?>
             <a href="merge-peserta.php"
                 class="bg-amber-100 text-amber-700 px-4 py-2 rounded-xl flex items-center hover:bg-amber-200 transition shadow-sm font-semibold text-sm">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -114,6 +115,7 @@ $hasActiveFilter = $nama_ayah_filter !== '' || $nama_anak_filter !== '' || $kela
                 </svg>
                 Gabung Duplikat
             </a>
+            <?php endif; ?>
 
             <a href="import-peserta.php"
                 class="bg-emerald-100 text-emerald-700 px-4 py-2 rounded-xl flex items-center hover:bg-emerald-200 transition shadow-sm font-semibold text-sm">

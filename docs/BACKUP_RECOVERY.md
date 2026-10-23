@@ -70,6 +70,13 @@ Token konfirmasi acak dan hash arsip terikat ke sesi yang melakukan
 pratinjau. Berkas yang berubah setelah pratinjau ditolak. Eksekusi tetap
 mengulang validasi arsip; keberhasilan pratinjau tidak melewati validasi.
 
+Jika aplikasi memakai penggabungan peserta, restore merge memeriksa pengalihan
+ID sebelum commit. Backup lama tidak boleh menghidupkan kembali ID sumber
+yang sudah digabung, mengalihkan ID peserta yang masih hidup, atau menunjuk
+peserta yang hilang. Seluruh transaksi dibatalkan jika pemeriksaan ini gagal.
+Untuk membatalkan penggabungan, lakukan pemeriksaan/pemulihan penuh pada
+database terpisah; restore merge bukan undo penggabungan.
+
 ## Pemulihan penuh oleh pengelola
 
 1. Simpan arsip asli dan cadangan kondisi aplikasi yang masih tersedia.
@@ -87,7 +94,9 @@ mengulang validasi arsip; keberhasilan pratinjau tidak melewati validasi.
    sama: `tahsinApplyMigration()`, `autosaveApplyMigration()`, dan
    `familyApplyMigration()`, serta `participantImportApplyMigration()` jika
    versi aplikasi tersebut memakai jurnal impor, serta `participantApplyMigration()`
-   jika memakai jurnal formulir peserta. Jangan menjalankan reset atau migrasi bootstrap
+   jika memakai jurnal formulir peserta. Untuk versi penggabungan peserta,
+   jalankan `participantMergeApplyMigration()` agar pengalihan ID tersedia.
+   Jangan menjalankan reset atau migrasi bootstrap
    yang mengganti tabel/data. Helper migrasi bersifat additive.
 5. Bandingkan jumlah dan hash isi **setiap** tabel, primary key, serta relasi.
    Periksa pembacaan keluarga, presensi, histori, draft dan pengaturan.

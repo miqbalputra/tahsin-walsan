@@ -16,6 +16,14 @@ function backupRequireTransactionalTables(PDO $pdo, array $tables): void
     appRequireTransactionalTables($pdo,$tables);
 }
 
+function backupAssertParticipantAliases(PDO $pdo): void
+{
+    $count=(int)$pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('wali_santri','participant_merge_aliases') AND TABLE_TYPE='BASE TABLE'")->fetchColumn();
+    if ($count!==2) return;
+    $invalid=$pdo->query('SELECT 1 FROM participant_merge_aliases a LEFT JOIN wali_santri s ON s.id=a.source_id LEFT JOIN wali_santri t ON t.id=a.target_id WHERE s.id IS NOT NULL OR t.id IS NULL OR a.source_id=a.target_id LIMIT 1 FOR UPDATE')->fetchColumn();
+    if ($invalid) throw new InvalidArgumentException('Cadangan menghidupkan kembali ID peserta yang sudah digabung atau memiliki pengalihan ID yang tidak valid. Pemulihan dibatalkan. Tinjau pada database terpisah bersama pengelola.');
+}
+
 function backupOpenArchive(string $path): array
 {
     $zip = new ZipArchive();
@@ -307,6 +315,7 @@ function executeMergeRestore(PDO $pdo, string $zipPath, array $tables, string $n
             fclose($stream);
             $stream = null;
         }
+        backupAssertParticipantAliases($pdo);
         $pdo->commit();
         return ['error'=>null,'counts'=>$counts,'conflicts'=>$conflicts,'skipped'=>$skipped,
             'summary'=>'inserted=' . json_encode($counts) . '; skipped_existing=' . json_encode($conflicts) . '; skipped_tables=' . json_encode($skipped)];

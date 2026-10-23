@@ -546,6 +546,11 @@ Formulir tambah/edit/arsip mempertahankan ID anak, memakai jurnal perubahan,
 dan memisahkan penempatan Bapak/Ibu. Persiapan migrasi dan alur pemulihan ada
 pada [panduan pengelolaan peserta](docs/PARTICIPANT_MANAGEMENT.md).
 
+Penggabungan duplikat menggunakan pratinjau, pilihan baseline/draft yang
+berbenturan, pemindahan ID anak, dan pengalihan ID peserta lama. Lihat
+[panduan penggabungan peserta](docs/PARTICIPANT_MERGE.md) untuk migrasi,
+pelestarian data dan pemulihan.
+
 ### Arsip Wali Alumni Otomatis
 
 Wali akan otomatis diarsipkan setelah seluruh anaknya berstatus `Lulus`. Sistem hanya mengubah `status_aktif` wali dan menandai membership halaqoh dengan `archived_at`; data wali, anak, presensi, dan relasi lama tetap tersimpan.

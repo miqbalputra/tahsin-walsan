@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/auth_helper.php';
-require_once __DIR__ . '/includes/participant_helper.php';
+require_once __DIR__ . '/includes/participant_merge_helper.php';
 checkRole(['admin', 'pj_tahfidz']);
 
 $error = '';
@@ -21,6 +21,7 @@ try {
         if (!$context) throw new ParticipantManagementException('Formulir kedaluwarsa. Buka kembali dari daftar peserta; perubahan belum disimpan.');
         $id = $context['id'];
         $mode = $context['mode'];
+        if ($id!==null && ($redirectId=participantMergeTarget($pdo,$id))!==null) throw new ParticipantManagementException('ID peserta ini sudah digabung ke ID '.$redirectId.'. Isian lama belum disimpan. Buka formulir terbaru untuk meninjau data hasil penggabungan.');
         if ($id !== null) $snapshot = participantSnapshot($pdo, $id);
         $input = array_intersect_key($_POST, array_flip(['nama_bapak', 'no_hp', 'alamat', 'kategori', 'tempat_tahsin', 'ustadz_luar', 'anak', 'remove_children', 'confirm_remove', 'memberships', 'reactivate', 'confirmed']));
         $intent = array_key_exists('add_child',$_POST) && appRequestString($_POST,'add_child')==='1' ? 'add_child' : appRequestString($_POST, 'intent');
@@ -39,6 +40,10 @@ try {
         $id = participantId($_GET['id'] ?? '', true);
         $mode = appRequestString($_GET, 'mode', 'save');
         if (!in_array($mode, ['save', 'archive'], true) || ($mode === 'archive' && $id === null)) throw new ParticipantManagementException('Halaman peserta tidak ditemukan.');
+        if ($id!==null && ($redirectId=participantMergeTarget($pdo,$id))!==null) {
+            $_SESSION['participant_form_notice']='ID '.$id.' sudah digabung ke ID '.$redirectId.'. Periksa data hasil penggabungan sebelum melakukan perubahan baru.';
+            header('Location: peserta-form.php?id='.$redirectId); exit;
+        }
         if ($id !== null) $snapshot = participantSnapshot($pdo, $id);
         $input = $snapshot['parent'] ?? ['kategori' => 'reguler'];
         $input['anak'] = array_map(static fn($row) => ['id' => (string) $row['id'], 'nama' => $row['nama_anak'], 'kelas' => $row['kelas']], $snapshot['children'] ?? []);
@@ -71,12 +76,15 @@ if ($locked && $id !== null) {
 $programColumn = participantHasPrograms($pdo) ? 'h.program_code' : "'bapak'";
 $groups = $pdo->query("SELECT h.id,h.nama_halaqoh,$programColumn AS program_code,u.nama_lengkap FROM halaqoh h JOIN users u ON u.id=h.ustadz_id ORDER BY h.nama_halaqoh,h.id")->fetchAll(PDO::FETCH_ASSOC);
 $pageTitle = $mode === 'archive' ? 'Arsipkan Peserta' : ($id ? 'Edit Peserta' : 'Tambah Peserta');
+$notice=is_string($_SESSION['participant_form_notice']??null)?$_SESSION['participant_form_notice']:'';
+unset($_SESSION['participant_form_notice']);
 require __DIR__ . '/includes/header.php';
 require __DIR__ . '/includes/sidebar.php';
 ?>
 <div class="max-w-3xl mx-auto">
     <a href="peserta.php" class="inline-block underline text-blue-700 py-3">Kembali ke daftar peserta</a>
     <h1 class="text-2xl font-bold mb-4"><?= appEscape($pageTitle) ?></h1>
+    <?php if ($notice): ?><p role="status" class="p-4 mb-5 bg-blue-50 text-blue-800 rounded-xl"><?= appEscape($notice) ?></p><?php endif; ?>
     <?php if ($error): ?><p role="alert" class="p-4 mb-5 rounded-xl bg-red-50 text-red-800"><?= appEscape($error) ?> <a class="underline" href="peserta-form.php<?= $id ? '?id=' . $id . ($mode === 'archive' ? '&amp;mode=archive' : '') : '' ?>">Buka formulir terbaru</a></p><?php endif; ?>
     <?php if (!$ready): ?><p role="alert" class="p-4 mb-5 rounded-xl bg-amber-50 text-amber-900">Pengelola perlu menyiapkan jurnal perubahan peserta. Data yang sudah ada tetap dapat dibaca; penyimpanan belum tersedia.</p><?php endif; ?>
     <?php if ($creationBlocked): ?><p class="p-4 mb-5 rounded-xl bg-blue-50 text-blue-800">Peserta baru dibuat di Data Induk. Gunakan sinkronisasi dari sumber tersebut.</p><?php endif; ?>

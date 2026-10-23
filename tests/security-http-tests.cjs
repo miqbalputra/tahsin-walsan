@@ -338,6 +338,69 @@ $p->exec('ALTER TABLE halaqoh_members ADD archived_at DATETIME NULL, ADD archive
   for(const [,index,id] of hundredFields) { hundredBody[`anak[${index}][id]`]=id; hundredBody[`anak[${index}][nama]`]='Boundary '+index; hundredBody[`anak[${index}][kelas]`]=''; }
   const beforeHundredSave=domainDigest();
   check((await req('/peserta-form.php',admin,hundredBody)).status===302 && domainDigest()===beforeHundredSave,'Submitting the complete 100-child editor preserves every child ID and NULL class');
+  const mergeSetupPage=await req('/merge-peserta.php',admin);
+  check(mergeSetupPage.status===200 && mergeSetupPage.body.includes('menyiapkan jurnal dan pengalihan ID'),'Merge explains setup before its additive migration');
+  const prepareMerge=path.join(env.SESSION_SAVE_PATH,'prepare-merge.php');
+  fs.writeFileSync(prepareMerge,`<?php
+$p=new PDO('mysql:host=127.0.0.1;port=13317;dbname=${database};charset=utf8mb4','root','tahsin_local_test',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+require 'includes/tahsin_migration_helper.php'; tahsinApplyMigration($p);
+require 'includes/autosave_migration_helper.php'; autosaveApplyMigration($p);
+require 'includes/participant_merge_helper.php'; participantMergeApplyMigration($p);
+`);
+  const mergePrepared=spawnSync(php,['-d','extension=pdo_mysql',prepareMerge],{cwd:root,encoding:'utf8',windowsHide:true,env}); assert.equal(mergePrepared.status,0,mergePrepared.stderr);
+  localSql("INSERT INTO wali_santri(id,nama_bapak,no_hp) VALUES(10001,'Merge Keep <script>alert(8)</script>','08111'),(10002,'Merge Source <script>alert(9)</script>','08222'); INSERT INTO santri_detail(wali_santri_id,nama_anak,kelas) VALUES(10001,'Same Child','1A'),(10002,'Same Child','2B'); INSERT INTO halaqoh_members(halaqoh_id,wali_santri_id) VALUES(1,10001),(1,10002); INSERT INTO tahsin_capaian_awal(wali_santri_id,jenis_materi,halaman,updated_by) VALUES(10001,'Iqro','1',1),(10002,'Al Quran','1-7',1); INSERT INTO tahsin_autosave_drafts(user_id,halaqoh_id,session_date,wali_id,payload_json,official_revision,context_revision) VALUES(3,1,'2026-10-18',10001,'{\"status\":\"H\"}','old','ctx'),(3,1,'2026-10-18',10002,'{\"status\":\"I\",\"alasan\":\"Source draft\"}','old-source','ctx-source');");
+  check((await req('/merge-peserta.php',pj)).status===302 && (await req('/merge-peserta.php',reportTeacher)).status===302,'Merge is admin-only before page rendering');
+  check(!(await req('/peserta.php',pj)).body.includes('href="merge-peserta.php"'),'PJ participant list does not advertise an admin-only merge action');
+  check((await req('/merge-peserta.php?keep_id[]=bad',admin)).status===422 && (await req('/merge-peserta.php?page[]=2',admin)).status===422,'Malformed merge selectors and pagination have actionable errors');
+  const beforeMergePreview=domainDigest();
+  check((await req('/merge-peserta.php',admin,{csrf_token:csvToken,action:'merge',keep_id:'10001',delete_id:'10002'})).status===422 && domainDigest()===beforeMergePreview,'Legacy merge POST cannot bypass preview and bound nonce');
+  const mergePreview=await req('/merge-peserta.php?keep_id=10001&delete_id=10002',admin);
+  check(mergePreview.status===200 && mergePreview.body.includes('Pratinjau — data belum diubah') && domainDigest()===beforeMergePreview,'Merge preview does not mutate participants, child IDs, memberships or attendance');
+  check(!mergePreview.body.includes('<script>alert(8)') && !mergePreview.body.includes('<script>alert(9)') && mergePreview.body.includes('&lt;script&gt;'),'Both merge biographies remain escaped in review');
+  const mergeToken=mergePreview.body.match(/name="merge_token" value="([a-f0-9]{32})"/)?.[1], draftKey=mergePreview.body.match(/name="drafts\[([a-f0-9]{64})\]"/)?.[1];
+  check(Boolean(mergeToken && draftKey) && mergePreview.body.includes('Capaian awal yang akan aktif'),'Preview exposes typed choices for colliding baseline and draft data');
+  const mergeBody={csrf_token:csrf(mergePreview.body),action:'apply',merge_token:mergeToken,confirmed:'1',baseline:'source',[`drafts[${draftKey}]`]:'source'};
+  check((await req('/merge-peserta.php',secondAdmin,{...mergeBody,csrf_token:csrf(importSecond.body)})).status===422 && domainDigest()===beforeMergePreview,'Another session cannot apply the merge preview');
+  check((await req('/merge-peserta.php',admin,{...mergeBody,confirmed:''})).status===422 && domainDigest()===beforeMergePreview,'Merge confirmation is enforced on the server');
+  check((await req('/merge-peserta.php',admin,{...mergeBody,baseline:''})).status===422 && domainDigest()===beforeMergePreview,'A colliding baseline requires an explicit primary choice');
+  const mergeSaved=await req('/merge-peserta.php',admin,mergeBody);
+  check(mergeSaved.status===302 && /peserta-riwayat\.php\?operation=/.test(mergeSaved.headers.get('location')),'Confirmed merge redirects to its durable journal');
+  const mergedDomain=domainDigest();
+  check((await req('/merge-peserta.php',admin,mergeBody)).status===302 && domainDigest()===mergedDomain,'Repeating a completed merge returns its receipt without duplicate changes');
+  check((await req('/merge-peserta.php?keep_id=10001&delete_id=10002',admin)).status===302,'Revisiting the completed preview opens its journal instead of a missing-source error');
+  const nextMergeSelection=await req('/merge-peserta.php',admin);
+  check(nextMergeSelection.status===200 && nextMergeSelection.body.includes('Pilih peserta yang dipertahankan'),'A completed merge does not trap the operator in its journal when starting another pair');
+  const mergeDetails=await req('/'+mergeSaved.headers.get('location'),admin);
+  check(mergeDetails.status===200 && mergeDetails.body.includes('Data asal yang disimpan') && mergeDetails.body.includes('Draft asal') && mergeDetails.body.includes('Capaian awal asal') && !mergeDetails.body.includes('<script>alert(9)'),'Merge history exposes both source drafts and baselines in escaped readable sections');
+  check(mergeDetails.body.includes('Capaian dan draft sesudah penggabungan') && mergeDetails.body.includes('1 anak dipindahkan dengan ID lama'),'Merge outcome exposes counts and the chosen active baseline/draft alongside original alternatives');
+  const mergeArchive=await req('/peserta-riwayat.php?download='+mergeToken,admin);
+  const mergeBefore=JSON.parse(JSON.parse(mergeArchive.body).before_json), mergeAfter=JSON.parse(JSON.parse(mergeArchive.body).after_json);
+  check(mergeBefore.merge_source.parent.id===10002 && mergeAfter.children.length===2 && mergeAfter.children.map(child=>child.kelas).sort().join(',')==='1A,2B','Journal proves both original child classes and IDs survive a same-name merge');
+  const oldArchiveLink=await req('/peserta-form.php?id=10002&mode=archive',admin);
+  check(oldArchiveLink.status===302 && oldArchiveLink.headers.get('location')==='peserta-form.php?id=10001','An old archive link opens survivor review instead of archiving the survivor');
+  const survivorForm=await req('/peserta-form.php?id=10001',admin);
+  check(survivorForm.status===200 && survivorForm.body.includes('ID 10002 sudah digabung ke ID 10001'),'Survivor editor explains why an old ID was redirected');
+  const oldHistory=await req('/peserta-riwayat.php?id=10002',admin);
+  check(oldHistory.status===200 && oldHistory.body.includes('ID 10001') && oldHistory.body.includes(mergeToken),'Old participant history resolves to the canonical identity');
+  const corruptMerge='00000000000000000000000000fedbad';
+  localSql("INSERT INTO participant_changes SELECT '"+corruptMerge+"',actor_id,actor_name,action,wali_id,request_hash,JSON_REMOVE(before_json,'$.merge_source.children'),after_json,result_json,created_at FROM participant_changes WHERE operation_id='"+mergeToken+"'");
+  check((await req('/peserta-riwayat.php?operation='+corruptMerge,admin)).status===503,'Corrupt merge source snapshot fails clearly before rendering details');
+  localSql("UPDATE participant_changes SET before_json=JSON_REMOVE((SELECT original.before_json FROM (SELECT before_json FROM participant_changes WHERE operation_id='"+mergeToken+"') original),'$.merge_source.parent.id') WHERE operation_id='"+corruptMerge+"'");
+  check((await req('/peserta-riwayat.php?operation='+corruptMerge,admin)).status===503,'A source snapshot without a parent ID fails before generating misleading history or warnings');
+  localSql("UPDATE participant_changes SET before_json=JSON_REMOVE((SELECT original.before_json FROM (SELECT before_json FROM participant_changes WHERE operation_id='"+mergeToken+"') original),'$.merge_related.tahsin_autosave_drafts[0].payload_json') WHERE operation_id='"+corruptMerge+"'");
+  check((await req('/peserta-riwayat.php?operation='+corruptMerge,admin)).status===503,'An incomplete original draft snapshot fails before rendering merge alternatives');
+  await req('/merge-peserta.php',admin,{csrf_token:csvToken,action:'cancel',merge_token:mergeToken});
+  localSql("INSERT INTO wali_santri(id,nama_bapak) VALUES(10003,'Fresh Keep'),(10004,'Fresh Source')");
+  const staleMergePreview=await req('/merge-peserta.php?keep_id=10003&delete_id=10004',admin);
+  const staleMergeToken=staleMergePreview.body.match(/name="merge_token" value="([a-f0-9]{32})"/)?.[1];
+  localSql("UPDATE wali_santri SET alamat='Concurrent change' WHERE id=10004");
+  const afterMergeConcurrent=domainDigest();
+  check((await req('/merge-peserta.php',admin,{csrf_token:csvToken,action:'apply',merge_token:staleMergeToken,confirmed:'1'})).status===422 && domainDigest()===afterMergeConcurrent,'A concurrent source edit invalidates the merge preview without writes');
+  check((await req('/merge-peserta.php',admin,{csrf_token:csvToken,action:'cancel',merge_token:staleMergeToken})).status===302 && domainDigest()===afterMergeConcurrent,'Cancelling stale preview preserves all participant data');
+  localSql('INSERT INTO wali_santri(nama_bapak) VALUES '+Array.from({length:22},(_,index)=>"('Repeated"+String(index).padStart(2,'0')+"'),('Repeated"+String(index).padStart(2,'0')+"')").join(','));
+  const repeatedNames=await req('/merge-peserta.php?dup_page=2',admin);
+  check(repeatedNames.status===200 && repeatedNames.body.includes('Nama berulang untuk ditinjau') && repeatedNames.body.includes('Repeated21') && repeatedNames.body.includes('Halaman 2 dari 2'),'Repeated-name suggestions remain reachable through pagination without claiming matching names prove identity');
+  check((await req('/merge-peserta.php?dup_page[]=2',admin)).status===422,'Malformed repeated-name pagination is rejected without PHP errors');
   localSql("UPDATE users SET role='kepsek' WHERE id=2");
   check((await req('/users.php',pj)).status===302,'Role changes revoke an existing management session');
   const teacher = await login('audit_teacher');
@@ -347,7 +410,7 @@ $p->exec('ALTER TABLE halaqoh_members ADD archived_at DATETIME NULL, ADD archive
   const temporary = await login('http_created');
   localSql("DELETE FROM users WHERE username='http_created'");
   check((await req('/ustadz/api-autosave.php?halaqoh_id=1&tanggal=2026-10-18',temporary)).status===401,'Deleted account is rejected by API despite its old cookie');
-  for (const route of ['/config/database.php','/includes/auth_helper.php','/includes/participant_import_helper.php','/.sessions/audit-20261023/test-database.txt','/tests/security-integration.php','/tests/participant-import-integration.php','/n8n_workflow_tahsin.json','/database.sql','/composer.json','/migrate.php','/migrate_participant_import.php']) {
+  for (const route of ['/config/database.php','/includes/auth_helper.php','/includes/participant_import_helper.php','/includes/participant_merge_page.php','/.sessions/audit-20261023/test-database.txt','/tests/security-integration.php','/tests/participant-import-integration.php','/tests/participant-merge-integration.php','/n8n_workflow_tahsin.json','/database.sql','/composer.json','/migrate.php','/migrate_participant_import.php','/migrate_participant_merge.php']) {
     check((await req(route,admin)).status===403,'Development router denies private path: '+route);
   }
   check((await req('/assets/css/app.css',admin)).status===200,'Public application CSS remains accessible');
