@@ -15,6 +15,7 @@ const base = `http://127.0.0.1:${port}`;
 const env = {...process.env, DB_HOST:'127.0.0.1', DB_PORT:'13317', DB_DATABASE:database,
   DB_USERNAME:'root', DB_PASSWORD:'tahsin_local_test', DATA_INDUK_ENABLED:'0',
   SESSION_SAVE_PATH:path.join(root,'.sessions','audit-20261023',`http-sessions-${process.pid}`),
+  BACKUP_STORAGE_PATH:path.join(root,'.sessions','audit-20261023',`http-backups-${process.pid}`),
   HERMES_API_KEY:'audit-fixture-key', N8N_API_KEY:'audit-fixture-key', TAHSIN_AUTOSAVE_ENABLED:'0'};
 fs.mkdirSync(env.SESSION_SAVE_PATH,{recursive:true});
 const server = spawn(php, ['-d','extension=pdo_mysql','-d','display_errors=0','-S',`127.0.0.1:${port}`,'dev-router.php'],
@@ -49,6 +50,13 @@ function domainDigest() {
   const result = spawnSync(php,['-d','extension=pdo_mysql','-r',code],{cwd:root,encoding:'utf8',windowsHide:true});
   assert.equal(result.status,0,result.stderr);
   return result.stdout;
+}
+async function previewBackup(jar, token, bytes) {
+  const body = new FormData();
+  body.set('csrf_token',token); body.set('action','preview');
+  body.set('backup_file',new Blob([bytes],{type:'application/zip'}),'fixture.zip');
+  const response = await fetch(base+'/backup-restore.php',{method:'POST',redirect:'manual',headers:{Cookie:jar.cookie},body});
+  return {status:response.status,body:await response.text()};
 }
 (async()=>{
   let ready = false;
@@ -135,6 +143,52 @@ function domainDigest() {
   check(customReport.status===200 && customReport.body.includes('Pengesah Baru') && customReport.body.includes('Penanggung Jawab') && customReport.body.includes('Sakit 1'),'Printed custom design uses saved signer, title and canonical totals');
   check((await req('/pengaturan-rapor.php?download='+backupKey,reportTeacher)).status===302,'Teacher cannot download template backups');
   check(domainDigest()===beforeReportData,'Printing and changing report settings preserve all participant, child, group, membership and attendance rows');
+  const backupPage = await req('/backup-restore.php',admin);
+  check(backupPage.status===200 && backupPage.body.includes('for="restore-upload"'),'Backup page has a labelled upload and opens normally');
+  check((await req('/backup-restore.php',reportTeacher)).status===302,'Teacher cannot export or restore database backups');
+  check((await req('/backup-restore.php?download[]=bad',admin)).status===404,'Array download name is safely rejected');
+  check((await req('/backup-restore.php?msg[]=bad&err[]=bad',admin)).status===200,'Malformed backup flash fields do not crash the page');
+  const backupCsrf = csrf(backupPage.body);
+  check((await req('/backup-restore.php',admin,{'csrf_token[]':'invalid',action:'preview'})).status===403,'Malformed CSRF cannot preview or restore an archive');
+  const exported = await fetch(base+'/backup-restore.php?export=1',{headers:{Cookie:admin.cookie},redirect:'manual'});
+  const backupBytes = Buffer.from(await exported.arrayBuffer());
+  check(exported.status===200 && /application\/zip/.test(exported.headers.get('content-type')) && backupBytes.subarray(0,2).toString()==='PK','Authenticated export returns a nonempty ZIP download');
+  const backupDirectory = env.BACKUP_STORAGE_PATH;
+  const beforeUploads = new Set(fs.readdirSync(backupDirectory));
+  const backupPreview = await previewBackup(admin,backupCsrf,backupBytes);
+  check(backupPreview.status===200 && backupPreview.body.includes('for="restore-confirm"') && backupPreview.body.includes('Data belum dipulihkan'),'Uploaded ZIP is validated before an accessible inline confirmation is shown');
+  const pendingToken = backupPreview.body.match(/name="restore_token" value="([a-f0-9]{64})"/)?.[1];
+  check(Boolean(pendingToken),'Preview produces a cryptographically random restore token');
+  const wrongConfirmation = await req('/backup-restore.php',admin,{csrf_token:backupCsrf,action:'restore',restore_token:pendingToken,confirm_text:'wrong'});
+  check(wrongConfirmation.status===422 && wrongConfirmation.body.includes('for="restore-confirm"'),'A mistyped confirmation keeps the validated preview available for correction');
+  const uploadedName = fs.readdirSync(backupDirectory).find(name=>name.startsWith('restore_') && !beforeUploads.has(name));
+  check(Boolean(uploadedName),'Uploaded archive has a unique unpredictable filename');
+  const uploadedPath = path.join(backupDirectory,uploadedName);
+  const secondAdmin = await login('audit_admin');
+  const secondBackupPage = await req('/backup-restore.php',secondAdmin);
+  check((await req('/backup-restore.php',secondAdmin,{csrf_token:csrf(secondBackupPage.body),action:'restore',restore_token:pendingToken,confirm_text:'RESTORE'})).status===422,'Restore preview is bound to its session and cannot be borrowed by another login');
+  fs.appendFileSync(uploadedPath,'tampered-after-preview');
+  const dataBeforeRestore = domainDigest();
+  const tampered = await req('/backup-restore.php',admin,{csrf_token:backupCsrf,action:'restore',restore_token:pendingToken,confirm_text:'RESTORE'});
+  check(tampered.status===422 && tampered.body.includes('Sesi restore tidak valid'),'Archive changed after preview is rejected before restoration');
+  check(domainDigest()===dataBeforeRestore,'Rejected changed archive leaves domain data untouched');
+  check((await req('/backup-restore.php',admin,{csrf_token:backupCsrf,action:'cancel'})).status===302 && !fs.existsSync(uploadedPath),'Cancel consumes the preview and removes only its uploaded archive');
+  const secondPreview = await previewBackup(admin,backupCsrf,backupBytes);
+  const freshToken = secondPreview.body.match(/name="restore_token" value="([a-f0-9]{64})"/)?.[1];
+  check(secondPreview.status===200 && freshToken && freshToken!==pendingToken,'A new preview uses a distinct token');
+  const beforeSafety = new Set(fs.readdirSync(backupDirectory));
+  const recovered = await req('/backup-restore.php',admin,{csrf_token:backupCsrf,action:'restore',restore_token:freshToken,confirm_text:'RESTORE'});
+  check(recovered.status===302 && /backup-restore\.php$/.test(recovered.headers.get('location')),'Confirmed merge finishes with redirect and a saved outcome');
+  check((await req('/backup-restore.php',admin)).body.includes('Pemulihan selesai:'),'Restore outcome is read from the session after redirect');
+  check(!(await req('/backup-restore.php?msg=FORGED_SUCCESS',admin)).body.includes('FORGED_SUCCESS'),'Query parameters cannot fabricate a successful restore message');
+  check(domainDigest()===dataBeforeRestore,'Restoring the current archive preserves participant, child, group, membership and attendance content');
+  const safetyName = fs.readdirSync(backupDirectory).find(name=>name.startsWith('backup_pre_restore_') && !beforeSafety.has(name));
+  check(Boolean(safetyName),'A separate safety backup exists before successful merge');
+  check((await req('/backup-restore.php?download='+safetyName,admin)).status===200,'Safety backup is downloadable through the authorized controller');
+  check((await req('/.sessions/audit-20261023/http-backups-'+process.pid+'/'+safetyName,admin)).status===403,'Backup archive cannot be fetched directly as a public static file');
+  check((await req('/backup-restore.php',admin,{csrf_token:backupCsrf,action:'restore',restore_token:freshToken,confirm_text:'RESTORE'})).status===422,'A completed restore token cannot be replayed');
+  check((await previewBackup(admin,backupCsrf,Buffer.from('not-a-zip'))).status===422,'Invalid ZIP upload returns a visible validation error');
+  check((await req('/backup-restore.php',admin,{csrf_token:backupCsrf,'action[]':'restore'})).status===422,'Malformed restore action does not crash');
   localSql("UPDATE users SET role='kepsek' WHERE id=2");
   check((await req('/users.php',pj)).status===302,'Role changes revoke an existing management session');
   const teacher = await login('audit_teacher');

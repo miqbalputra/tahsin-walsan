@@ -534,7 +534,7 @@ php migrate_performance_indexes.php
 APPLY_MIGRATIONS=1 php migrate_performance_indexes.php
 ```
 
-Backup ZIP dari menu **Backup & Restore** kini mencakup seluruh tabel yang ada, memakai checksum, dan restore bersifat merge-only. Data dengan primary key yang sudah ada tidak dihapus atau di-update.
+Backup ZIP dari menu **Backup & Restore** mencakup seluruh base table dan memakai checksum. Restore menambahkan baris yang belum ada dan melewati primary key yang sudah ada. Pilihan folder persisten, validasi, batas format lama, serta pemulihan penuh dijelaskan pada [panduan cadangan dan pemulihan](docs/BACKUP_RECOVERY.md).
 
 ### Arsip Wali Alumni Otomatis
 

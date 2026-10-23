@@ -128,6 +128,40 @@ PHP tidak mengganti prototipe tersebut.
 - Lint 100 berkas PHP bersih dan `git diff --check` lulus.
 - Batch rapor belum didorong ke remote dan belum dideploy.
 
+## Perubahan dan bukti batch backup/pemulihan
+
+- Helper ekspor dan restore dipisahkan dari controller. Ekspor memakai
+  snapshot InnoDB, pembacaan baris tanpa buffering seluruh tabel, CSV dengan
+  aturan escape konsisten, serta format 3 yang membedakan NULL dan teks `\N`.
+- Semua CSV diperiksa terhadap checksum, manifest, jumlah baris, struktur
+  kutip, header, primary key dan kolom wajib. ZIP diproses dengan batas
+  dekompresi serta record; isi tidak diekstrak atau SQL arsip dieksekusi.
+- Restore memvalidasi ulang sebelum transaksi, mempertahankan primary key
+  existing, memakai SQL mode ketat, menjaga ID nol, dan memeriksa kolom
+  generated setelah dihitung database. Foreign key tetap aktif.
+- Referensi baru ke ID induk dengan isi berbeda dibatalkan, termasuk
+  composite key dan nomor dengan padding. Ini mencegah penggabungan anak
+  ke identitas lain hanya karena nomor ID sama.
+- Token acak dan hash berkas terikat ke sesi pratinjau. Nama arsip acak,
+  izin file privat, pembatalan unggahan, serta validasi input array diperbaiki.
+  Konfirmasi memakai formulir berlabel tanpa ketergantungan pada modal.
+- Folder persisten dapat dipilih melalui `BACKUP_STORAGE_PATH`. Konfigurasi
+  folder yang gagal tidak diam-diam beralih ke penyimpanan sementara.
+  UI menjelaskan bahwa merge tidak membatalkan seluruh pemulihan sebelumnya.
+- Pengujian pemulihan lokal mengisi setiap tabel operasional, termasuk
+  keluarga Bapak/Ibu, draft/revisi autosave, histori, keputusan, log dan
+  pengaturan. Seluruh isi cocok setelah restore ke database kosong dan
+  pemasangan ulang view/trigger. Ini **belum membuktikan restore cadangan
+  produksi nyata**; pemeriksaan itu tetap menjadi gate rilis.
+- Pemeriksaan HTTP mencakup ekspor, unggah, pratinjau, lintas sesi, perubahan
+  arsip, pembatalan, restore, replay, cadangan otomatis dan akses file privat.
+- Lulus: 98 assertion backup/pemulihan pada 30 tabel sintetis yang seluruhnya
+  berisi data, 42 assertion akun/data, dan 85 pemeriksaan HTTP. Lint 103 berkas
+  PHP dan build CSS/vendor bersih. Hash pemulihan tersimpan pada artefak lokal
+  `.sessions/audit-20261023/backup-*/results.json`.
+- Rincian batas, perilaku format legacy dan prosedur pemulihan tersedia
+  pada [BACKUP_RECOVERY.md](BACKUP_RECOVERY.md). Belum ada deployment batch ini.
+
 ## Menjalankan pemeriksaan lokal
 
 Database uji harus berjalan hanya pada `127.0.0.1:13317`, dengan akun fixture
@@ -140,6 +174,7 @@ php tests/run-tahsin-tests.php
 php tests/rapor-tests.php
 php tests/tahsin-reminder-tests.php
 php -d extension=pdo_mysql tests/security-integration.php
+php -d extension=pdo_mysql tests/backup-integration.php
 node tests/security-http-tests.cjs
 node tests/service-worker-tests.cjs
 node tests/n8n-reminder-workflow.cjs
