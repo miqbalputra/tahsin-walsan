@@ -86,7 +86,8 @@ mengulang validasi arsip; keberhasilan pratinjau tidak melewati validasi.
 4. Setelah data masuk, pasang ulang view/trigger dengan migrasi versi yang
    sama: `tahsinApplyMigration()`, `autosaveApplyMigration()`, dan
    `familyApplyMigration()`, serta `participantImportApplyMigration()` jika
-   versi aplikasi tersebut memakai jurnal impor. Jangan menjalankan reset atau migrasi bootstrap
+   versi aplikasi tersebut memakai jurnal impor, serta `participantApplyMigration()`
+   jika memakai jurnal formulir peserta. Jangan menjalankan reset atau migrasi bootstrap
    yang mengganti tabel/data. Helper migrasi bersifat additive.
 5. Bandingkan jumlah dan hash isi **setiap** tabel, primary key, serta relasi.
    Periksa pembacaan keluarga, presensi, histori, draft dan pengaturan.

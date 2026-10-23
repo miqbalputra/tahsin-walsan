@@ -4,6 +4,7 @@ require_once __DIR__ . '/csv_helper.php';
 require_once __DIR__ . '/alumni_archive_helper.php';
 require_once __DIR__ . '/data_induk_helper.php';
 require_once __DIR__ . '/database_helper.php';
+require_once __DIR__ . '/participant_identity_helper.php';
 
 const PARTICIPANT_IMPORT_COLUMNS = ['nama_bapak','no_hp','alamat','kategori','nama_anak','kelas','tempat_tahsin','ustadz_luar'];
 const PARTICIPANT_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
@@ -94,14 +95,7 @@ function participantImportRead($stream): array
 /** Read central mappings even when a partially applied family view is missing. */
 function participantImportManagedIds(PDO $pdo): array
 {
-    $ids = [];
-    foreach (['SELECT wali_santri_id FROM family_guardians',
-        "SELECT id FROM wali_santri WHERE data_induk_guardian_id IS NOT NULL AND data_induk_guardian_id<>''",
-        "SELECT wali_santri_id FROM santri_detail WHERE data_induk_student_id IS NOT NULL AND data_induk_student_id<>''"] as $sql) {
-        try { foreach ($pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN) as $id) $ids[(int)$id]=true; }
-        catch (PDOException $error) { if (!in_array($error->getCode(),['42S02','42S22'],true)) throw $error; }
-    }
-    return $ids;
+    return participantManagedIds($pdo);
 }
 
 function participantImportPlan(PDO $pdo, array $rows, string $sha256, string $sourceName, bool $lock=false): array
@@ -153,7 +147,7 @@ function participantImportApply(PDO $pdo, int $actorId, array $plan, array $choi
     foreach ($targets as $value) if (!is_string($value) || !preg_match('/^(?:new|skip|[1-9][0-9]{0,18})$/D',$value)) throw new InvalidArgumentException('Pilihan peserta tidak valid.');
     ksort($targets);
     $requestHash=hash('sha256',json_encode([$plan['source_sha256'],$plan['rows'],$targets,$classPolicy,$profilePolicy],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
-    $lockName='participant-import:' . substr(hash('sha256',(string)$pdo->query('SELECT DATABASE()')->fetchColumn()),0,40);
+    $lockName=participantWriteLockName($pdo);
     $lock=$pdo->prepare('SELECT GET_LOCK(?,5)'); $lock->execute([$lockName]);
     if ((int)$lock->fetchColumn()!==1) throw new RuntimeException('Impor lain sedang diproses. Tunggu sebentar lalu coba lagi.');
     $originalSqlMode=null;

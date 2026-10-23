@@ -20,7 +20,7 @@ function participantImportValidateChanges(array $changes): void
     }
 }
 
-function participantImportRenderChange(array $change): void
+function participantImportRenderChange(array $change, string $operationLabel = 'impor'): void
 {
     $before=$change['before']['parent']??null;
     $after=$change['after_parent']??null;
@@ -34,10 +34,10 @@ function participantImportRenderChange(array $change): void
             <p class="text-slate-600 mt-2">Tidak ada perubahan pada peserta ini. Data yang sudah cocok dipertahankan.</p>
         <?php else: ?>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3">
-            <?php foreach (['Sebelum impor'=>$before,'Sesudah impor'=>$after] as $title=>$parent): ?>
+            <?php foreach (['Sebelum ' . $operationLabel=>$before,'Sesudah ' . $operationLabel=>$after] as $title=>$parent): ?>
                 <section class="border border-slate-200 rounded-xl p-4">
                     <h4 class="font-bold mb-3"><?= appEscape($title) ?></h4>
-                    <?php if (!is_array($parent)): ?><p class="text-slate-600">Peserta baru; belum ada data sebelum impor.</p>
+                    <?php if (!is_array($parent)): ?><p class="text-slate-600">Peserta baru; belum ada data sebelumnya.</p>
                     <?php else: ?>
                     <dl class="space-y-3 text-sm">
                         <?php foreach (['nama_bapak'=>'Nama wali','no_hp'=>'Nomor telepon','alamat'=>'Alamat','kategori'=>'Kategori','tempat_tahsin'=>'Tempat tahsin luar','ustadz_luar'=>'Pengajar luar','status_aktif'=>'Status','lanjut_tahsin'=>'Catatan lanjut tahsin'] as $column=>$label):
@@ -48,7 +48,7 @@ function participantImportRenderChange(array $change): void
                         <?php endforeach; ?>
                     </dl>
                     <?php endif; ?>
-                    <?php $children=$title==='Sebelum impor'?($change['before']['children']??[]):($change['after_children']??[]); ?>
+                    <?php $children=$title==='Sebelum ' . $operationLabel?($change['before']['children']??[]):($change['after_children']??[]); ?>
                     <h5 class="font-bold mt-4 mb-2">Anak</h5>
                     <?php if (!$children): ?><p class="text-sm text-slate-600">Belum ada data anak.</p><?php else: ?>
                     <ul class="list-disc pl-5 text-sm space-y-2"><?php foreach ($children as $child): ?><li>ID <?= (int)$child['id'] ?>: <?= appEscape($child['nama_anak']) ?> — <?= appEscape(($child['kelas']??'')?:'kelas belum diisi') ?></li><?php endforeach; ?></ul>

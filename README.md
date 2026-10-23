@@ -542,6 +542,10 @@ Impor CSV peserta kini memakai pratinjau, pilihan identitas, pengulangan tanpa
 anak ganda, dan jurnal sebelum/sesudah. Persiapan skema serta perilaku pembaruan
 ada pada [panduan impor peserta](docs/PARTICIPANT_IMPORT.md).
 
+Formulir tambah/edit/arsip mempertahankan ID anak, memakai jurnal perubahan,
+dan memisahkan penempatan Bapak/Ibu. Persiapan migrasi dan alur pemulihan ada
+pada [panduan pengelolaan peserta](docs/PARTICIPANT_MANAGEMENT.md).
+
 ### Arsip Wali Alumni Otomatis
 
 Wali akan otomatis diarsipkan setelah seluruh anaknya berstatus `Lulus`. Sistem hanya mengubah `status_aktif` wali dan menandai membership halaqoh dengan `archived_at`; data wali, anak, presensi, dan relasi lama tetap tersimpan.

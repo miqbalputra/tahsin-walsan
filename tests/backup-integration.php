@@ -3,6 +3,7 @@
 if (PHP_SAPI !== 'cli') exit;
 require_once __DIR__ . '/../includes/backup_helper.php';
 require_once __DIR__ . '/../includes/participant_import_helper.php';
+require_once __DIR__ . '/../includes/participant_helper.php';
 function reportApplicationError(Throwable $error,$context=''): void { $GLOBALS['backup_test_last_error']='[' . $context . '] ' . $error->getMessage(); }
 foreach (['tahsin','autosave','family'] as $name) require_once __DIR__ . '/../includes/' . $name . '_migration_helper.php';
 putenv('DATA_INDUK_ENABLED=0');
@@ -37,6 +38,7 @@ tahsinApplyMigration($pdo);
 autosaveApplyMigration($pdo);
 familyApplyMigration($pdo);
 participantImportApplyMigration($pdo);
+participantApplyMigration($pdo);
 $largeJournalRows=[];
 for ($index=0;$index<1500;$index++) $largeJournalRows[]=['nama_bapak'=>'Keluarga '.($index%500),'no_hp'=>'08123456789','alamat'=>str_repeat('x',1024),'kategori'=>'reguler','nama_anak'=>'Anak '.$index,'kelas'=>'1A','tempat_tahsin'=>'','ustadz_luar'=>''];
 $largeJournalJson=json_encode($largeJournalRows,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
@@ -60,6 +62,7 @@ INSERT INTO tahsin_autosave_drafts(user_id,halaqoh_id,session_date,wali_id,revis
 INSERT INTO tahsin_autosave_operations(user_id,operation_id,request_hash,response_json) VALUES(2,'fixture-operation',REPEAT('e',64),'{\"ok\":true}');
 INSERT INTO tahsin_autosave_revisions(wali_id,session_date,revision) VALUES(1,'2026-10-18',3);
 INSERT INTO tahsin_autosave_sessions(halaqoh_id,session_date,completed_by,completed_at,fingerprint) VALUES(1,'2026-10-11',2,'2026-10-11 10:00:00',REPEAT('f',64));");
+participantApply($pdo,1,'save',1,['kategori'=>'reguler','tempat_tahsin'=>'','ustadz_luar'=>''],participantFingerprint(participantSnapshot($pdo,1)),bin2hex(random_bytes(16)));
 $insert = $pdo->prepare('INSERT INTO backup_probe VALUES(?,?,?,?)');
 foreach ([null,'','\\N','\\\\N','\\','trailing \\','quote \\" test',"baris pertama\nbaris kedua\r\nأحمد, \"Uji\"",'0'] as $index=>$value) $insert->execute([$index+1,$value,$value,"\0\xff\"binary,\n\\"]);
 $pdo->prepare('INSERT INTO legacy_probe VALUES(?,?)')->execute([1,'legacy \\" quote']);
@@ -116,7 +119,7 @@ $freshRecovery=bkSnapshot($target);
 $repeat=executeMergeRestore($target,$directory.'/original.zip',$tables,'\\N');
 bkCheck($repeat['error']===null && array_sum($repeat['counts'])===0,'Repeated merge is idempotent');
 bkCheck(bkSnapshot($target)===$before,'Repeated merge preserves every existing row');
-tahsinApplyMigration($target); autosaveApplyMigration($target); familyApplyMigration($target); participantImportApplyMigration($target);
+tahsinApplyMigration($target); autosaveApplyMigration($target); familyApplyMigration($target); participantImportApplyMigration($target); participantApplyMigration($target);
 bkCheck(bkSnapshot($target)===$before,'Reinstalling views and triggers after fresh recovery preserves table contents');
 bkCheck($target->query('SELECT * FROM family_children ORDER BY wali_santri_id,nama_anak')->fetchAll(PDO::FETCH_ASSOC)===$pdo->query('SELECT * FROM family_children ORDER BY wali_santri_id,nama_anak')->fetchAll(PDO::FETCH_ASSOC),'Recovered family view retains shared father/mother child links without duplication');
 $cases=[

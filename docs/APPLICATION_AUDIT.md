@@ -194,10 +194,49 @@ PHP tidak mengganti prototipe tersebut.
   `memory_limit=256M`. Hasil tersimpan pada artefak `.sessions/audit-20261023/`.
 - Diperlukan migrasi additive `migrate_participant_import.php --apply` sebelum
   fitur rilis. Panduan ada pada [PARTICIPANT_IMPORT.md](PARTICIPANT_IMPORT.md).
-- **Belum dideploy.** CRUD peserta melalui formulir lama dan penggabungan
-  duplikat masih perlu diperbaiki: penggantian anak dapat mengganti ID,
-  sedangkan merge belum menangani semua draft/baseline serta mapping pusat.
-  Tampilan browser dan pemulihan cadangan produksi nyata juga belum terbukti.
+- **Belum dideploy.** Pada checkpoint impor ini, formulir peserta lama masih
+  dapat mengganti ID anak; perbaikannya dicatat pada batch berikutnya.
+  Penggabungan duplikat belum menangani semua draft/baseline serta mapping
+  pusat. Tampilan browser dan pemulihan cadangan produksi nyata belum terbukti.
+
+## Perubahan dan bukti batch formulir peserta
+
+- Mutasi formulir dipisahkan ke `participant_helper.php`. Tambah/edit/arsip
+  memakai halaman HTML native, label input, retensi isian pada error dan
+  redirect setelah simpan. Filter daftar juga dapat digunakan tanpa JavaScript.
+- Anak yang diedit mempertahankan ID. Daftar anak yang terpotong ditolak,
+  bukan dianggap ingin dihapus. Penghapusan spesifik perlu konfirmasi dan
+  ditolak bila anak direferensikan foreign key, termasuk CASCADE/composite.
+  Salinan sebelum penghapusan tersimpan dalam jurnal.
+- Nilai NULL dan spasi existing yang tidak diedit dipertahankan. Formulir
+  lengkap dengan 100 anak diperiksa tanpa pergantian ID atau penambahan ganda.
+- Penempatan Bapak/Ibu dipisah. Perubahan satu program mempertahankan program
+  lain; memilih halaqoh yang sama tidak menutup/membuka interval roster lagi.
+  Daftar peserta menampilkan keanggotaan aktif yang tersedia, dipaginasi 50
+  peserta dengan filter dipertahankan pada tautan halaman. Seluruh anak dapat
+  dibaca, termasuk kelas NULL dan daftar panjang tanpa pemotongan agregat SQL.
+- Arsip hanya mengubah status serta menutup keanggotaan. Presensi, anak dan
+  draft dipertahankan. Aktivasi kembali eksplisit memerlukan anak sekolah
+  aktif; aturan seluruh anak Lulus tetap berlaku. Catatan Lanjut Tahsin lama
+  dipertahankan.
+- Mapping keluarga/UUID wali/anak dan mode Data Induk dilindungi langsung.
+  Perlindungan tetap berlaku saat konfigurasi pusat belum lengkap, integrasi
+  dimatikan atau view keluarga hilang. Pengaturan lokal tetap dapat diedit.
+- Fingerprint, token sesi, pemeriksaan peran terkini, lock bersama impor dan
+  transaksi menolak formulir basi, token lintas sesi, serta pengulangan operasi.
+  Kegagalan penyimpanan jurnal membatalkan seluruh mutasi dan trigger histori.
+- Migrasi additive `migrate_participant_management.php --apply` menambah jurnal
+  sebelum/sesudah. Riwayat memiliki pagination, rincian yang dapat dibaca dan
+  unduhan JSON privat. Panduan ada di
+  [PARTICIPANT_MANAGEMENT.md](PARTICIPANT_MANAGEMENT.md).
+- Lulus: 48 assertion service peserta, 76 assertion impor, 42 assertion akun/data,
+  dan 143 pemeriksaan HTTP. Pengujian backup
+  mencakup jurnal di antara 32 tabel terisi; 98 assertion pemulihan dan hash
+  seluruh tabel lulus. Pengujian PHP memakai `memory_limit=256M`; lint 117
+  berkas dan build aset lulus. Artefak berada di `.sessions/audit-20261023/`.
+- **Belum dideploy.** Pemeriksaan browser, Apache/runtime PHP 8.2, pemulihan
+  cadangan produksi nyata, penggabungan duplikat dan fitur lain dalam matriks
+  tetap harus diselesaikan sebelum klaim audit lengkap atau rilis keseluruhan.
 
 ## Menjalankan pemeriksaan lokal
 
@@ -213,6 +252,7 @@ php tests/tahsin-reminder-tests.php
 php -d extension=pdo_mysql tests/security-integration.php
 php -d extension=pdo_mysql tests/backup-integration.php
 php -d extension=pdo_mysql -d memory_limit=256M tests/participant-import-integration.php
+php -d extension=pdo_mysql -d memory_limit=256M tests/participant-management-integration.php
 node tests/security-http-tests.cjs
 node tests/service-worker-tests.cjs
 node tests/n8n-reminder-workflow.cjs
