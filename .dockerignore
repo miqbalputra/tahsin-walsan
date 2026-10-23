@@ -19,3 +19,4 @@ outputs/
 .codex-build/
 next/
 **/__pycache__/
+dev-router.php

@@ -99,7 +99,7 @@ npm run build
 mysql -u root -p < database.sql
 
 # 5. Jalankan
-php -S localhost:8000
+php -S 127.0.0.1:8000 dev-router.php
 ```
 
 ### Docker / Coolify
@@ -509,6 +509,9 @@ Berisi detail setiap endpoint, parameter, contoh request/response, dan panduan t
 ---
 
 ## 🛡️ Operasional Production Aman
+
+Status audit, cakupan fitur yang masih harus diverifikasi, dan perintah
+pengujian lokal tersedia di [Audit Aplikasi](docs/APPLICATION_AUDIT.md).
 
 Fitur Rekap Lengkap membutuhkan migrasi additive histori roster, capaian awal, dan verifikasi. Ikuti [panduan penerapan dan pengujian](docs/TAHSIN_REPORTING_ROLLOUT.md). Data kosong tidak dianggap Alfa; angka kehadiran yang belum lengkap disertai indikator kualitas data.
 

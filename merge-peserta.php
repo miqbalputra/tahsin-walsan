@@ -15,9 +15,7 @@ $mergeResult = null;
 
 // Handle Merge Action
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
-    }
+    requireValidCsrfToken($_POST['csrf_token'] ?? '');
 
     $action = $_POST['action'] ?? '';
     $keep_id = intval($_POST['keep_id'] ?? 0);

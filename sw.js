@@ -1,6 +1,7 @@
-const CACHE_NAME = 'tahsin-presensi-v6';
+const CACHE_PREFIX = `tahsin-presensi-${encodeURIComponent(self.registration.scope)}-`;
+const CACHE_NAME = `${CACHE_PREFIX}v7`;
 
-// Hanya cache aset STATIS — JANGAN cache file PHP
+// Public assets only. Draft recovery uses IndexedDB, independently of this cache.
 const STATIC_ASSETS = [
     'manifest.json',
     'icon-512.png',
@@ -10,56 +11,52 @@ const STATIC_ASSETS = [
     'assets/js/tahsin-autosave.js?v=1',
     'assets/css/tahsin-autosave.css?v=1'
 ];
+const STATIC_PATHS = new Set(STATIC_ASSETS.map(path => new URL(path, self.registration.scope).pathname));
 
-// Install: cache aset statis saja
 self.addEventListener('install', event => {
-    event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then(cache => cache.addAll(STATIC_ASSETS))
-            // Wait for existing tabs to close: never replace an active draft editor.
-    );
+    // An open editor keeps its worker until the user closes its tabs.
+    event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS)));
 });
 
-// Activate: hapus cache lama
 self.addEventListener('activate', event => {
-    event.waitUntil(
-        caches.keys().then(keys =>
-            Promise.all(
-                keys.filter(key => key !== CACHE_NAME)
-                    .map(key => caches.delete(key))
-            )
-        )
-    );
+    event.waitUntil(caches.keys().then(keys => Promise.all(
+        keys.filter(key => key !== CACHE_NAME && (key.startsWith(CACHE_PREFIX)
+            || (new URL(self.registration.scope).pathname === '/' && /^tahsin-presensi-v\d+$/.test(key))))
+            .map(key => caches.delete(key))
+    )));
 });
 
-// Fetch: Network-first untuk halaman PHP, cache-first untuk aset statis
 self.addEventListener('fetch', event => {
-    const url = new URL(event.request.url);
+    const request = event.request;
+    const url = new URL(request.url);
+    if (request.method !== 'GET' || url.origin !== self.location.origin) return;
 
-    // Halaman PHP → SELALU ambil dari network (agar session diperiksa)
-    if (url.pathname.endsWith('.php') || url.pathname === '/' || url.pathname.endsWith('/')) {
-        event.respondWith(
-            fetch(event.request)
-                .catch(() => {
-                    // Offline fallback: jika network gagal, coba tampilkan cache
-                    return caches.match(event.request);
-                })
-        );
+    if (STATIC_PATHS.has(url.pathname)) {
+        event.respondWith((async () => {
+            const cache = await caches.open(CACHE_NAME);
+            const cached = await cache.match(request);
+            if (cached) return cached;
+            const response = await fetch(request);
+            if (response.ok && response.type !== 'opaque') {
+                try { await cache.put(request, response.clone()); }
+                catch (_) { /* Storage quota must not prevent an asset loading. */ }
+            }
+            return response;
+        })());
         return;
     }
 
-    // Aset statis → cache-first (lebih cepat)
-    event.respondWith(
-        caches.match(event.request)
-            .then(cached => cached || fetch(event.request).then(response => {
-                // Cache response baru untuk request berikutnya
-                if (response.ok) {
-                    const clone = response.clone();
-                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-                }
-                return response;
-            }))
-            .catch(() => fetch(event.request))
-    );
+    if (request.mode === 'navigate') {
+        event.respondWith(fetch(request).catch(() => new Response(
+            '<!doctype html><html lang="id"><meta charset="utf-8">'
+            + '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            + '<title>Koneksi terputus — Presensi Tahsin</title>'
+            + '<body><main style="max-width:36rem;margin:3rem auto;padding:1.5rem;font:1rem/1.6 system-ui">'
+            + '<h1>Koneksi sedang terputus</h1><p>Halaman ini perlu koneksi internet. '
+            + 'Draft presensi yang sudah tersimpan di perangkat tetap tersedia.</p>'
+            + '<p>Periksa koneksi, lalu <a href="">buka kembali halaman ini</a>.</p></main></body></html>',
+            { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } }
+        )));
+    }
 });
 

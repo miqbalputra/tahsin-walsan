@@ -8,9 +8,7 @@ checkRole(['admin', 'pj_tahfidz']);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // CSRF Validation
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
-    }
+    requireValidCsrfToken($_POST['csrf_token'] ?? '');
 
     if (isset($_FILES['file_csv'])) {
         $file = $_FILES['file_csv']['tmp_name'];

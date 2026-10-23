@@ -124,7 +124,7 @@ function authenticate()
     $headers = array_change_key_case(function_exists('getallheaders') ? getallheaders() : [], CASE_LOWER);
     $key = $headers['x-api-key'] ?? $_GET['api_key'] ?? $_POST['api_key'] ?? '';
 
-    if ($key !== HERMES_API_KEY) {
+    if (!is_string($key) || !hash_equals(HERMES_API_KEY, $key)) {
         jsonError(401, 'Unauthorized. Provide valid API key via X-API-Key header or api_key parameter.');
     }
 }

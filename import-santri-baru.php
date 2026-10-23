@@ -243,9 +243,7 @@ function computeDispositions(PDO $pdo, array $csvRows): array
 // POST handler
 // ---------------------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
-    }
+    requireValidCsrfToken($_POST['csrf_token'] ?? '');
     $action = $_POST['action'] ?? '';
 
     if ($action === 'upload' && isset($_FILES['file_csv'])) {

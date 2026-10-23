@@ -21,9 +21,7 @@ $error = $_GET['err'] ?? '';
 
 // Handle Update (Admin & PJ Tahfidz only)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($role, ['admin', 'pj_tahfidz'])) {
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
-    }
+    requireValidCsrfToken($_POST['csrf_token'] ?? '');
 
     $presensi_id = $_POST['presensi_id'] ?? null;
     $wali_id = $_POST['wali_id'] ?? null;

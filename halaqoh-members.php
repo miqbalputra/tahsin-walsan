@@ -29,9 +29,7 @@ $message = '';
 // Handle Add/Remove Member
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // CSRF Validation
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
-    }
+    requireValidCsrfToken($_POST['csrf_token'] ?? '');
 
     $action = $_POST['action'] ?? '';
     $wali_id = $_POST['wali_santri_id'] ?? null;

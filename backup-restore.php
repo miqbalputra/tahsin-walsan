@@ -516,7 +516,8 @@ $preview = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        $err = 'Invalid CSRF token.';
+        http_response_code(403);
+        $err = 'Sesi keamanan formulir berubah. Buka kembali halaman dan pilih ulang berkas cadangan. Permintaan ini belum diproses.';
     } elseif ($action === 'preview') {
         if (!isset($_FILES['backup_file']) || $_FILES['backup_file']['error'] !== UPLOAD_ERR_OK) {
             $err = 'Upload gagal. Pastikan file ZIP dipilih.';

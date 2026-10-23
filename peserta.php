@@ -16,9 +16,7 @@ $error = $_GET['err'] ?? '';
 // Handle Create/Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // CSRF Validation
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
-    }
+    requireValidCsrfToken($_POST['csrf_token'] ?? '');
 
     $action = $_POST['action'] ?? '';
     $id = $_POST['id'] ?? null;
