@@ -95,6 +95,39 @@ PHP tidak mengganti prototipe tersebut.
 - Checkpoint kode berada pada branch lokal `codex/application-audit-20261023`;
   branch produksi `main` tetap menunjuk rilis sebelum audit.
 
+## Perubahan dan bukti batch rapor
+
+- `print-rapor.php` tidak lagi menjalankan isi template database melalui
+  `eval`. Desain memakai HTML/CSS dengan penanda data yang diisi sesudah
+  validasi; data peserta, alasan, capaian dan identitas pengesah di-escape.
+- Akses dan hitungan rapor memakai assembler rekap bersama: kepemilikan
+  sesi, duplikasi, catatan konflik, libur dan akhir periode diterapkan sama.
+  Guru yang mengganti ID peserta pada URL tidak dapat membaca kelompok lain.
+- Assembler bersama juga menutup jalur bocor melalui `record` dan capaian
+  terakhir ketika sumber terpilih berasal dari kelompok guru lain, meskipun
+  roster sesi berada pada guru yang sedang masuk. Catatan ditandai konflik
+  untuk ditinjau; hak admin atas sumber tersebut tetap tersedia.
+- Pengaturan rapor memiliki desain standar siap pakai, label formulir,
+  pratinjau dengan peserta yang benar-benar tersedia, pesan gagal dan PRG.
+  Penyimpanan memakai transaksi/upsert agar kunci yang belum disemai ikut
+  tersimpan. Setiap template yang diganti dicadangkan secara utuh.
+- Template PHP standar lama dikenali tanpa dieksekusi. Template kustom lama
+  yang belum cocok tetap tersimpan dan dapat diunduh admin sebagai teks;
+  rapor menggunakan desain standar sementara dengan pemberitahuan.
+  **Sebelum rilis, periksa template produksi dan sesuaikan desain kustom
+  yang masih memakai PHP.** Belum ada bukti kesamaan visual desain produksi.
+- Lulus: 48 assertion renderer/validasi rapor, 153 regresi pelaporan,
+  42 assertion akun/data, dan 59 pemeriksaan HTTP. Suite HTTP mencakup
+  pembatasan kelompok, penolakan template PHP, XSS, CSRF, penyimpanan kunci
+  baru, unduhan cadangan, serta kesamaan hash isi lima tabel domain sebelum
+  dan sesudah operasi rapor. Semua memakai fixture sintetis lokal.
+- Regresi integrasi setelah perubahan assembler: 41 assertion pelaporan
+  MySQL/MariaDB, 39 pengingat/finalisasi, serta 20 integrasi pengingat lulus.
+- Build CSS/vendor berhasil. Bukti lokal ini belum membuktikan tampilan
+  browser, runtime PHP 8.2 pada image, atau aturan Apache produksi.
+- Lint 100 berkas PHP bersih dan `git diff --check` lulus.
+- Batch rapor belum didorong ke remote dan belum dideploy.
+
 ## Menjalankan pemeriksaan lokal
 
 Database uji harus berjalan hanya pada `127.0.0.1:13317`, dengan akun fixture
@@ -104,6 +137,7 @@ mengaktifkannya, gunakan flag `-d extension=pdo_mysql` seperti di bawah.
 
 ```powershell
 php tests/run-tahsin-tests.php
+php tests/rapor-tests.php
 php tests/tahsin-reminder-tests.php
 php -d extension=pdo_mysql tests/security-integration.php
 node tests/security-http-tests.cjs

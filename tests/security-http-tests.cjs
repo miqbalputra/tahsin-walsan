@@ -40,9 +40,15 @@ async function login(username) {
   return jar;
 }
 function localSql(sql) {
-  const program = '$p=new PDO("mysql:host=127.0.0.1;port=13317;dbname='+database+';charset=utf8mb4","root","tahsin_local_test",[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);$p->exec('+JSON.stringify(sql)+');';
+  const program = '$p=new PDO("mysql:host=127.0.0.1;port=13317;dbname='+database+';charset=utf8mb4","root","tahsin_local_test",[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);$p->exec(base64_decode("'+Buffer.from(sql).toString('base64')+'"));';
   const result = spawnSync(php,['-d','extension=pdo_mysql','-r',program],{cwd:root,encoding:'utf8',windowsHide:true});
   assert.equal(result.status,0,result.stderr);
+}
+function domainDigest() {
+  const code = '$p=new PDO("mysql:host=127.0.0.1;port=13317;dbname='+database+';charset=utf8mb4","root","tahsin_local_test",[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);$rows=[];foreach(["wali_santri","santri_detail","halaqoh","halaqoh_members","presensi"] as $t){$rows[$t]=$p->query("SELECT * FROM `$t` ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);}echo hash("sha256",json_encode($rows));';
+  const result = spawnSync(php,['-d','extension=pdo_mysql','-r',code],{cwd:root,encoding:'utf8',windowsHide:true});
+  assert.equal(result.status,0,result.stderr);
+  return result.stdout;
 }
 (async()=>{
   let ready = false;
@@ -83,6 +89,52 @@ function localSql(sql) {
   const duplicate = await req('/users.php',admin,{csrf_token:token,action:'save',username:'http_created',nama_lengkap:'HTTP Uji',role:'ustadz',password:'AuditTest-2026'});
   check(duplicate.status===200 && duplicate.body.includes('Nama pengguna sudah dipakai'),'Duplicate username has a visible error');
   const pj = await login('audit_pj');
+  // Report routes share the recap's ownership and canonical-session rules.
+  localSql(`CREATE TABLE settings(id INT AUTO_INCREMENT PRIMARY KEY,setting_key VARCHAR(50) UNIQUE NOT NULL,setting_value LONGTEXT);
+    INSERT INTO users(id,username,password,nama_lengkap,role) SELECT 100,'other_teacher',password,'Guru Lain','ustadz' FROM users WHERE id=3;
+    INSERT INTO halaqoh(id,nama_halaqoh,ustadz_id) VALUES(100,'Kelompok Lain',100);
+    INSERT INTO wali_santri(id,nama_bapak) VALUES(100,'RAHASIA_WALI_LAIN');
+    INSERT INTO halaqoh_members(halaqoh_id,wali_santri_id) VALUES(100,100);
+    UPDATE presensi SET status='S',alasan='<img src=x onerror=alert(1)>' WHERE wali_santri_id=1;
+    INSERT INTO presensi(halaqoh_id,wali_santri_id,tanggal,status,alasan) SELECT halaqoh_id,wali_santri_id,tanggal,status,alasan FROM presensi WHERE wali_santri_id=1;
+    UPDATE wali_santri SET nama_bapak='Wali <script>alert(1)</script>' WHERE id=1;`);
+  const beforeReportData = domainDigest();
+  const reportRoute = '/print-rapor.php?wali_santri_id=1&start_date=2026-10-01&end_date=2026-10-31';
+  check((await req(reportRoute)).status===302,'Anonymous report request requires login');
+  const reportTeacher = await login('audit_teacher');
+  const ownReport = await req(reportRoute,reportTeacher);
+  check(ownReport.status===200 && ownReport.body.includes('&lt;script&gt;') && ownReport.body.includes('&lt;img src=x onerror=alert(1)&gt;'),'Teacher can print own report with escaped student and attendance data');
+  check(ownReport.body.includes('Sakit: <b>1</b>') && !ownReport.body.includes('Sakit: <b>2</b>'),'Identical source records count as one canonical session in the report');
+  check(/script-src 'self'/.test(ownReport.headers.get('content-security-policy')) && /no-store/.test(ownReport.headers.get('cache-control')),'Printed report has restrictive CSP and is never cached');
+  const otherReport = await req(reportRoute.replace('id=1&','id=100&'),reportTeacher);
+  check(otherReport.status===404 && !otherReport.body.includes('RAHASIA_WALI_LAIN'),'Teacher cannot read another group report by changing the participant ID');
+  check((await req(reportRoute.replace('id=1&','id=100&'),admin)).body.includes('RAHASIA_WALI_LAIN'),'Admin can still print reports across groups');
+  check((await req('/print-rapor.php?wali_santri_id[]=1',admin)).status===422,'Array participant ID receives actionable validation instead of a crash');
+  check((await req(reportRoute.replace('2026-10-01','2026-02-30'),admin)).status===422,'Invalid report date is rejected');
+  check((await req('/pengaturan-rapor.php',reportTeacher)).status===302 && (await req('/pengaturan-rapor.php',pj)).status===302,'Only admin can edit or download report designs');
+  let editor = await req('/pengaturan-rapor.php',admin);
+  check(editor.status===200 && editor.body.includes('Desain standar — siap cetak') && editor.body.includes('for="rapor-name"'),'Report editor opens without preseeded settings and offers a labelled standard design');
+  const reportToken = csrf(editor.body);
+  check((await req('/pengaturan-rapor.php',admin,{'csrf_token[]':'bad'})).status===403,'Malformed CSRF cannot modify a report design');
+  const unsafe = "<?php echo 'EXECUTED_PHP_SENTINEL'; ?>";
+  localSql("INSERT INTO settings(setting_key,setting_value) VALUES('rapor_template','"+unsafe.replaceAll("'","''")+"')");
+  const legacyReport = await req(reportRoute,admin);
+  check(legacyReport.status===200 && !legacyReport.body.includes('EXECUTED_PHP_SENTINEL') && legacyReport.body.includes('Desain lama masih tersimpan'),'Stored legacy PHP is never executed and safe fallback is explained');
+  const legacyDownload = await req('/pengaturan-rapor.php?download=current',admin);
+  check(legacyDownload.status===200 && legacyDownload.body===unsafe && /text\/plain/.test(legacyDownload.headers.get('content-type')),'Original legacy template remains downloadable as inert text');
+  const badSave = await req('/pengaturan-rapor.php',admin,{csrf_token:reportToken,design_mode:'custom',template_content:unsafe,pj_tahfidz_name:'PJ Uji',pj_tahfidz_title:'PJ Tahfidz'});
+  check(badSave.status===422 && badSave.body.includes('Kode PHP tidak diperbolehkan'),'New PHP template is rejected with a visible error');
+  check((await req('/pengaturan-rapor.php?download=current',admin)).body===unsafe,'Rejected template save leaves the previous template byte-for-byte intact');
+  const custom = '<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Rapor {{nama_wali}}</title></head><body><h1>{{nama_wali}}</h1><p>{{nama_pengesah}} — {{jabatan_pengesah}}</p><p>Sakit {{sakit}}</p>{{riwayat_tabel}}</body></html>';
+  const savedDesign = await req('/pengaturan-rapor.php',admin,{csrf_token:reportToken,design_mode:'custom',template_content:custom,pj_tahfidz_name:'Pengesah Baru',pj_tahfidz_title:'Penanggung Jawab'});
+  check(savedDesign.status===302,'Valid HTML template saves with redirect');
+  editor = await req('/pengaturan-rapor.php',admin);
+  const backupKey = editor.body.match(/value="(rapor_backup_\d{14}_[a-f0-9]{8})"/)?.[1];
+  check(backupKey && (await req('/pengaturan-rapor.php?download='+backupKey,admin)).body===unsafe,'Replacing a design preserves the exact original in a separate downloadable backup');
+  const customReport = await req(reportRoute,admin);
+  check(customReport.status===200 && customReport.body.includes('Pengesah Baru') && customReport.body.includes('Penanggung Jawab') && customReport.body.includes('Sakit 1'),'Printed custom design uses saved signer, title and canonical totals');
+  check((await req('/pengaturan-rapor.php?download='+backupKey,reportTeacher)).status===302,'Teacher cannot download template backups');
+  check(domainDigest()===beforeReportData,'Printing and changing report settings preserve all participant, child, group, membership and attendance rows');
   localSql("UPDATE users SET role='kepsek' WHERE id=2");
   check((await req('/users.php',pj)).status===302,'Role changes revoke an existing management session');
   const teacher = await login('audit_teacher');
