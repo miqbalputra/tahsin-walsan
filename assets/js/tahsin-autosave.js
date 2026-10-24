@@ -4,6 +4,21 @@
   const clone = value => JSON.parse(JSON.stringify(value));
   const uuid = () => globalThis.crypto?.randomUUID?.() || 'op_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
   const labels = { H: 'Hadir', S: 'Sakit', I: 'Izin', A: 'Alfa' };
+  const pendingRecord = record => record?.kind !== 'archive' && record?.dirty === true;
+  const requiresExitWarning = rows => [...rows].some(row => row.dirty && (row.localError || row.persistedSequence < row.sequence));
+  function exportDrafts(records, userId) {
+    const copies = clone(records);
+    for (const record of copies) {
+      if (record.flight?.body) delete record.flight.body.csrf_token;
+      if (record.source_flight?.body) delete record.source_flight.body.csrf_token;
+    }
+    return JSON.stringify({format:'presensi-tahsin-device-drafts',version:1,user_id:userId,created_at:new Date().toISOString(),records:copies},null,2);
+  }
+  function downloadDrafts(records,userId,suffix='perangkat') {
+    const blob=new Blob([exportDrafts(records,userId)],{type:'application/json'}), url=URL.createObjectURL(blob), link=document.createElement('a');
+    link.href=url; link.download='draft-tahsin-'+userId+'-'+suffix+'.json';
+    document.body.append(link); link.click(); link.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
   function missing(p) {
     if (!p.status) return ['status kehadiran'];
     if (p.status === 'S' || p.status === 'I') return p.alasan.trim() ? [] : ['alasan/keterangan'];
@@ -61,13 +76,32 @@
         tx.onerror = tx.onabort = () => reject(tx.error || new Error('Draft belum tersimpan di HP.'));
       });
     }
-    async removeRecovered(key, sequence) {
+    async archive(value, reason) {
+      if (!this.db) throw new Error('Penyimpanan HP tidak tersedia.');
+      const archived={...clone(value),key:value.scope+':archive:'+uuid(),source_key:value.key,source_dirty:value.dirty,
+        kind:'archive',dirty:false,archive_reason:reason,archived_at:Date.now()};
+      return new Promise((resolve,reject) => {
+        const tx=this.db.transaction('drafts','readwrite');
+        tx.objectStore('drafts').add(archived);
+        tx.oncomplete=()=>resolve(archived);
+        tx.onerror=tx.onabort=()=>reject(tx.error || new Error('Salinan konflik belum tersimpan.'));
+      });
+    }
+    async archiveRecovered(key, sequence) {
       if (!this.db) return;
       return new Promise((resolve, reject) => {
         const tx = this.db.transaction('drafts', 'readwrite'), store = tx.objectStore('drafts');
-        const req = store.get(key);
-        req.onsuccess = () => { if (req.result?.sequence === sequence) store.delete(key); };
-        tx.oncomplete = () => resolve();
+        const req = store.get(key); let archived=false;
+        req.onsuccess = () => {
+          if (!req.result || req.result.sequence !== sequence || req.result.kind==='archive') return;
+          const original=req.result;
+          const copy={...clone(original),key:original.scope+':archive:'+uuid(),source_key:original.key,source_dirty:original.dirty,
+            kind:'archive',dirty:false,archive_reason:'recovered_into_another_editor',archived_at:Date.now()};
+          store.add(copy);
+          store.put({...copy,key:original.key});
+          archived=true;
+        };
+        tx.oncomplete = () => resolve(archived);
         tx.onerror = tx.onabort = () => reject(tx.error);
       });
     }
@@ -96,6 +130,48 @@
         tx.onerror = tx.onabort = () => reject(tx.error || new Error('Draft belum dapat diperbarui.'));
       });
     }
+    async delete(key) {
+      if (!this.db) throw new Error('Penyimpanan HP tidak tersedia.');
+      return new Promise((resolve, reject) => {
+        const tx = this.db.transaction('drafts', 'readwrite');
+        tx.objectStore('drafts').delete(key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = tx.onabort = () => reject(tx.error || new Error('Draft belum dapat dihapus.'));
+      });
+    }
+    /** Hapus seluruh salinan draft akun ini dari perangkat (opsi logout). */
+    async clearUser(userId) {
+      if (!this.db) throw new Error('Penyimpanan HP tidak tersedia.');
+      const records = await this.readUser(userId);
+      if (!records.length) return;
+      return new Promise((resolve, reject) => {
+        const tx = this.db.transaction('drafts', 'readwrite'), store = tx.objectStore('drafts');
+        for (const record of records) store.delete(record.key);
+        tx.oncomplete = () => resolve(records.length);
+        tx.onerror = tx.onabort = () => reject(tx.error || new Error('Draft belum dapat dihapus.'));
+      });
+    }
+    /** Buang salinan perangkat berumur lebih dari 30 hari (PII tidak menetap). */
+    async purgeExpired(userId, maxAgeMs = 30 * 24 * 60 * 60 * 1000) {
+      const records = await this.readUser(userId);
+      const cutoff = Date.now() - maxAgeMs;
+      const stale = records.filter(record => (record.saved_at || record.archived_at || 0) < cutoff).map(record => record.key);
+      if (!stale.length) return 0;
+      return new Promise((resolve, reject) => {
+        const tx = this.db.transaction('drafts', 'readwrite'), store = tx.objectStore('drafts');
+        for (const key of stale) store.delete(key);
+        tx.oncomplete = () => resolve(stale.length);
+        tx.onerror = tx.onabort = () => reject(tx.error || new Error('Pembersihan draft belum berhasil.'));
+      });
+    }
+  }
+
+  /** Tawarkan pembersihan salinan perangkat sebelum menuju halaman logout. */
+  async function offerDevicePurge(store, userId, proceed) {
+    if (confirm('Hapus juga salinan draft presensi dari perangkat ini?')) {
+      try { await store.clearUser(userId); } catch (_) { /* tetap lanjut keluar; server punya salinan resmi */ }
+    }
+    proceed();
   }
 
   // Non-editor pages recover pending operations across this user's sessions.
@@ -111,7 +187,14 @@
         link.textContent = ` Buka sesi ${parts[3]} →`; link.style.display = 'block'; root.append(link);
       }
     };
-    try { await store.open(); } catch (_) { show('Penyimpanan HP belum dapat dibaca. Buka sesi untuk memeriksa draft dan status server.'); return; }
+    const exportButton=document.getElementById('tahsin-export-pending');
+    if (exportButton) { exportButton.hidden=false; exportButton.disabled=true; }
+    exportButton?.addEventListener('click',async()=>{
+      try { downloadDrafts(await store.readUser(boot.user_id),boot.user_id); }
+      catch (_) { show('Cadangan perangkat belum dapat diunduh. Data belum diubah; buka kembali halaman atau hubungi pengelola.'); }
+    });
+    try { await store.open(); if (exportButton) exportButton.disabled=false; await store.purgeExpired(boot.user_id).catch(() => {}); }
+    catch (_) { show('Penyimpanan HP belum dapat dibaca. Tutup tab lama lalu buka kembali halaman, atau buka sesi untuk memeriksa status server.'); return; }
     const request = async (url, options = {}) => {
       const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 12000);
       try {
@@ -125,7 +208,12 @@
       if (busy || paused || document.hidden) return;
       busy = true; clearTimeout(timer); let pending = [];
       try {
-        pending = (await store.readUser(boot.user_id)).filter(r => r.dirty);
+        pending = (await store.readUser(boot.user_id)).filter(pendingRecord);
+        if (boot.enabled===false) {
+          if (pending.length) show(`${pending.length} perubahan perangkat dipertahankan. Autosave sedang dinonaktifkan; unduh cadangan untuk peninjauan.`,pending);
+          else root.hidden=true;
+          return;
+        }
         if (!pending.length) { root.hidden = true; delay = 1000; return; }
         show(`${pending.length} perubahan di HP sedang diperiksa dan dikirim otomatis.`, pending);
         for (const saved of pending) {
@@ -159,7 +247,7 @@
             } else throw e;
           }
         }
-        pending = (await store.readUser(boot.user_id)).filter(r => r.dirty);
+        pending = (await store.readUser(boot.user_id)).filter(pendingRecord);
         if (!pending.length) { show('✓ Seluruh perubahan tertunda sudah diterima server.'); delay = 1000; }
         else { show(`${pending.length} perubahan masih tertahan. Buka sesi untuk meninjau draft atau konflik.`, pending); timer = setTimeout(run, Math.min(30000, delay)); delay = Math.min(30000, delay * 2); }
       } catch (e) {
@@ -174,11 +262,12 @@
       if (!link || !link.getAttribute('href').includes('logout.php') || e.defaultPrevented) return;
       e.preventDefault();
       try {
-        const pending = (await store.readUser(boot.user_id)).filter(r => r.dirty);
-        if (!pending.length || confirm('Masih ada perubahan di HP yang belum diterima server. Draft tetap terikat akun ini. Keluar sekarang?')) location.href = link.href;
+        const pending = (await store.readUser(boot.user_id)).filter(pendingRecord);
+        if (pending.length && !confirm('Masih ada perubahan di HP yang belum diterima server. Draft tetap terikat akun ini. Keluar sekarang?')) return;
       } catch (_) {
-        if (confirm('Status draft di HP belum dapat diperiksa. Tetap keluar dari akun?')) location.href = link.href;
+        if (!confirm('Status draft di HP belum dapat diperiksa. Tetap keluar dari akun?')) return;
       }
+      await offerDevicePurge(store, boot.user_id, () => { location.href = link.href; });
     });
     await run();
   }
@@ -188,8 +277,12 @@
       this.root = root; this.boot = boot; this.rows = new Map(); this.store = new DraftStore();
       this.scope = [boot.user_id, boot.state.program, boot.halaqoh_id, boot.state.session_date].join(':');
       root.inert = true;
-      try { this.client = sessionStorage.getItem('tahsin-autosave-client') || uuid(); sessionStorage.setItem('tahsin-autosave-client', this.client); } catch (_) { this.client = uuid(); }
+      // A duplicated browser tab can inherit sessionStorage. Each editor
+      // needs its own key so its unsent fields cannot replace another tab.
+      this.client=uuid();
       this.active = 0; this.paused = false; this.query = ''; this.filter = 'all'; this.openId = null; this.completed = boot.state.completed_at;
+      this.contextChanged=false; this.orphanRecords=[];
+      this.beforeUnload=event=>{ if (requiresExitWarning(this.rows.values())) { event.preventDefault(); event.returnValue=true; } };
       for (const entry of boot.state.entries) {
         const el = root.querySelector(`[data-person="${entry.wali_id}"]`);
         if (!el) continue;
@@ -201,6 +294,7 @@
     }
     snapshot(row) {
       return { key: row.key, scope: this.scope, wali_id: row.id, tanggal: this.boot.tanggal, saved_at: Date.now(), payload: clone(row.payload), entry: clone(row.entry), sequence: row.sequence,
+        person_name:row.el.querySelector('h2')?.textContent || '',group_name:this.boot.group_name || '',
         dirty: row.dirty, flight: row.flight ? clone(row.flight) : null, conflict: row.conflict };
     }
     persist(row) {
@@ -218,9 +312,16 @@
       this.bind();
       try {
         await this.store.open();
+        await this.store.purgeExpired(this.boot.user_id).catch(() => {});
         const records = await this.store.read(this.scope);
+        const userRecords=await this.store.readUser(this.boot.user_id);
+        this.orphanRecords=userRecords.filter(saved=>{
+          const parts=saved.scope.split(':');
+          return pendingRecord(saved) && Number(parts[2])===this.boot.halaqoh_id && parts[3]===this.boot.state.session_date
+            && (saved.scope!==this.scope || !this.rows.has(saved.wali_id));
+        });
         for (const row of this.rows.values()) {
-          const candidates = records.filter(s => s.wali_id === row.id && s.dirty).sort((a, b) => (b.saved_at || 0) - (a.saved_at || 0));
+          const candidates = records.filter(s => s.wali_id === row.id && pendingRecord(s)).sort((a, b) => (b.saved_at || 0) - (a.saved_at || 0));
           const saved = candidates.find(s => s.key === row.key) || candidates[0];
           if (!saved) continue;
           if (saved.key !== row.key) row.recoveredSource = { key: saved.key, sequence: saved.sequence };
@@ -232,11 +333,13 @@
         }
       } catch (_) { this.banner('Penyimpanan HP belum tersedia. Autosave ke server tetap dicoba; perhatikan status setiap peserta.'); this.rows.forEach(r => { r.localError = true; }); }
       this.rows.forEach(row => { this.hydrate(row); this.render(row); if (row.dirty && !row.conflict) this.schedule(row, true); });
+      this.renderOrphans();
       this.refreshOverview();
       this.root.inert = false;
       this.root.dataset.ready = 'true';
     }
     bind() {
+      this.root.querySelector('[data-export-drafts]')?.removeAttribute('hidden');
       this.root.addEventListener('input', e => {
         if (e.target.matches('[data-search]')) { this.query = e.target.value.toLocaleLowerCase('id'); this.applyFilter(); return; }
         if (e.target.matches('[data-field]')) this.fieldChange(e.target);
@@ -267,6 +370,7 @@
         else if (button.hasAttribute('data-resolve') && row) this.resolve(row, button.dataset.resolve);
         else if (button.hasAttribute('data-show-summary')) this.showSummary();
         else if (button.hasAttribute('data-finalize')) this.finalize();
+        else if (button.hasAttribute('data-export-drafts')) this.download();
       });
       const dateForm = this.root.querySelector('.tas-date');
       dateForm?.addEventListener('submit', async e => {
@@ -283,10 +387,20 @@
       });
       document.addEventListener('click', async e => {
         const link = e.target.closest('a[href]');
-        if (!link || e.defaultPrevented || e.ctrlKey || e.metaKey || e.shiftKey || link.target === '_blank' || new URL(link.href).origin !== location.origin) return;
+        if (!link || e.defaultPrevented || e.ctrlKey || e.metaKey || e.shiftKey || link.hasAttribute('download') || link.target === '_blank' || new URL(link.href).origin !== location.origin) return;
+        if (link.getAttribute('href').includes('logout.php')) {
+          e.preventDefault();
+          if ([...this.rows.values()].some(r => r.dirty || r.inFlight)) {
+            if (!confirm('Ada perubahan menunggu server. Draft tetap terikat akun ini di HP. Keluar sekarang?')) return;
+            this.flush();
+            await Promise.all([...this.rows.values()].map(r => this.persist(r)));
+            if ([...this.rows.values()].some(r => r.dirty && r.localError) && !confirm('Ada perubahan belum tersimpan di HP. Tetap meninggalkan halaman?')) return;
+          }
+          await offerDevicePurge(this.store, this.boot.user_id, () => { location.href = link.href; });
+          return;
+        }
         if ([...this.rows.values()].some(r => r.dirty || r.inFlight)) {
           e.preventDefault();
-          if (link.getAttribute('href').includes('logout.php') && !confirm('Ada perubahan menunggu server. Draft tetap terikat akun ini di HP. Keluar sekarang?')) return;
           this.flush();
           await Promise.all([...this.rows.values()].map(r => this.persist(r)));
           if ([...this.rows.values()].some(r => r.dirty && r.localError) && !confirm('Ada perubahan belum tersimpan di HP. Tetap meninggalkan halaman?')) return;
@@ -313,7 +427,7 @@
       if (!open) this.schedule(row, true);
     }
     schedule(row, now = false) {
-      if (!row.dirty || row.conflict || this.paused || !this.boot.state.active) return;
+      if (!row.dirty || row.conflict || this.paused || this.contextChanged || !this.boot.state.active) return;
       clearTimeout(row.debounceTimer);
       if (now) { clearTimeout(row.maxTimer); row.maxTimer = null; row.due = true; this.pump(); return; }
       row.debounceTimer = setTimeout(() => this.schedule(row, true), 600);
@@ -321,7 +435,7 @@
     }
     flush() { this.rows.forEach(row => this.schedule(row, true)); }
     pump() {
-      if (this.paused) return;
+      if (this.paused || this.contextChanged) return;
       for (const row of this.rows.values()) {
         if (this.active >= 2) break;
         if (row.due && row.dirty && !row.inFlight && !row.conflict) this.send(row);
@@ -342,7 +456,9 @@
     async send(row) {
       this.active++; row.inFlight = true; row.due = false; clearTimeout(row.retryTimer);
       if (!row.flight) row.flight = { sequence: row.sequence, body: {
-        action: 'save', operation_id: uuid(), csrf_token: this.boot.csrf_token, halaqoh_id: this.boot.halaqoh_id,
+        // csrf_token sengaja tidak masuk flight body: token ditambahkan request()
+        // saat pengiriman agar token yang berotasi tidak ikut terarsip di perangkat.
+        action: 'save', operation_id: uuid(), halaqoh_id: this.boot.halaqoh_id,
         tanggal: this.boot.tanggal, program: this.boot.state.program, wali_id: row.id, payload: clone(row.payload),
         context_revision: row.entry.context_revision, official_revision: row.entry.official_revision, draft_revision: row.entry.draft_revision,
       } };
@@ -354,7 +470,7 @@
         if (!row.dirty) row.payload = clone(data.payload);
         await this.persist(row);
         if (!row.dirty && row.recoveredSource) {
-          try { await this.store.removeRecovered(row.recoveredSource.key, row.recoveredSource.sequence); row.recoveredSource = null; } catch (_) { /* Keep the recoverable source on storage failure. */ }
+          try { await this.store.archiveRecovered(row.recoveredSource.key, row.recoveredSource.sequence); row.recoveredSource = null; } catch (_) { /* Keep the recoverable source on storage failure. */ }
         }
         if (row.dirty) this.schedule(row, true);
       } catch (error) {
@@ -386,6 +502,13 @@
         try { response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal }); } finally { clearTimeout(timer); }
         if (!response.ok) { if ([401,403].includes(response.status)) { this.paused = true; this.banner('Sesi login berubah. Masuk kembali atau muat ulang halaman untuk memulihkan draft.', true); } return; }
         const result = await response.json(); if (result.status !== 'success') return;
+        const present=new Set(result.data.entries.map(entry=>entry.wali_id));
+        for (const row of this.rows.values()) {
+          if (present.has(row.id)) continue;
+          row.detached=true; row.conflict=true; row.serverEntry=null;
+          row.error='Peserta tidak lagi ada pada daftar peserta sesi ini. Isian perangkat dipertahankan dan dapat diunduh; muat ulang atau hubungi admin.';
+          await this.persist(row); this.render(row);
+        }
         for (const fresh of result.data.entries) {
           const row = this.rows.get(fresh.wali_id); if (!row || row.inFlight) continue;
           row.serverEntry = clone(fresh);
@@ -398,13 +521,22 @@
           }
           this.render(row);
         }
-        if (result.data.context_revision !== this.boot.state.context_revision) this.banner('Roster atau program berubah. Muat ulang halaman; draft di HP dipertahankan.');
+        if (result.data.context_revision !== this.boot.state.context_revision) {
+          this.contextChanged=true; this.completed=null;
+          this.banner('Daftar peserta, program, atau jadwal berubah. Pengiriman dihentikan sampai halaman dimuat ulang; isian di HP dipertahankan dan dapat diunduh.',false,true);
+          this.rows.forEach(row=>this.render(row));
+        }
       } catch (_) { /* Local drafts remain available during network outages. */ }
       finally { this.refreshing = false; this.flush(); }
     }
     async resolve(row, choice) {
       const fresh = row.serverEntry;
+      if (this.contextChanged || row.detached) { this.banner('Muat ulang sesi untuk memeriksa daftar peserta terbaru. Isian perangkat tetap tersedia.',false,true); return; }
       if (!fresh || fresh.blocked) { this.banner('Minta admin meninjau penempatan atau catatan yang berubah. Draft tetap tersedia.'); return; }
+      const sequence=row.sequence;
+      try { await this.store.archive({...this.snapshot(row),server_entry:clone(fresh)},'before_conflict_resolution'); }
+      catch (_) { this.banner('Salinan konflik belum tersimpan di perangkat. Isian belum diganti. Unduh cadangan isian lalu coba lagi atau hubungi pengelola.'); return; }
+      if (row.sequence!==sequence) { this.banner('Isian berubah saat salinan dibuat. Periksa kembali sebelum memilih versi.'); return; }
       if (choice === 'server') row.payload = clone(fresh.stale_draft ? fresh.official_payload : fresh.payload);
       row.entry = clone(fresh); row.flight = null; row.conflict = false; row.error = ''; row.sequence++; row.dirty = true;
       this.hydrate(row); await this.persist(row); this.render(row); this.schedule(row, true);
@@ -440,7 +572,7 @@
       const serverPayload = row.serverEntry?.stale_draft ? row.serverEntry.official_payload : row.serverEntry?.payload;
       row.el.querySelector('[data-server-version]').textContent = serverPayload ? 'Versi server: ' + this.describe(serverPayload) : 'Muat ulang halaman atau hubungi admin untuk meninjau keadaan server.';
       row.el.querySelectorAll('[data-resolve]').forEach(b => { b.hidden = !row.serverEntry || row.serverEntry.blocked; });
-      row.el.querySelectorAll('[data-field],[data-status],[data-result]').forEach(el => { el.disabled = !this.boot.state.active; });
+      row.el.querySelectorAll('[data-field],[data-status],[data-result]').forEach(el => { el.disabled = !this.boot.state.active || this.contextChanged || row.detached; });
       row.el.dataset.savingState = row.conflict ? 'conflict' : row.dirty ? 'pending' : row.entry.state;
       this.refreshOverview();
     }
@@ -468,28 +600,62 @@
       this.root.querySelector('[data-summary-counts]').textContent = Object.keys(counts).map(k => `${labels[k]}: ${counts[k]}`).join(' · ');
       this.root.querySelector('[data-summary-state]').textContent = `${rows.length - complete} belum tuntas · ${pending} menunggu server · ${drafts} draft · ${conflicts} konflik. Angka kehadiran memakai catatan resmi server.`;
       this.root.querySelector('[data-finalize]').disabled = !rows.length || complete !== rows.length || this.paused || !this.boot.state.active || !!this.completed;
+      if (this.contextChanged) {
+        this.root.querySelector('[data-finalize]').disabled=true;
+        this.root.querySelector('[data-bottom-state]').textContent='Daftar peserta berubah · muat ulang sesi';
+      }
+      const warn=requiresExitWarning(rows);
+      if (warn!==this.exitGuarded) {
+        if (warn) window.addEventListener('beforeunload',this.beforeUnload);
+        else window.removeEventListener('beforeunload',this.beforeUnload);
+        this.exitGuarded=warn;
+      }
     }
     showSummary() {
       this.flush(); const el = this.root.querySelector('[data-summary]'); el.hidden = false; this.refreshOverview(); el.focus(); el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
     async finalize() {
+      if (this.contextChanged) return;
       if ([...this.rows.values()].some(r => r.dirty || r.inFlight || r.conflict)) return;
       const button = this.root.querySelector('[data-finalize]'); button.disabled = true;
       try {
         const revisions = {}; this.rows.forEach(r => { revisions[r.id] = r.entry.official_revision; });
         const result = await this.request({ action: 'finalize', halaqoh_id: this.boot.halaqoh_id, tanggal: this.boot.tanggal,
-          csrf_token: this.boot.csrf_token, context_revision: this.boot.state.context_revision, revisions });
+          context_revision: this.boot.state.context_revision, revisions });
         this.completed = true; this.banner(result.message);
       } catch (error) { this.banner(error.message); await this.resume(); }
       this.refreshOverview();
     }
-    banner(message, login = false) {
+    banner(message, login = false, reload = false) {
       const el = this.root.querySelector('[data-banner]'); el.hidden = false; el.textContent = message;
       if (login) { const a = document.createElement('a'); a.href = '../login.php'; a.textContent = ' Buka Login'; el.append(a); }
+      if (reload) { const a=document.createElement('a'); a.href=location.href; a.textContent=' Muat ulang sesi'; el.append(a); }
+    }
+    renderOrphans() {
+      const section=this.root.querySelector('[data-orphans]'), list=this.root.querySelector('[data-orphan-list]');
+      if (!section || !list) return;
+      section.hidden=!this.orphanRecords.length; list.replaceChildren();
+      for (const saved of this.orphanRecords) {
+        const detail=document.createElement('details'), title=document.createElement('summary'), text=document.createElement('p'), button=document.createElement('button');
+        title.textContent=(saved.person_name || 'Peserta ID '+saved.wali_id)+' · draft perangkat';
+        text.textContent=this.describe(saved.payload || {});
+        button.type='button'; button.className='tas-button'; button.textContent='Unduh draft ini';
+        button.addEventListener('click',()=>this.download([saved]));
+        detail.append(title,text,button); list.append(detail);
+      }
+    }
+    async download(records) {
+      try {
+        if (!records) {
+          records=[...[...this.rows.values()].map(row=>this.snapshot(row)),...this.orphanRecords];
+          try { records.push(...await this.store.read(this.scope)); } catch (_) { /* In-memory and orphan copies remain exportable. */ }
+        }
+        downloadDrafts(records,this.boot.user_id,this.boot.state.session_date);
+      } catch (_) { this.banner('Cadangan isian belum dapat diunduh. Isian pada halaman belum diubah; coba lagi atau hubungi pengelola.'); }
     }
   }
 
-  if (typeof module !== 'undefined' && module.exports) module.exports = { missing, DraftStore };
+  if (typeof module !== 'undefined' && module.exports) module.exports = { missing, DraftStore, AutosaveApp, pendingRecord, requiresExitWarning, exportDrafts };
   if (typeof document === 'undefined') return;
   const root = document.getElementById('tahsin-autosave'), data = document.getElementById('tahsin-autosave-data');
   if (root && data) {

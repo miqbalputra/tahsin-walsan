@@ -213,7 +213,7 @@ function raporRender(string $template, array $participant, array $filters, array
     $head->insertBefore($referrer, $head->firstChild);
     $head->appendChild($dom->createElement('style', '.rapor-controls{font:16px Arial,sans-serif;padding:16px;background:#f1f5f9;color:#0f172a;text-align:center}.rapor-controls button,.rapor-controls a{display:inline-block;margin:4px;padding:12px 18px;font:inherit}.rapor-quality{padding:12px;border:1px solid #92400e;color:#78350f;background:#fffbeb;margin:12px 0}@media print{.rapor-controls{display:none!important}}'));
     $script = $dom->createElement('script', '');
-    $script->setAttribute('src', function_exists('appUrl') ? appUrl('assets/js/print-report.js') : 'assets/js/print-report.js');
+    $script->setAttribute('src', appAssetUrl('assets/js/print-report.js'));
     $script->setAttribute('defer', 'defer');
     $head->appendChild($script);
     $body = $dom->getElementsByTagName('body')->item(0);

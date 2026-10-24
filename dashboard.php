@@ -37,7 +37,7 @@ $labels = array_map(static fn($t) => date('d/m', strtotime($t['tanggal'])), $tre
 $hadirCount = array_column($trendData, 'hadir');
 ?>
 
-<script src="assets/js/chart.umd.min.js"></script>
+<script src="<?= appEscape(appAssetUrl('assets/js/chart.umd.min.js')) ?>"></script>
 
 <!-- Header Content -->
 <div class="mb-10">

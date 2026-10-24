@@ -92,8 +92,8 @@ if (isset($_SESSION['user_id'])) {
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2563eb">
     <link rel="apple-touch-icon" href="icon-512.png">
-    <link rel="stylesheet" href="assets/css/app.css">
-    <script defer src="assets/js/alpine.min.js"></script>
+    <link rel="stylesheet" href="<?= appEscape(appAssetUrl('assets/css/app.css')) ?>">
+    <script defer src="<?= appEscape(appAssetUrl('assets/js/alpine.min.js')) ?>"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

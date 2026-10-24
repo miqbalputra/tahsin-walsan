@@ -88,7 +88,7 @@ $pageTitle = $tahsinPageTitle ?? 'Rekap Lengkap';
 require __DIR__ . '/includes/header.php';
 require __DIR__ . '/includes/sidebar.php';
 ?>
-<link rel="stylesheet" href="assets/css/tahsin-report.css">
+<link rel="stylesheet" href="<?= appEscape(appAssetUrl('assets/css/tahsin-report.css')) ?>">
 <?php if ($meeting): ?><script>document.body.classList.add('tahsin-meeting');</script><?php endif; ?>
 <?php if ($summaryOnly): ?><script>document.body.classList.add('tahsin-summary-print');</script>
 <div class="tahsin-report tahsin-summary-page">
@@ -102,7 +102,7 @@ require __DIR__ . '/includes/sidebar.php';
 </div>
 <script type="application/json" id="tahsin-chart-data"><?= json_encode($meetingReport['trend'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
 <script type="application/json" id="tahsin-meeting-export-data"><?= json_encode(['payload' => tahsinMeetingPayload($meetingReport), 'start_date' => $summaryFilters['start_date'], 'end_date' => $summaryFilters['end_date']], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
-<script src="assets/js/chart.umd.min.js"></script><script src="assets/js/tahsin-report.js"></script>
+<script src="<?= appEscape(appAssetUrl('assets/js/chart.umd.min.js')) ?>"></script><script src="<?= appEscape(appAssetUrl('assets/js/tahsin-report.js')) ?>"></script>
 <?php require __DIR__ . '/includes/footer.php'; exit; endif; ?>
 <div class="tahsin-report">
 <div class="tahsin-heading"><div><h2><?= tahsinH($pageTitle) ?> Tahsin Wali Santri</h2><p class="tahsin-note">Periode sesi <?= tahsinH($filters['start_date']) ?> s/d <?= tahsinH($filters['end_date']) ?> · Dibuat <?= tahsinNow()->format('d/m/Y H:i') ?> WIB<br>Hadir dan Alfa berdasarkan catatan guru. Data kosong tidak dinilai sebagai ketidakhadiran.</p></div>
@@ -139,5 +139,5 @@ require __DIR__ . '/includes/sidebar.php';
 </div>
 <script type="application/json" id="tahsin-chart-data"><?= json_encode($meetingReport['trend'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
 <script type="application/json" id="tahsin-meeting-export-data"><?= json_encode(['payload' => tahsinMeetingPayload($meetingReport), 'start_date' => $summaryFilters['start_date'], 'end_date' => $summaryFilters['end_date']], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
-<script src="assets/js/chart.umd.min.js"></script><script src="assets/js/tahsin-report.js"></script>
+<script src="<?= appEscape(appAssetUrl('assets/js/chart.umd.min.js')) ?>"></script><script src="<?= appEscape(appAssetUrl('assets/js/tahsin-report.js')) ?>"></script>
 <?php require __DIR__ . '/includes/footer.php'; ?>
