@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/security_helper.php';
 if (ob_get_level() === 0) {
     ob_start();
 }
@@ -22,6 +23,7 @@ if (!headers_sent()) {
     header('X-Frame-Options: SAMEORIGIN');
     header('Referrer-Policy: strict-origin-when-cross-origin');
     header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
+    header('Cache-Control: no-store, private');
 }
 
 if (getenv('APP_PERF_LOG') === '1') {
@@ -30,7 +32,7 @@ if (getenv('APP_PERF_LOG') === '1') {
         $durationMs = round((hrtime(true) - $request_started_at) / 1e6, 2);
         error_log('[perf] ' . json_encode([
             'method' => $_SERVER['REQUEST_METHOD'] ?? 'CLI',
-            'uri' => $_SERVER['REQUEST_URI'] ?? '',
+            'path' => parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH),
             'status' => http_response_code(),
             'duration_ms' => $durationMs,
             'memory_peak_bytes' => memory_get_peak_usage(true),
@@ -96,7 +98,8 @@ if (isset($_SESSION['user_id'])) {
  */
 function generateCsrfToken()
 {
-    if (empty($_SESSION['csrf_token'])) {
+    if (!isset($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token'])
+        || !preg_match('/^[a-f0-9]{64}$/D', $_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     }
     return $_SESSION['csrf_token'];
@@ -104,7 +107,8 @@ function generateCsrfToken()
 
 function verifyCsrfToken($token)
 {
-    if (!isset($_SESSION['csrf_token']) || empty($token)) {
+    if (!isset($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token'])
+        || !is_string($token) || $token === '') {
         return false;
     }
     return hash_equals($_SESSION['csrf_token'], $token);
@@ -129,7 +133,8 @@ function regenerateSession($persistent = false)
  */
 function normalizeDateInput($value, $fallback)
 {
-    $value = trim((string) $value);
+    if (!is_string($value)) return $fallback;
+    $value = trim($value);
     $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
     $errors = DateTimeImmutable::getLastErrors();
 
@@ -185,10 +190,59 @@ function roleHomePath($role = null)
  * Check if the user is logged in
  * If not, redirect to login page
  */
+function refreshAuthenticatedSession(PDO $pdo): bool
+{
+    $id = filter_var($_SESSION['user_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    if (!$id) return false;
+    $statement = $pdo->prepare('SELECT id, username, nama_lengkap, role, password FROM users WHERE id=?');
+    $statement->execute([$id]);
+    $user = $statement->fetch(PDO::FETCH_ASSOC);
+    if (!$user || !in_array($user['role'], APP_USER_ROLES, true)) return false;
+    $fingerprint = hash('sha256', $user['password']);
+    if (isset($_SESSION['auth_password_fingerprint'])
+        && (!is_string($_SESSION['auth_password_fingerprint'])
+            || !hash_equals($fingerprint, $_SESSION['auth_password_fingerprint']))) {
+        return false;
+    }
+    // Existing sessions adopt the fingerprint once, preserving valid logins.
+    $_SESSION['user_id'] = (int) $user['id'];
+    $_SESSION['username'] = $user['username'];
+    $_SESSION['nama_lengkap'] = $user['nama_lengkap'];
+    $_SESSION['role'] = $user['role'];
+    $_SESSION['auth_password_fingerprint'] = $fingerprint;
+    return true;
+}
+
 function checkLogin()
 {
-    if (!isset($_SESSION['user_id'])) {
-        redirectTo('login.php');
+    static $checkedUserId;
+    if (!isset($_SESSION['user_id'])) redirectTo('login.php');
+    if ($checkedUserId === $_SESSION['user_id']) return;
+    global $pdo;
+    if (!isset($pdo) || !$pdo instanceof PDO) require_once __DIR__ . '/../config/database.php';
+    try {
+        $valid = refreshAuthenticatedSession($pdo);
+    } catch (PDOException $error) {
+        reportApplicationError($error, 'session-refresh');
+        appRequestError(503, 'Belum dapat memeriksa akun', 'Layanan sedang tidak tersedia. Tunggu sebentar lalu buka kembali halaman.');
+    }
+    if (!$valid) {
+        $_SESSION = [];
+        session_regenerate_id(true);
+        redirectTo('login.php?session=expired');
+    }
+    $checkedUserId = $_SESSION['user_id'];
+}
+
+function requireApiSession(PDO $pdo, array $allowedRoles): void
+{
+    if (empty($_SESSION['user_id']) || !refreshAuthenticatedSession($pdo)) {
+        $_SESSION = [];
+        session_regenerate_id(true);
+        throw new RuntimeException('Login berakhir. Masuk kembali; draft di perangkat tetap tersedia.', 401);
+    }
+    if (!in_array($_SESSION['role'], $allowedRoles, true)) {
+        throw new RuntimeException('Akun Anda tidak memiliki izin untuk fitur ini.', 403);
     }
 }
 
@@ -217,7 +271,7 @@ function addLog($pdo, $action, $description = '')
 function checkRole($allowed_roles)
 {
     checkLogin();
-    if (!in_array($_SESSION['role'], $allowed_roles)) {
+    if (!in_array($_SESSION['role'] ?? '', $allowed_roles, true)) {
         redirectTo(roleHomePath());
     }
 }

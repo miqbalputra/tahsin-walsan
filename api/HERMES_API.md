@@ -12,17 +12,19 @@ GET /api/hermes.php?action=<action>&<params>
 
 ## 🔐 Autentikasi
 
-Semua request **wajib** menyertakan API key. Dua cara:
+Semua request **wajib** menyertakan API key via header:
 
 **Header:**
 ```
 X-API-Key: <your-secret-key>
 ```
 
-**Query Parameter:**
-```
-?api_key=<your-secret-key>
-```
+> Key via query parameter (`?api_key=`) **tidak lagi didukung** agar secret tidak tertinggal di access log/riwayat browser.
+
+**Catatan keamanan tambahan:**
+- Rate limit bawaan: 120 permintaan/menit per IP.
+- Action `schema` nonaktif kecuali env `HERMES_EXPOSE_SCHEMA=1`.
+- CORS hanya aktif untuk origin yang didaftarkan di env `HERMES_ALLOWED_ORIGINS` (dipisah koma).
 
 **Konfigurasi:** Set environment variable `HERMES_API_KEY` di Coolify / server.  
 Fallback: `N8N_API_KEY` jika `HERMES_API_KEY` tidak diset.
@@ -296,13 +298,13 @@ GET /api/hermes.php?action=users&role=ustadz
 curl -H "X-API-Key: rahasia123" "https://tahsin.domain.com/api/hermes.php?action=status"
 
 # Peserta dengan filter
-curl "https://tahsin.domain.com/api/hermes.php?action=peserta&halaqoh_id=2&page=1&limit=10&api_key=rahasia123"
+curl -H "X-API-Key: rahasia123" "https://tahsin.domain.com/api/hermes.php?action=peserta&halaqoh_id=2&page=1&limit=10"
 
 # Presensi 30 hari terakhir
 curl -H "X-API-Key: rahasia123" "https://tahsin.domain.com/api/hermes.php?action=presensi&start=2026-05-24&end=2026-06-24"
 
 # Pencarian
-curl "https://tahsin.domain.com/api/hermes.php?action=search&q=ahmad&api_key=rahasia123"
+curl -H "X-API-Key: rahasia123" "https://tahsin.domain.com/api/hermes.php?action=search&q=ahmad"
 ```
 
 ### Python (Hermes Agent)

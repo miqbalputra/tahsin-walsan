@@ -1,211 +1,63 @@
 <?php
 $pageTitle = 'Manajemen Peserta (Wali Santri)';
-require_once 'includes/header.php';
-require_once 'includes/sidebar.php';
-require_once 'config/database.php';
-require_once 'includes/auth_helper.php';
-require_once 'includes/alumni_archive_helper.php';
-require_once 'includes/data_induk_helper.php';
-require_once 'includes/family_helper.php';
-
+require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/includes/auth_helper.php';
+require_once __DIR__ . '/includes/participant_helper.php';
 checkRole(['admin', 'pj_tahfidz']);
-
-$message = $_GET['msg'] ?? '';
-$error = $_GET['err'] ?? '';
-
-// Handle Create/Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // CSRF Validation
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
-    }
-
-    $action = $_POST['action'] ?? '';
-    $id = $_POST['id'] ?? null;
-    $nama_bapak = $_POST['nama_bapak'] ?? '';
-    $no_hp = $_POST['no_hp'] ?? '';
-    $alamat = $_POST['alamat'] ?? '';
-    $kategori = $_POST['kategori'] ?? 'reguler';
-    $tempat_tahsin = $_POST['tempat_tahsin'] ?? '';
-    $ustadz_luar = $_POST['ustadz_luar'] ?? '';
-    $lanjut_tahsin = isset($_POST['lanjut_tahsin']) ? 1 : 0;
-    $has_lanjut_tahsin_input = array_key_exists('lanjut_tahsin', $_POST);
-    $anak_list = $_POST['anak'] ?? []; // Array of children
-
-    if ($action === 'save') {
-        $pdo->beginTransaction();
-        try {
-            $identityLocked = false;
-            if ($id) {
-                $identityLocked = familyIsManaged($pdo, (int) $id);
-                if (dataIndukIdentityMode($pdo)) {
-                    $mapping = $pdo->prepare('SELECT data_induk_guardian_id FROM wali_santri WHERE id=?');
-                    $mapping->execute([$id]);
-                    $identityLocked = $identityLocked || (string) $mapping->fetchColumn() !== '';
-                }
-                if ($identityLocked) {
-                    // Identitas pusat tidak boleh tertimpa oleh nilai form lama.
-                    $stmt = $pdo->prepare('UPDATE wali_santri SET kategori=?, tempat_tahsin=?, ustadz_luar=?, lanjut_tahsin=? WHERE id=?');
-                    $stmt->execute([$kategori, $tempat_tahsin, $ustadz_luar, $lanjut_tahsin, $id]);
-                } elseif ($has_lanjut_tahsin_input) {
-                    $stmt = $pdo->prepare("UPDATE wali_santri SET nama_bapak=?, no_hp=?, alamat=?, kategori=?, tempat_tahsin=?, ustadz_luar=?, lanjut_tahsin=? WHERE id=?");
-                    $stmt->execute([$nama_bapak, $no_hp, $alamat, $kategori, $tempat_tahsin, $ustadz_luar, $lanjut_tahsin, $id]);
-                } else {
-                    // Nilai lama dipertahankan karena flag ini hanya menjadi catatan.
-                    $stmt = $pdo->prepare("UPDATE wali_santri SET nama_bapak=?, no_hp=?, alamat=?, kategori=?, tempat_tahsin=?, ustadz_luar=? WHERE id=?");
-                    $stmt->execute([$nama_bapak, $no_hp, $alamat, $kategori, $tempat_tahsin, $ustadz_luar, $id]);
-                }
-
-                if (!$identityLocked) {
-                    // Legacy local-only entries retain the existing edit flow.
-                    $pdo->prepare("DELETE FROM santri_detail WHERE wali_santri_id = ?")->execute([$id]);
-                }
-                $wali_id = $id;
-            } else {
-                if (dataIndukIdentityMode($pdo)) {
-                    throw new RuntimeException('Biodata baru dibuat di Data Induk. Jalankan sinkronisasi untuk menariknya ke Presensi.');
-                }
-                // Insert Wali
-                $stmt = $pdo->prepare("INSERT INTO wali_santri (nama_bapak, no_hp, alamat, kategori, tempat_tahsin, ustadz_luar, lanjut_tahsin) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                $stmt->execute([$nama_bapak, $no_hp, $alamat, $kategori, $tempat_tahsin, $ustadz_luar, $lanjut_tahsin]);
-                $wali_id = $pdo->lastInsertId();
-            }
-
-            // Insert Children
-            if (!$identityLocked) {
-                $stmtAnak = $pdo->prepare("INSERT INTO santri_detail (wali_santri_id, nama_anak, kelas) VALUES (?, ?, ?)");
-                foreach ($anak_list as $anak) {
-                    if (!empty($anak['nama'])) {
-                        $stmtAnak->execute([$wali_id, $anak['nama'], $anak['kelas']]);
-                    }
-                }
-            }
-
-            // Update halaqoh membership
-            $halaqoh_id_input = $_POST['halaqoh_id'] ?? '';
-            $membershipWarning = '';
-            if (!empty($halaqoh_id_input)) {
-                $halaqohCheck = $pdo->prepare('SELECT id FROM halaqoh WHERE id=? LIMIT 1');
-                $halaqohCheck->execute([(int) $halaqoh_id_input]);
-                if (!$halaqohCheck->fetchColumn()) {
-                    throw new RuntimeException('Halaqoh yang dipilih tidak ditemukan. Muat ulang halaman lalu coba lagi.');
-                }
-            }
-            // Penempatan halaqoh adalah pengaturan lokal dan tetap boleh diubah
-            // selama wali belum diarsipkan; validasi kelas tidak boleh membuat
-            // perubahan pilihan halaqoh diam-diam dibatalkan.
-            $activeWali = $pdo->prepare('SELECT status_aktif FROM wali_santri WHERE id=?');
-            $activeWali->execute([(int) $wali_id]);
-            $canAssignMembership = empty($halaqoh_id_input) || (int) $activeWali->fetchColumn() === 1;
-            if ($canAssignMembership) {
-                $pdo->prepare("UPDATE halaqoh_members SET archived_at = CURRENT_TIMESTAMP, archive_reason = 'MANUAL_REASSIGN' WHERE wali_santri_id = ? AND archived_at IS NULL")
-                    ->execute([$wali_id]);
-                if (!empty($halaqoh_id_input)) {
-                    $halaqohId = (int) $halaqoh_id_input;
-                    $existingMembership = $pdo->prepare("SELECT id FROM halaqoh_members WHERE halaqoh_id = ? AND wali_santri_id = ? LIMIT 1");
-                    $existingMembership->execute([$halaqohId, $wali_id]);
-                    $membershipId = $existingMembership->fetchColumn();
-                    if ($membershipId) {
-                        $pdo->prepare("UPDATE halaqoh_members SET archived_at = NULL, archive_reason = NULL WHERE id = ?")
-                            ->execute([$membershipId]);
-                    } else {
-                        $pdo->prepare("INSERT INTO halaqoh_members (halaqoh_id, wali_santri_id) VALUES (?, ?)")
-                            ->execute([$halaqohId, $wali_id]);
-                    }
-                }
-            } elseif (!empty($halaqoh_id_input)) {
-                $membershipWarning = ' Halaqoh tidak diubah karena wali sudah diarsipkan.';
-            }
-
-            $archiveResult = archiveEligibleAlumni($pdo, [(int) $wali_id], 'AUTO_SAVE_PESERTA');
-
-            $pdo->commit();
-            addLog($pdo, 'SAVE_PESERTA', ($id ? "Update" : "Tambah") . " data wali santri: $nama_bapak");
-            $message = "Data peserta berhasil disimpan!" . $membershipWarning;
-            if ($archiveResult['archived_wali'] > 0) {
-                $message .= " Wali alumni otomatis diarsipkan dan dikeluarkan dari roster halaqoh.";
-            }
-        } catch (Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            reportApplicationError($e, 'peserta-save');
-            $error = $e instanceof RuntimeException ? $e->getMessage() : 'Data peserta tidak dapat disimpan. Periksa log server.';
-        }
-    } elseif ($action === 'delete' && $id) {
-        // Tombol lama tetap kompatibel, tetapi tidak lagi melakukan hard delete.
-        // Hard delete dapat menghapus anak, membership, dan presensi melalui FK.
-        $pdo->beginTransaction();
-        try {
-            if (dataIndukIdentityMode($pdo)) {
-                $mapping = $pdo->prepare('SELECT data_induk_guardian_id FROM wali_santri WHERE id=?');
-                $mapping->execute([$id]);
-                if ((string) $mapping->fetchColumn() !== '') {
-                    throw new RuntimeException('Arsip identitas pusat dilakukan di Data Induk, bukan dari Presensi.');
-                }
-            }
-            $stmt = $pdo->prepare("UPDATE wali_santri SET status_aktif = 0 WHERE id = ?");
-            $stmt->execute([$id]);
-            $pdo->prepare("UPDATE halaqoh_members SET archived_at = CURRENT_TIMESTAMP, archive_reason = 'MANUAL_ARCHIVE' WHERE wali_santri_id = ? AND archived_at IS NULL")
-                ->execute([$id]);
-            addLog($pdo, 'ARCHIVE_PESERTA', "Arsip aman ID Peserta: $id");
-            $pdo->commit();
-            $message = "Peserta diarsipkan. Data anak dan riwayat presensi tetap tersimpan.";
-        } catch (Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            reportApplicationError($e, 'peserta-archive');
-            $error = $e instanceof RuntimeException ? $e->getMessage() : 'Gagal mengarsipkan peserta. Periksa log server.';
-        }
-    }
+    requireValidCsrfToken($_POST['csrf_token'] ?? null);
+    appRequestError(422, 'Buka formulir peserta terbaru', 'Formulir peserta sudah diperbarui. Permintaan lama belum diproses. Pilih Edit atau Arsipkan dari daftar untuk melanjutkan.');
 }
-
-// Filters
-$kelas_filter = $_GET['kelas'] ?? '';
-$nama_ayah_filter = $_GET['nama_ayah'] ?? '';
-$nama_anak_filter = $_GET['nama_anak'] ?? '';
-$kategori_filter = $_GET['kategori'] ?? '';
-$halaqoh_filter = $_GET['halaqoh'] ?? '';
+$message = is_string($_SESSION['participant_flash'] ?? null) ? $_SESSION['participant_flash'] : (is_string($_GET['msg'] ?? null) ? $_GET['msg'] : '');
+unset($_SESSION['participant_flash']);
+$error = is_string($_GET['err'] ?? null) ? $_GET['err'] : '';
+try {
+    $kelas_filter = participantText($_GET, 'kelas', 100);
+    $nama_ayah_filter = participantText($_GET, 'nama_ayah', 100);
+    $nama_anak_filter = participantText($_GET, 'nama_anak', 255);
+    $kategori_filter = appRequestString($_GET, 'kategori');
+    if ($kategori_filter !== '' && !in_array($kategori_filter,['reguler','askar','tahsin_luar'],true)) throw new ParticipantManagementException('Pilih kategori dari daftar.');
+    $halaqoh_filter = appRequestString($_GET, 'halaqoh');
+    if ($halaqoh_filter !== '') participantId($halaqoh_filter);
+    $page = filter_var(appRequestString($_GET,'page','1'),FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>1000000]]);
+    if (!$page) throw new ParticipantManagementException('Nomor halaman tidak valid.');
+} catch (ParticipantManagementException|InvalidArgumentException $failure) {
+    appRequestError(422, 'Filter belum dapat digunakan', $failure->getMessage());
+}
 
 // Build Query with multiple filters
 $childTable = familyChildrenTable($pdo);
-$sql = "SELECT w.*, GROUP_CONCAT(CONCAT(s.nama_anak, ' (', s.kelas, ')') SEPARATOR ', ') as daftar_anak,
-        (SELECT hm.halaqoh_id FROM halaqoh_members hm WHERE hm.wali_santri_id = w.id AND hm.archived_at IS NULL LIMIT 1) as current_halaqoh_id,
-        (SELECT h.nama_halaqoh FROM halaqoh_members hm JOIN halaqoh h ON hm.halaqoh_id = h.id WHERE hm.wali_santri_id = w.id AND hm.archived_at IS NULL LIMIT 1) as nama_halaqoh,
-        (SELECT u.nama_lengkap FROM halaqoh_members hm JOIN halaqoh h ON hm.halaqoh_id = h.id JOIN users u ON h.ustadz_id = u.id WHERE hm.wali_santri_id = w.id AND hm.archived_at IS NULL LIMIT 1) as nama_ustadz_halaqoh
-        FROM wali_santri w 
-        LEFT JOIN {$childTable} s ON w.id = s.wali_santri_id ";
+$sql = 'SELECT w.* FROM wali_santri w';
 
 $conditions = [];
 $params = [];
 
 // Filter: Nama Ayah (text search)
-if (!empty($nama_ayah_filter)) {
+if ($nama_ayah_filter !== '') {
     $conditions[] = "w.nama_bapak LIKE :nama_ayah";
     $params[':nama_ayah'] = '%' . $nama_ayah_filter . '%';
 }
 
 // Filter: Nama Anak (text search via subquery)
-if (!empty($nama_anak_filter)) {
+if ($nama_anak_filter !== '') {
     $conditions[] = "w.id IN (SELECT wali_santri_id FROM {$childTable} WHERE nama_anak LIKE :nama_anak)";
     $params[':nama_anak'] = '%' . $nama_anak_filter . '%';
 }
 
 // Filter: Kelas Anak
-if (!empty($kelas_filter)) {
+if ($kelas_filter !== '') {
     $conditions[] = "w.id IN (SELECT wali_santri_id FROM {$childTable} WHERE kelas = :kls)";
     $params[':kls'] = $kelas_filter;
 }
 
 // Filter: Kategori
-if (!empty($kategori_filter)) {
+if ($kategori_filter !== '') {
     $conditions[] = "w.kategori = :kategori";
     $params[':kategori'] = $kategori_filter;
 }
 
 // Filter: Halaqoh
-if (!empty($halaqoh_filter)) {
+if ($halaqoh_filter !== '') {
     $conditions[] = "w.id IN (SELECT wali_santri_id FROM halaqoh_members WHERE halaqoh_id = :halaqoh_id AND archived_at IS NULL)";
     $params[':halaqoh_id'] = $halaqoh_filter;
 }
@@ -214,14 +66,25 @@ if (!empty($conditions)) {
     $sql .= " WHERE " . implode(" AND ", $conditions);
 }
 
-$sql .= " GROUP BY w.id ORDER BY w.nama_bapak";
+$countStatement=$pdo->prepare(str_replace('SELECT w.*','SELECT COUNT(*)',$sql));
+$countStatement->execute($params); $totalParticipants=(int)$countStatement->fetchColumn();
+$pages=max(1,(int)ceil($totalParticipants/50)); $page=min($page,$pages);
+$sql .= ' ORDER BY w.nama_bapak,w.id LIMIT 50 OFFSET ' . (($page-1)*50);
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $peserta = $stmt->fetchAll();
-$managedFamilyIds = $childTable === 'family_children'
-    ? array_fill_keys($pdo->query('SELECT wali_santri_id FROM family_guardians')->fetchAll(PDO::FETCH_COLUMN), true) : [];
-foreach ($peserta as &$participant) $participant['family_managed'] = isset($managedFamilyIds[(int) $participant['id']]);
-unset($participant);
+$participantChildren=[]; $participantMemberships=[];
+if ($peserta) {
+    $ids=array_column($peserta,'id'); $placeholders=implode(',',array_fill(0,count($ids),'?'));
+    $statement=$pdo->prepare("SELECT wali_santri_id,nama_anak,kelas FROM $childTable WHERE wali_santri_id IN ($placeholders) ORDER BY nama_anak,kelas");
+    $statement->execute($ids);
+    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $child) $participantChildren[(int)$child['wali_santri_id']][]=$child;
+    $programColumn=participantHasPrograms($pdo)?'h.program_code':"'bapak'";
+    $statement=$pdo->prepare("SELECT hm.wali_santri_id,h.nama_halaqoh,u.nama_lengkap,$programColumn AS program_code FROM halaqoh_members hm JOIN halaqoh h ON h.id=hm.halaqoh_id JOIN users u ON u.id=h.ustadz_id WHERE hm.archived_at IS NULL AND hm.wali_santri_id IN ($placeholders) ORDER BY h.nama_halaqoh,hm.id");
+    $statement->execute($ids);
+    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $membership) $participantMemberships[(int)$membership['wali_santri_id']][]=$membership;
+}
+$pageUrl=static fn($target)=>'peserta.php?'.http_build_query(array_filter(['page'=>$target,'kelas'=>$kelas_filter,'nama_ayah'=>$nama_ayah_filter,'nama_anak'=>$nama_anak_filter,'kategori'=>$kategori_filter,'halaqoh'=>$halaqoh_filter],static fn($value)=>$value!==''));
 
 // Fetch all unique classes for the filter dropdown
 $daftar_kelas = $pdo->query("SELECT DISTINCT kelas FROM {$childTable} WHERE kelas IS NOT NULL AND kelas != '' AND kelas != 'Lulus' ORDER BY kelas")->fetchAll(PDO::FETCH_COLUMN);
@@ -229,79 +92,21 @@ $daftar_kelas = $pdo->query("SELECT DISTINCT kelas FROM {$childTable} WHERE kela
 // Fetch all halaqoh for filter dropdown
 $daftar_halaqoh = $pdo->query("SELECT h.id, h.nama_halaqoh, u.nama_lengkap as nama_ustadz FROM halaqoh h JOIN users u ON h.ustadz_id = u.id ORDER BY h.nama_halaqoh")->fetchAll();
 
-// Optimization: Fetch all children at once to avoid N+1 query problem (Fix N+1)
-$childrenData = $pdo->query("SELECT wali_santri_id, nama_anak as nama, kelas FROM {$childTable}")->fetchAll(PDO::FETCH_GROUP);
-
-// Convert grouped data to a format easy for Alpine.js
-$jsonChildren = json_encode($childrenData);
-
 // Check if any filter is active
-$hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !empty($kelas_filter) || !empty($kategori_filter) || !empty($halaqoh_filter);
+$hasActiveFilter = $nama_ayah_filter !== '' || $nama_anak_filter !== '' || $kelas_filter !== '' || $kategori_filter !== '' || $halaqoh_filter !== '';
 ?>
 
-<div x-data="{ 
-    showModal: false, 
-    showImportModal: false,
-    showFilterPanel: <?php echo $hasActiveFilter ? 'true' : 'false'; ?>,
-    editMode: false,
-    formData: { id: '', nama_bapak: '', no_hp: '', alamat: '', kategori: 'reguler', tempat_tahsin: '', ustadz_luar: '', halaqoh_id: '', lanjut_tahsin: 0 },
-    anak: [{ nama: '', kelas: '' }],
-    openAdd() {
-        this.editMode = false;
-        this.formData = { id: '', nama_bapak: '', no_hp: '', alamat: '', kategori: 'reguler', tempat_tahsin: '', ustadz_luar: '', halaqoh_id: '' };
-        this.anak = [{ nama: '', kelas: '' }];
-        this.showModal = true;
-    },
-    openEdit(wali) {
-        this.editMode = true;
-        this.formData = { ...wali, halaqoh_id: wali.current_halaqoh_id || '' };
-        const childrenData = JSON.parse(document.getElementById('children-data').textContent);
-        this.anak = childrenData[wali.id] || [{ nama: '', kelas: '' }];
-        this.showModal = true;
-    },
-    addAnak() {
-        this.anak.push({ nama: '', kelas: '' });
-    },
-    removeAnak(index) {
-        if (this.anak.length > 1) this.anak.splice(index, 1);
-        else this.anak = [{ nama: '', kelas: '' }];
-    }
-}">
-    <script id="children-data" type="application/json"><?php echo $jsonChildren; ?></script>
-
+<?php require __DIR__ . '/includes/header.php'; require __DIR__ . '/includes/sidebar.php'; ?>
+<div>
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
         <div>
             <h2 class="text-2xl font-bold text-slate-800">Daftar Wali Santri</h2>
             <p class="text-slate-500 text-sm">Manajemen data orang tua dan santri</p>
         </div>
         <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
-            <!-- Toggle Filter Button -->
-            <button @click="showFilterPanel = !showFilterPanel"
-                class="<?php echo $hasActiveFilter ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'; ?> px-4 py-2 rounded-xl flex items-center hover:bg-blue-600 hover:text-white transition shadow-sm font-semibold text-sm">
-                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z">
-                    </path>
-                </svg>
-                Filter
-                <?php if ($hasActiveFilter): ?>
-                    <span class="ml-1.5 bg-white text-blue-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full"><?php
-                    $count = 0;
-                    if (!empty($nama_ayah_filter))
-                        $count++;
-                    if (!empty($nama_anak_filter))
-                        $count++;
-                    if (!empty($kelas_filter))
-                        $count++;
-                    if (!empty($kategori_filter))
-                        $count++;
-                    if (!empty($halaqoh_filter))
-                        $count++;
-                    echo $count;
-                    ?></span>
-                <?php endif; ?>
-            </button>
 
+
+            <?php if (($_SESSION['role']??'')==='admin'): ?>
             <a href="merge-peserta.php"
                 class="bg-amber-100 text-amber-700 px-4 py-2 rounded-xl flex items-center hover:bg-amber-200 transition shadow-sm font-semibold text-sm">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -310,17 +115,19 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                 </svg>
                 Gabung Duplikat
             </a>
+            <?php endif; ?>
 
-            <button @click="showImportModal = true"
+            <a href="import-peserta.php"
                 class="bg-emerald-100 text-emerald-700 px-4 py-2 rounded-xl flex items-center hover:bg-emerald-200 transition shadow-sm font-semibold text-sm">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
                     </path>
                 </svg>
-                Import
-            </button>
-            <button @click="openAdd()"
+                Impor CSV
+            </a>
+            <a href="peserta-riwayat.php" class="border border-slate-300 rounded-xl px-4 py-2 text-blue-700">Riwayat perubahan</a>
+            <a href="peserta-form.php"
                 class="bg-blue-600 text-white px-4 py-2 rounded-xl flex items-center hover:bg-blue-700 transition shadow-sm font-semibold text-sm">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -328,53 +135,49 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                     </path>
                 </svg>
                 Tambah Peserta
-            </button>
+            </a>
         </div>
     </div>
 
-    <!-- Filter Panel -->
-    <div x-show="showFilterPanel" x-transition:enter="transition ease-out duration-200"
-        x-transition:enter-start="opacity-0 -translate-y-2" x-transition:enter-end="opacity-100 translate-y-0"
-        x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 translate-y-0"
-        x-transition:leave-end="opacity-0 -translate-y-2"
-        class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-6" x-cloak>
+    <details class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-6" <?= $hasActiveFilter?'open':'' ?>>
+        <summary class="font-bold cursor-pointer py-2">Cari dan filter peserta</summary>
         <form method="GET" action="" id="filterForm">
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <!-- Filter: Nama Ayah -->
                 <div>
-                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Nama
-                        Ayah</label>
-                    <input type="text" name="nama_ayah" value="<?php echo htmlspecialchars($nama_ayah_filter); ?>"
-                        placeholder="Cari nama ayah..."
+                    <label for="filter-nama_ayah" class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Nama
+                        Wali</label>
+                    <input type="text" id="filter-nama_ayah" name="nama_ayah" value="<?php echo appEscape($nama_ayah_filter); ?>"
+                        placeholder="Cari nama wali..."
                         class="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none transition">
                 </div>
                 <!-- Filter: Nama Anak -->
                 <div>
-                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Nama
+                    <label for="filter-nama_anak" class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Nama
                         Anak</label>
-                    <input type="text" name="nama_anak" value="<?php echo htmlspecialchars($nama_anak_filter); ?>"
+                    <input type="text" id="filter-nama_anak" name="nama_anak" value="<?php echo appEscape($nama_anak_filter); ?>"
                         placeholder="Cari nama anak..."
                         class="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none transition">
                 </div>
                 <!-- Filter: Kelas -->
                 <div>
-                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Kelas
+                    <label for="filter-kelas" class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Kelas
                         Anak</label>
-                    <select name="kelas"
+                    <select id="filter-kelas" name="kelas"
                         class="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none transition">
                         <option value="">Semua Kelas</option>
                         <?php foreach ($daftar_kelas as $k): ?>
-                            <option value="<?php echo htmlspecialchars($k); ?>" <?php echo $kelas_filter === $k ? 'selected' : ''; ?>>
-                                <?php echo htmlspecialchars($k); ?>
+                            <option value="<?php echo appEscape($k); ?>" <?php echo $kelas_filter === $k ? 'selected' : ''; ?>>
+                                <?php echo appEscape($k); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 <!-- Filter: Kategori -->
                 <div>
-                    <label
+                    <label for="filter-kategori"
                         class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Kategori</label>
-                    <select name="kategori"
+                    <select id="filter-kategori" name="kategori"
                         class="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none transition">
                         <option value="">Semua Kategori</option>
                         <option value="reguler" <?php echo $kategori_filter === 'reguler' ? 'selected' : ''; ?>>Reguler
@@ -386,15 +189,15 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                 </div>
                 <!-- Filter: Halaqoh -->
                 <div>
-                    <label
+                    <label for="filter-halaqoh"
                         class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Halaqoh</label>
-                    <select name="halaqoh"
+                    <select id="filter-halaqoh" name="halaqoh"
                         class="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none transition">
                         <option value="">Semua Halaqoh</option>
                         <?php foreach ($daftar_halaqoh as $hq): ?>
                             <option value="<?php echo $hq['id']; ?>" <?php echo $halaqoh_filter == $hq['id'] ? 'selected' : ''; ?>>
-                                <?php echo htmlspecialchars($hq['nama_halaqoh']); ?>
-                                (<?php echo htmlspecialchars($hq['nama_ustadz']); ?>)
+                                <?php echo appEscape($hq['nama_halaqoh']); ?>
+                                (<?php echo appEscape($hq['nama_ustadz']); ?>)
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -418,24 +221,24 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                     Reset
                 </a>
                 <?php if ($hasActiveFilter): ?>
-                    <span class="text-xs text-slate-400 italic ml-auto">Menampilkan <?php echo count($peserta); ?>
+                    <span class="text-xs text-slate-400 italic ml-auto">Ditemukan <?php echo $totalParticipants; ?>
                         hasil</span>
                 <?php endif; ?>
             </div>
         </form>
-    </div>
+    </details>
 
     <?php if ($message): ?>
         <div class="bg-emerald-50 text-emerald-600 p-4 rounded-xl mb-6 flex items-center border border-emerald-100 italic">
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
             </svg>
-            <?php echo $message; ?>
+            <?php echo appEscape($message); ?>
         </div>
     <?php endif; ?>
     <?php if ($error): ?>
         <div class="bg-red-50 text-red-700 p-4 rounded-xl mb-6 border border-red-200" role="alert">
-            <?php echo htmlspecialchars($error); ?>
+            <?php echo appEscape($error); ?>
         </div>
     <?php endif; ?>
 
@@ -445,7 +248,7 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                 <thead
                     class="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase text-xs font-bold tracking-wider">
                     <tr>
-                        <th class="px-6 py-4 text-nowrap">Nama Wali (Bapak)</th>
+                        <th class="px-6 py-4 text-nowrap">Nama Wali (Bapak / Ibu)</th>
                         <th class="px-6 py-4">Kategori</th>
                         <th class="px-6 py-4">Anak & Kelas</th>
                         <th class="px-6 py-4 text-nowrap">Halaqoh</th>
@@ -460,9 +263,9 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                         </tr>
                     <?php endif; ?>
                     <?php foreach ($peserta as $p): ?>
-                        <tr class="hover:bg-slate-50 transition">
+                        <tr data-participant-id="<?= (int)$p['id'] ?>" class="hover:bg-slate-50 transition">
                             <td class="px-6 py-4 font-bold text-slate-800 align-middle">
-                                <?php echo htmlspecialchars($p['nama_bapak']); ?>
+                                <?php echo appEscape($p['nama_bapak']); ?>
                                 <?php if (empty($p['status_aktif'])): ?>
                                     <span class="ml-1 px-2 py-0.5 rounded-lg bg-slate-200 text-slate-500 text-[9px] font-bold uppercase tracking-wider align-middle">Arsip</span>
                                 <?php endif; ?>
@@ -473,22 +276,24 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                             <td class="px-6 py-4 align-middle">
                                 <span
                                     class="px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider <?php echo $p['kategori'] === 'reguler' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'; ?>">
-                                    <?php echo str_replace('_', ' ', $p['kategori']); ?>
+                                    <?php echo appEscape(str_replace('_', ' ', (string)$p['kategori'])); ?>
                                 </span>
                                 <?php if ($p['kategori'] === 'tahsin_luar'): ?>
                                     <div class="mt-1 text-[9px] text-slate-400 italic leading-tight">
-                                        Di: <?php echo htmlspecialchars($p['tempat_tahsin']); ?><br>
-                                        Ustadz: <?php echo htmlspecialchars($p['ustadz_luar']); ?>
+                                        Di: <?php echo appEscape($p['tempat_tahsin']); ?><br>
+                                        Ustadz: <?php echo appEscape($p['ustadz_luar']); ?>
                                     </div>
                                 <?php endif; ?>
                             </td>
-                            <td class="px-6 py-4 text-sm text-slate-600 align-middle max-w-xs truncate">
-                                <?php echo htmlspecialchars($p['daftar_anak'] ?: '-'); ?>
+                            <td class="px-6 py-4 text-sm text-slate-600 align-middle max-w-xs break-words">
+                                <?php $children=$participantChildren[(int)$p['id']]??[]; if (!$children): ?>Belum ada anak.
+                                <?php else: if (count($children)>2): ?><details><summary class="cursor-pointer font-bold py-2"><?= count($children) ?> anak — lihat semua</summary><?php endif; ?>
+                                    <ul class="space-y-2"><?php foreach ($children as $child): ?><li><?= appEscape($child['nama_anak']) ?> (<?= appEscape(($child['kelas']??'')!==''?$child['kelas']:'kelas belum diisi') ?>)</li><?php endforeach; ?></ul>
+                                <?php if (count($children)>2): ?></details><?php endif; endif; ?>
                             </td>
                             <td class="px-6 py-4 align-middle text-nowrap">
-                                <?php if (!empty($p['nama_halaqoh'])): ?>
-                                    <div class="text-sm font-semibold text-slate-700"><?php echo htmlspecialchars($p['nama_halaqoh']); ?></div>
-                                    <div class="text-[11px] text-slate-400">Ust. <?php echo htmlspecialchars($p['nama_ustadz_halaqoh']); ?></div>
+                                <?php if (!empty($participantMemberships[(int)$p['id']])): ?>
+                                    <ul class="space-y-3"><?php foreach ($participantMemberships[(int)$p['id']] as $membership): ?><li><div class="text-sm font-semibold text-slate-700"><?= appEscape($membership['nama_halaqoh']) ?></div><p class="text-xs text-slate-500"><?= appEscape(ucfirst($membership['program_code']).' — '.$membership['nama_lengkap']) ?></p></li><?php endforeach; ?></ul>
                                 <?php else: ?>
                                     <span class="text-xs text-slate-300 italic">Belum ada</span>
                                 <?php endif; ?>
@@ -497,7 +302,7 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                                 <div class="flex items-center gap-2">
                                     <div class="flex flex-col">
                                         <span
-                                            class="font-bold text-slate-700"><?php echo htmlspecialchars($p['no_hp']); ?></span>
+                                            class="font-bold text-slate-700"><?php echo appEscape($p['no_hp']); ?></span>
                                     </div>
                                     <?php if (!empty($p['no_hp'])):
                                         $wa_no = preg_replace('/[^0-9]/', '', $p['no_hp']);
@@ -521,20 +326,8 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
                             </td>
                             <td class="px-6 py-4 text-right align-middle">
                                 <div class="flex justify-end items-center gap-2">
-                                    <button @click="openEdit(<?php echo htmlspecialchars(json_encode($p)); ?>)"
-                                        class="text-blue-600 hover:bg-blue-600 hover:text-white font-bold text-[10px] uppercase transition bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
-                                        Edit
-                                    </button>
-                                    <form method="POST" onsubmit="return confirm('Arsipkan data bapak ini? Data anak dan riwayat presensi tetap disimpan.')"
-                                        class="inline-flex">
-                                        <?php csrfField(); ?>
-                                        <input type="hidden" name="action" value="delete">
-                                        <input type="hidden" name="id" value="<?php echo $p['id']; ?>">
-                                        <button type="submit"
-                                            class="text-red-600 hover:bg-red-600 hover:text-white font-bold text-[10px] uppercase transition bg-red-50 px-3 py-1.5 rounded-xl border border-red-100">
-                                            Arsipkan
-                                        </button>
-                                    </form>
+                                    <a href="peserta-form.php?id=<?= (int)$p['id'] ?>" class="text-blue-700 border border-blue-200 rounded-xl px-3 py-2">Edit</a>
+                                    <a href="peserta-form.php?id=<?= (int)$p['id'] ?>&amp;mode=archive" class="text-red-700 border border-red-200 rounded-xl px-3 py-2">Arsipkan</a>
                                 </div>
                             </td>
                         </tr>
@@ -544,169 +337,6 @@ $hasActiveFilter = !empty($nama_ayah_filter) || !empty($nama_anak_filter) || !em
         </div>
     </div>
 
-    <!-- Modal Form (Large) -->
-    <div x-show="showModal"
-        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto"
-        x-cloak>
-        <div class="bg-white rounded-3xl w-full max-w-2xl p-8 my-8 shadow-2xl relative" @click.away="showModal = false">
-            <h3 class="text-2xl font-bold text-slate-800 mb-6"
-                x-text="editMode ? 'Edit Data Wali Santri' : 'Input Peserta Baru'"></h3>
-
-            <form method="POST" action="" class="space-y-6">
-                <?php csrfField(); ?>
-                <input type="hidden" name="action" value="save">
-                <input type="hidden" name="id" x-model="formData.id">
-                <p x-show="formData.data_induk_guardian_id || formData.family_managed" class="rounded-xl bg-blue-50 p-3 text-xs text-blue-700">Nama, kontak, alamat, dan data anak dikelola oleh master keluarga / Data Induk. Di halaman ini hanya pengaturan Tahsin dan penempatan halaqoh yang dapat diubah.</p>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label class="block text-sm font-semibold text-slate-700 mb-1">Nama Peserta (Bapak / Ibu)</label>
-                        <input type="text" name="nama_bapak" x-model="formData.nama_bapak" required :readonly="!!formData.data_induk_guardian_id || !!formData.family_managed"
-                            class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-slate-700 mb-1">No. HP / WhatsApp</label>
-                        <input type="text" name="no_hp" x-model="formData.no_hp" :required="!formData.data_induk_guardian_id && !formData.family_managed" :readonly="!!formData.data_induk_guardian_id || !!formData.family_managed"
-                            class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition"
-                            placeholder="08xxxx">
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label class="block text-sm font-semibold text-slate-700 mb-1">Kategori Program</label>
-                        <select name="kategori" x-model="formData.kategori"
-                            class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
-                            <option value="reguler">Reguler</option>
-                            <option value="tahsin_luar">Tahsin Luar</option>
-                            <option value="askar">Askar</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-slate-700 mb-1">Alamat</label>
-                        <input type="text" name="alamat" x-model="formData.alamat" :readonly="!!formData.data_induk_guardian_id || !!formData.family_managed"
-                            class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
-                    </div>
-                </div>
-
-                <!-- Halaqoh Assignment -->
-                <div class="bg-blue-50 p-4 rounded-2xl border border-blue-100">
-                    <label class="block text-sm font-semibold text-blue-700 mb-1">Halaqoh</label>
-                    <select name="halaqoh_id" x-model="formData.halaqoh_id"
-                        class="w-full px-4 py-2 rounded-xl border border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none transition bg-white">
-                        <option value="">-- Belum Ditentukan --</option>
-                        <?php foreach ($daftar_halaqoh as $hq): ?>
-                            <option value="<?php echo $hq['id']; ?>">
-                                <?php echo htmlspecialchars($hq['nama_halaqoh']); ?> — Ust. <?php echo htmlspecialchars($hq['nama_ustadz']); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                    <p class="text-blue-500 text-[10px] mt-1 font-semibold">Pilih halaqoh untuk peserta ini</p>
-                </div>
-
-                <!-- Catatan legacy: nilainya dipertahankan, tetapi tidak lagi mengecualikan arsip alumni. -->
-                <div class="bg-amber-50 p-4 rounded-2xl border border-amber-100">
-                    <p class="text-amber-700 text-xs font-semibold">Aturan alumni: wali otomatis diarsipkan jika seluruh anak berstatus Lulus.</p>
-                    <p class="text-amber-600 text-[10px] mt-1 font-semibold">Catatan “Lanjut Tahsin” lama tetap tersimpan sebagai riwayat, tetapi tidak mencegah wali keluar dari roster halaqoh.</p>
-                </div>
-
-                <!-- Tahsin Luar Specific Fields -->
-                <div x-show="formData.kategori === 'tahsin_luar'" x-transition
-                    class="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-purple-50 rounded-2xl border border-purple-100">
-                    <div>
-                        <label class="block text-sm font-semibold text-purple-700 mb-1">Tempat Tahsin <span
-                                class="text-red-500">*</span></label>
-                        <input type="text" name="tempat_tahsin" x-model="formData.tempat_tahsin"
-                            :required="formData.kategori === 'tahsin_luar'"
-                            class="w-full px-4 py-2 rounded-xl border border-purple-200 focus:ring-2 focus:ring-purple-500 outline-none transition bg-white"
-                            placeholder="Contoh: Masjid Al-Ikhlas">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-purple-700 mb-1">Ustadz Pengajar <span
-                                class="text-red-500">*</span></label>
-                        <input type="text" name="ustadz_luar" x-model="formData.ustadz_luar"
-                            :required="formData.kategori === 'tahsin_luar'"
-                            class="w-full px-4 py-2 rounded-xl border border-purple-200 focus:ring-2 focus:ring-purple-500 outline-none transition bg-white"
-                            placeholder="Nama Ustadz">
-                    </div>
-                </div>
-
-                <!-- Dynamic Children Fields -->
-                <div class="bg-slate-50 p-6 rounded-2xl">
-                    <div class="flex justify-between items-center mb-4">
-                        <label class="text-sm font-bold text-slate-800">Daftar Anak</label>
-                        <button type="button" @click="addAnak()" :disabled="!!formData.family_managed || !!formData.data_induk_guardian_id"
-                            class="text-xs bg-blue-100 text-blue-600 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
-                            + Tambah Anak
-                        </button>
-                    </div>
-                    <div class="space-y-3">
-                        <template x-for="(item, index) in anak" :key="index">
-                            <div class="flex gap-3">
-                                <div class="flex-1">
-                                    <input type="text" :name="'anak['+index+'][nama]'" x-model="item.nama" :readonly="!!formData.data_induk_guardian_id || !!formData.family_managed"
-                                        placeholder="Nama Anak" required
-                                        class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition bg-white text-sm">
-                                </div>
-                                <div class="w-32">
-                                    <input type="text" :name="'anak['+index+'][kelas]'" x-model="item.kelas" :readonly="!!formData.data_induk_guardian_id || !!formData.family_managed"
-                                        placeholder="Kelas"
-                                        class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition bg-white text-sm">
-                                </div>
-                                <button type="button" @click="removeAnak(index)" :disabled="!!formData.family_managed || !!formData.data_induk_guardian_id"
-                                    class="text-red-400 hover:text-red-600 p-2">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
-                                        </path>
-                                    </svg>
-                                </button>
-                            </div>
-                        </template>
-                    </div>
-                </div>
-
-                <div class="flex gap-4 pt-4">
-                    <button type="button" @click="showModal = false"
-                        class="flex-1 px-4 py-3 rounded-2xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 transition">Batal</button>
-                    <button type="submit"
-                        class="flex-1 px-4 py-3 rounded-2xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200">Simpan
-                        Data</button>
-                </div>
-            </form>
-        </div>
-        <!-- Import Modal -->
-        <div x-show="showImportModal"
-            class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" x-cloak>
-            <div class="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl" @click.away="showImportModal = false">
-                <h3 class="text-xl font-bold text-slate-800 mb-4">Import Peserta dari Excel</h3>
-                <p class="text-sm text-slate-500 mb-6">Silakan unggah file format <strong>.csv</strong>. Jika belum
-                    punya
-                    formatnya, silakan download template di bawah.</p>
-
-                <form action="import-peserta.php" method="POST" enctype="multipart/form-data">
-                    <?php csrfField(); ?>
-                    <div class="mb-6">
-                        <label class="block text-sm font-semibold text-slate-700 mb-2">Pilih File CSV</label>
-                        <input type="file" name="file_csv" accept=".csv" required
-                            class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-slate-200 rounded-xl p-2">
-                    </div>
-
-                    <div class="flex flex-col gap-3">
-                        <button type="submit"
-                            class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-100 transition">
-                            Mulai Import Data
-                        </button>
-                        <a href="template_import_peserta.csv" download
-                            class="text-center text-sm font-semibold text-slate-500 hover:text-blue-600 py-2">
-                            Download Template CSV
-                        </a>
-                        <button type="button" @click="showImportModal = false"
-                            class="w-full py-2 text-sm text-slate-400 hover:text-slate-600">Batal</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <?php require_once 'includes/footer.php'; ?>
+    <nav aria-label="Halaman daftar peserta" class="flex flex-wrap items-center gap-4 py-5"><p>Menampilkan <?= count($peserta) ?> dari <?= $totalParticipants ?> peserta · halaman <?= $page ?> dari <?= $pages ?></p><?php if ($page>1): ?><a class="underline text-blue-700 py-3" href="<?= appEscape($pageUrl($page-1)) ?>">Sebelumnya</a><?php endif; ?><?php if ($page<$pages): ?><a class="underline text-blue-700 py-3" href="<?= appEscape($pageUrl($page+1)) ?>">Berikutnya</a><?php endif; ?></nav>
+</div>
+<?php require __DIR__ . '/includes/footer.php'; ?>

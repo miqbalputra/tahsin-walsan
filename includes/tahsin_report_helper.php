@@ -451,6 +451,16 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
                     foreach ($owners as $o) if ((int) $o['ustadz_id'] === $userId && (int) $o['halaqoh_id'] === (int) $r['halaqoh_id']) return true;
                     return false;
                 }));
+                // Resolving the complete dataset may select a source from a
+                // different group, even when this session's roster belongs to
+                // the teacher. Do not expose that source through `record` or
+                // the latest-material summary after filtering `records`.
+                if ($cell['record'] && !in_array((int) $cell['record']['id'], array_map(static fn($r) => (int) $r['id'], $cell['records']), true)) {
+                    $cell['record'] = null;
+                    $cell['complete'] = false;
+                    $cell['state'] = 'conflict';
+                    $cell['missing_fields'] = ['verifikasi penempatan catatan di luar kelompok'];
+                }
             }
             if ($inPeriod && $ownerMatches && ($owners || $raw)) $relevant = true;
             if (!$ownerMatches) continue;

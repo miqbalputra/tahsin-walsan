@@ -5,9 +5,13 @@ require_once '../includes/attendance_helper.php';
 
 header('Content-Type: application/json');
 
-if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ustadz') {
-    http_response_code(403);
-    echo json_encode(['status' => 'error', 'message' => 'Unauthorized']);
+try {
+    requireApiSession($pdo, ['ustadz']);
+} catch (RuntimeException $failure) {
+    $status = in_array($failure->getCode(), [401, 403], true) ? $failure->getCode() : 503;
+    if ($status === 503) reportApplicationError($failure, 'attendance-session');
+    http_response_code($status);
+    echo json_encode(['status' => 'error', 'message' => $status === 503 ? 'Akun belum dapat diperiksa. Coba lagi sebentar.' : $failure->getMessage()]);
     exit();
 }
 

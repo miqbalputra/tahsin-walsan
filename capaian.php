@@ -21,9 +21,7 @@ $error = $_GET['err'] ?? '';
 
 // Handle Update (Admin & PJ Tahfidz only)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($role, ['admin', 'pj_tahfidz'])) {
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
-    }
+    requireValidCsrfToken($_POST['csrf_token'] ?? '');
 
     $presensi_id = $_POST['presensi_id'] ?? null;
     $wali_id = $_POST['wali_id'] ?? null;
@@ -61,8 +59,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($role, ['admin', 'pj_tahfi
             addLog($pdo, 'SAVE_CAPAIAN_AWAL', "Capaian awal tanpa catatan Hadir: Wali ID $wali_id");
         }
         $message = "Capaian berhasil diperbarui!";
+    } catch (RuntimeException $e) {
+        $error = $e->getMessage();
     } catch (Exception $e) {
-        $error = "Gagal memperbarui: " . $e->getMessage();
+        reportApplicationError($e, 'capaian-update');
+        $error = 'Capaian belum tersimpan. Periksa isian lalu coba lagi.';
     }
 }
 
@@ -207,12 +208,12 @@ require_once 'includes/sidebar.php';
 
     <?php if ($message): ?>
         <div class="bg-emerald-50 text-emerald-600 p-4 rounded-xl border border-emerald-100 mb-6 italic text-sm">
-            <?php echo $message; ?>
+            <?= appEscape($message) ?>
         </div>
     <?php endif; ?>
     <?php if ($error): ?>
         <div class="bg-red-50 text-red-600 p-4 rounded-xl border border-red-100 mb-6 font-medium text-sm">
-            <?php echo $error; ?>
+            <?= appEscape($error) ?>
         </div>
     <?php endif; ?>
 

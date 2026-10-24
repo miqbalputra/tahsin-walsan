@@ -15,6 +15,20 @@ $start_date = $filters['start_date'];
 $end_date = $filters['end_date'];
 $results = fetchPresensiReport($pdo, $filters, $role, $user_id);
 
+/**
+ * Sel data aman untuk .xls berbasis HTML: tanda kutip + HTML di-escape, dan
+ * nilai berawalan =,+, - ,@ diberi awalan apostrof agar tidak dieksekusi
+ * sebagai formula saat dibuka di Excel (formula/CSV injection).
+ */
+function excelSafeCell($value): string
+{
+    $value = (string) ($value ?? '');
+    if (isset($value[0]) && strpbrk($value[0], '=+-@') !== false) {
+        $value = "'" . $value;
+    }
+    return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
 // Excel Header
 $filename = "Rekap_Presensi_Tahsin_" . $start_date . "_to_" . $end_date . ".xls";
 header("Content-Type: application/vnd.ms-excel");
@@ -47,23 +61,23 @@ header("Content-Disposition: attachment; filename=\"$filename\"");
                     <?php echo date('d/m/Y', strtotime($row['tanggal'])); ?>
                 </td>
                 <td>
-                    <?php echo $row['nama_halaqoh']; ?>
+                    <?php echo excelSafeCell($row['nama_halaqoh']); ?>
                 </td>
                 <td>
-                    <?php echo $row['nama_bapak']; ?>
+                    <?php echo excelSafeCell($row['nama_bapak']); ?>
                 </td>
                 <td>
-                    <?php echo $row['status']; ?>
+                    <?php echo excelSafeCell($row['status']); ?>
                 </td>
                 <td>
-                    <?php echo $row['jenis_materi'] ?: '-'; ?>
+                    <?php echo excelSafeCell($row['jenis_materi'] ?: '-'); ?>
                 </td>
                 <td>
                     <?php
                     if ($row['jenis_materi'] === 'Iqro')
-                        echo "Jilid " . $row['jilid'];
+                        echo excelSafeCell("Jilid " . $row['jilid']);
                     elseif ($row['jenis_materi'] === 'Al Quran')
-                        echo $row['nama_surat'];
+                        echo excelSafeCell($row['nama_surat']);
                     else
                         echo "-";
                     ?>
@@ -71,19 +85,19 @@ header("Content-Disposition: attachment; filename=\"$filename\"");
                 <td>
                     <?php
                     if ($row['jenis_materi'] === 'Al Quran' && !empty($row['halaman'])) {
-                        echo "Ayat " . $row['halaman'];
+                        echo excelSafeCell("Ayat " . $row['halaman']);
                     } elseif ($row['jenis_materi'] === 'Iqro' && !empty($row['halaman'])) {
-                        echo "Hal " . $row['halaman'];
+                        echo excelSafeCell("Hal " . $row['halaman']);
                     } else {
                         echo "-";
                     }
                     ?>
                 </td>
                 <td>
-                    <?php echo $row['hasil_talaqqi'] ?: '-'; ?>
+                    <?php echo excelSafeCell($row['hasil_talaqqi'] ?: '-'); ?>
                 </td>
                 <td>
-                    <?php echo $row['alasan'] ?: '-'; ?>
+                    <?php echo excelSafeCell($row['alasan'] ?: '-'); ?>
                 </td>
             </tr>
         <?php endforeach; ?>

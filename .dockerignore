@@ -19,3 +19,11 @@ outputs/
 .codex-build/
 next/
 **/__pycache__/
+dev-router.php
+
+# Local data files that must never ship in an image (audit 2026-10-24).
+Reminder*.json
+data_santri_baru.csv
+Bapak\ Wali\ Santri\ Baru.xlsx
+*.pdf
+assets/go-vue/

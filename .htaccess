@@ -15,21 +15,30 @@ Options -Indexes
 # Set Directory Index
 DirectoryIndex index.php login.php
 
-# Protect config files
-<Files "config/database.php">
-    Order Allow,Deny
-    Deny from all
-</Files>
+# Private source files and local exports never belong in an HTTP response.
+# JSON diblokir kecuali manifest.json (dibutuhkan PWA); CSV diblokir kecuali
+# template_*.csv (template impor publik yang tidak berisi data nyata).
+<FilesMatch "(?i)(^\.(?!well-known$)|\.(sql|sqlite3?|db|zip|gz|bak|ini|log|phar|md|xlsx|toml|ya?ml|lock)$|^(?!manifest\.json$)[^/]*\.json$|^(?!template_)[^/]*\.csv$|^(Dockerfile|phpunit\.xml|tailwind\.config\.js)$)">
+    Require all denied
+</FilesMatch>
 
-# Protect SQL files
-<Files "*.sql">
-    Order Allow,Deny
-    Deny from all
-</Files>
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule (^|/)\.(?!well-known(/|$)) - [F,END]
+    RewriteRule ^(config|includes|templates|tests|scripts|docker|migrations|docs|temp_excel|backup|outputs|node_modules|vendor|next)(/|$) - [F,END,NC]
+</IfModule>
 
 # One-off migration scripts are CLI-only in production. This prevents an
 # accidental or unauthenticated browser request from changing the schema.
-<FilesMatch "^migrate.*\.php$">
-    Order Allow,Deny
-    Deny from all
+<FilesMatch "^(migrate.*|dev-router)\.php$">
+    Require all denied
 </FilesMatch>
+
+<Files "sw.js">
+    <IfModule mod_headers.c>
+        Header set Cache-Control "no-store, no-cache, must-revalidate"
+    </IfModule>
+    <IfModule mod_expires.c>
+        ExpiresActive Off
+    </IfModule>
+</Files>

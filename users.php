@@ -1,84 +1,62 @@
 <?php
-$pageTitle = 'Manajemen User';
-require_once 'includes/header.php';
-require_once 'includes/sidebar.php';
+$pageTitle = 'Pengelolaan Pengguna';
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
-require_once 'includes/data_induk_helper.php';
+require_once 'includes/user_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
-$message = '';
+$message = is_string($_SESSION['flash_users'] ?? null) ? $_SESSION['flash_users'] : '';
+unset($_SESSION['flash_users']);
 $error = '';
+$showUserModal = false;
+$userForm = ['id' => '', 'username' => '', 'nama_lengkap' => '', 'role' => 'ustadz', 'no_hp' => '', 'password' => ''];
 
 // Handle Create/Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // CSRF Validation
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
+    requireValidCsrfToken($_POST['csrf_token'] ?? '');
+    foreach ($userForm as $key => $default) {
+        if ($key !== 'password' && is_string($_POST[$key] ?? null)) $userForm[$key] = $_POST[$key];
     }
-
-    $action = $_POST['action'] ?? '';
-    $id = $_POST['id'] ?? null;
-    $username = $_POST['username'] ?? '';
-    $nama_lengkap = $_POST['nama_lengkap'] ?? '';
-    $role = $_POST['role'] ?? '';
-    $no_hp = $_POST['no_hp'] ?? '';
-    $password = $_POST['password'] ?? '';
-
-    if ($action === 'save') {
-        if ($id) {
-            $identityLocked = false;
-            if (dataIndukIdentityMode($pdo)) {
-                $mapping = $pdo->prepare('SELECT data_induk_teacher_id FROM users WHERE id=?');
-                $mapping->execute([$id]);
-                $identityLocked = (string) $mapping->fetchColumn() !== '';
+    try {
+        $action = appRequestString($_POST, 'action');
+        if ($action === 'save') {
+            $id = saveManagedUser($pdo, (int) $_SESSION['user_id'], $_POST);
+            $message = empty($_POST['id']) ? 'Pengguna berhasil ditambahkan.' : 'Perubahan pengguna berhasil disimpan.';
+            addLog($pdo, 'SAVE_USER', 'id=' . $id);
+            if ($id === (int) $_SESSION['user_id']) {
+                unset($_SESSION['auth_password_fingerprint']);
+                $_SESSION['role'] = appRequestString($_POST, 'role');
             }
-            // Login, password, and role remain local. Teacher identity is central.
-            if ($identityLocked && $password) {
-                $hashed = password_hash($password, PASSWORD_DEFAULT);
-                $stmt = $pdo->prepare('UPDATE users SET username=?, password=?, role=? WHERE id=?');
-                $stmt->execute([$username, $hashed, $role, $id]);
-            } elseif ($identityLocked) {
-                $stmt = $pdo->prepare('UPDATE users SET username=?, role=? WHERE id=?');
-                $stmt->execute([$username, $role, $id]);
-            } elseif ($password) {
-                $hashed = password_hash($password, PASSWORD_DEFAULT);
-                $stmt = $pdo->prepare("UPDATE users SET username=?, password=?, nama_lengkap=?, role=?, no_hp=? WHERE id=?");
-                $stmt->execute([$username, $hashed, $nama_lengkap, $role, $no_hp, $id]);
-            } else {
-                $stmt = $pdo->prepare("UPDATE users SET username=?, nama_lengkap=?, role=?, no_hp=? WHERE id=?");
-                $stmt->execute([$username, $nama_lengkap, $role, $no_hp, $id]);
-            }
-            $message = "User berhasil diperbarui!";
+        } elseif ($action === 'delete') {
+            $id = userRequestId($_POST, true);
+            deleteManagedUser($pdo, (int) $_SESSION['user_id'], $id);
+            addLog($pdo, 'DELETE_USER', 'id=' . $id);
+            $message = 'Pengguna berhasil dihapus.';
         } else {
-            // Create
-            $hashed = password_hash($password, PASSWORD_DEFAULT);
-            try {
-                $stmt = $pdo->prepare("INSERT INTO users (username, password, nama_lengkap, role, no_hp) VALUES (?, ?, ?, ?, ?)");
-                $stmt->execute([$username, $hashed, $nama_lengkap, $role, $no_hp]);
-                $message = "User berhasil ditambahkan!";
-            } catch (PDOException $e) {
-                reportApplicationError($e, 'user-create');
-                $error = 'Gagal menambah user. Pastikan username belum digunakan.';
-            }
+            throw new UserManagementException('Tindakan tidak dikenali. Buka kembali daftar pengguna.');
         }
-    } elseif ($action === 'delete' && $id) {
-        // Delete
-        $stmt = $pdo->prepare("DELETE FROM users WHERE id = ? AND id != ?");
-        $stmt->execute([$id, $_SESSION['user_id']]); // Cannot delete yourself
-        $message = "User berhasil dihapus!";
+        $_SESSION['flash_users'] = $message;
+        redirectTo(in_array($_SESSION['role'], ['admin', 'pj_tahfidz'], true) ? 'users.php' : roleHomePath());
+    } catch (UserManagementException | InvalidArgumentException $failure) {
+        $error = $failure->getMessage();
+        $showUserModal = ($_POST['action'] ?? '') === 'save';
+    } catch (Throwable $failure) {
+        reportApplicationError($failure, 'manage-user');
+        $error = 'Perubahan belum tersimpan. Nama pengguna mungkin sudah dipakai atau akun masih terhubung ke data lain. Periksa isian lalu coba lagi.';
+        $showUserModal = ($_POST['action'] ?? '') === 'save';
     }
 }
 
-// Fetch all users
-$users = $pdo->query("SELECT * FROM users ORDER BY role, nama_lengkap")->fetchAll();
+$users = listManagedUsers($pdo);
+require_once 'includes/header.php';
+require_once 'includes/sidebar.php';
 ?>
 
 <div x-data="{ 
-    showModal: false, 
-    editMode: false,
-    userData: { id: '', username: '', nama_lengkap: '', role: 'ustadz', no_hp: '', password: '' },
+    showModal: <?= $showUserModal ? 'true' : 'false' ?>,
+    editMode: <?= $userForm['id'] !== '' ? 'true' : 'false' ?>,
+    userData: <?= appJsonAttribute($userForm) ?>,
     openAdd() {
         this.editMode = false;
         this.userData = { id: '', username: '', nama_lengkap: '', role: 'ustadz', no_hp: '', password: '' };
@@ -98,20 +76,24 @@ $users = $pdo->query("SELECT * FROM users ORDER BY role, nama_lengkap")->fetchAl
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6">
                 </path>
             </svg>
-            Tambah User
+            Tambah Pengguna
         </button>
     </div>
 
     <?php if ($message): ?>
-        <div class="bg-emerald-50 text-emerald-600 p-4 rounded-xl mb-6 flex items-center border border-emerald-100 italic">
+        <div role="status" class="bg-emerald-50 text-emerald-600 p-4 rounded-xl mb-6 flex items-center border border-emerald-100 italic">
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
             </svg>
-            <?php echo $message; ?>
+            <?= appEscape($message) ?>
         </div>
     <?php endif; ?>
 
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+    <?php if ($error && !$showUserModal): ?>
+        <p role="alert" class="bg-red-50 text-red-800 p-4 rounded-xl mb-6"><?= appEscape($error) ?></p>
+    <?php endif; ?>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto" role="region" aria-label="Daftar pengguna" tabindex="0">
         <table class="w-full text-left">
             <thead
                 class="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase text-xs font-bold tracking-wider">
@@ -139,20 +121,21 @@ $users = $pdo->query("SELECT * FROM users ORDER BY role, nama_lengkap")->fetchAl
                                     'pj_tahfidz' => 'bg-purple-100 text-purple-700',
                                     'kepsek' => 'bg-amber-100 text-amber-700',
                                     'ustadz' => 'bg-blue-100 text-blue-700',
+                                    default => 'bg-slate-100 text-slate-700',
                                 };
                                 ?>">
-                                <?php echo strtoupper($user['role']); ?>
+                                <?= appEscape(userRoleLabel($user['role'])) ?>
                             </span>
                         </td>
                         <td class="px-6 py-4 text-right align-middle">
                             <div class="flex justify-end items-center gap-2">
-                                <button @click="openEdit(<?php echo htmlspecialchars(json_encode($user)); ?>)"
+                                <button @click="openEdit(<?= appJsonAttribute($user) ?>)"
                                     class="text-blue-600 hover:bg-blue-600 hover:text-white font-bold text-[10px] uppercase transition bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
                                     Edit
                                 </button>
                                 <?php if ($user['id'] != $_SESSION['user_id']): ?>
                                     <form method="POST" action="" class="inline-flex"
-                                        onsubmit="return confirm('Hapus user ini?')">
+                                        onsubmit="return confirm('Hapus akun pengguna ini? Pastikan akun sudah tidak digunakan. Pengampu halaqoh harus dialihkan terlebih dahulu.')">
                                         <?php csrfField(); ?>
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="id" value="<?php echo $user['id']; ?>">
@@ -171,12 +154,15 @@ $users = $pdo->query("SELECT * FROM users ORDER BY role, nama_lengkap")->fetchAl
     </div>
 
     <!-- Modal Form -->
-    <div x-show="showModal"
+    <div x-show="showModal" role="dialog" aria-modal="true" aria-labelledby="user-dialog-title" @keydown.escape.window="showModal = false"
         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
         x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0"
         x-transition:enter-end="opacity-100" x-cloak>
-        <div class="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl" @click.away="showModal = false">
-            <h3 class="text-xl font-bold text-slate-800 mb-6" x-text="editMode ? 'Edit User' : 'Tambah User Baru'"></h3>
+        <div class="bg-white rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6 sm:p-8 shadow-2xl" @click.away="showModal = false">
+            <h3 id="user-dialog-title" class="text-xl font-bold text-slate-800 mb-6" x-text="editMode ? 'Edit Pengguna' : 'Tambah Pengguna'"></h3>
+            <?php if ($error && $showUserModal): ?>
+                <p role="alert" class="bg-red-50 text-red-800 p-4 rounded-xl mb-4"><?= appEscape($error) ?></p>
+            <?php endif; ?>
 
             <form method="POST" action="">
                 <?php csrfField(); ?>
@@ -185,39 +171,42 @@ $users = $pdo->query("SELECT * FROM users ORDER BY role, nama_lengkap")->fetchAl
 
                 <div class="space-y-4">
                     <div>
-                        <label class="block text-sm font-semibold text-slate-700 mb-1">Nama Lengkap</label>
+                        <label for="user-full-name" class="block text-sm font-semibold text-slate-700 mb-1">Nama Lengkap</label>
                         <p x-show="userData.data_induk_teacher_id" class="mb-3 rounded-xl bg-blue-50 p-3 text-xs text-blue-700">Nama dan kontak ustadz mengikuti Data Induk; akun login, password, dan role tetap dikelola di sini.</p>
-                        <input type="text" name="nama_lengkap" x-model="userData.nama_lengkap" required :readonly="!!userData.data_induk_teacher_id"
+                        <input id="user-full-name" type="text" name="nama_lengkap" maxlength="100" autocomplete="name" x-model="userData.nama_lengkap" required :readonly="!!userData.data_induk_teacher_id"
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
                     </div>
                     <div>
-                        <label class="block text-sm font-semibold text-slate-700 mb-1">Username</label>
-                        <input type="text" name="username" x-model="userData.username" required
+                        <label for="user-username" class="block text-sm font-semibold text-slate-700 mb-1">Nama Pengguna</label>
+                        <input id="user-username" type="text" name="username" maxlength="50" autocomplete="off" x-model="userData.username" required
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
                     </div>
                     <div>
-                        <label class="block text-sm font-semibold text-slate-700 mb-1">Role</label>
-                        <select name="role" x-model="userData.role"
+                        <label for="user-role" class="block text-sm font-semibold text-slate-700 mb-1">Peran dan Hak Akses</label>
+                        <select id="user-role" name="role" x-model="userData.role" required
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
+                            <?php if ($_SESSION['role'] === 'admin'): ?>
                             <option value="admin">Admin</option>
+                            <?php endif; ?>
                             <option value="pj_tahfidz">PJ Tahfidz</option>
                             <option value="kepsek">Kepala Sekolah</option>
-                            <option value="ustadz">Ustadz</option>
+                            <option value="ustadz">Ustadz / Ustadzah</option>
                         </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-semibold text-slate-700 mb-1">No. HP / WhatsApp</label>
-                        <input type="text" name="no_hp" x-model="userData.no_hp" :readonly="!!userData.data_induk_teacher_id"
+                        <label for="user-phone" class="block text-sm font-semibold text-slate-700 mb-1">No. HP / WhatsApp</label>
+                        <input id="user-phone" type="tel" name="no_hp" maxlength="20" autocomplete="tel" x-model="userData.no_hp" :readonly="!!userData.data_induk_teacher_id"
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition"
                             placeholder="08xxxx">
                     </div>
                     <div>
-                        <label class="block text-sm font-semibold text-slate-700 mb-1">
-                            Password <span x-show="editMode" class="text-xs text-slate-400 font-normal ml-2">(Kosongkan
+                        <label for="user-password" class="block text-sm font-semibold text-slate-700 mb-1">
+                            Kata Sandi <span x-show="editMode" class="text-xs text-slate-400 font-normal ml-2">(Kosongkan
                                 jika tidak ganti)</span>
                         </label>
-                        <input type="password" name="password" :required="!editMode"
+                        <input id="user-password" type="password" name="password" x-model="userData.password" minlength="8" maxlength="72" autocomplete="new-password" aria-describedby="user-password-help" :required="!editMode"
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
+                        <p id="user-password-help" class="mt-2 text-sm text-slate-600">Minimal 8 karakter. Perubahan kata sandi mengakhiri sesi akun ini di perangkat lain.</p>
                     </div>
                 </div>
 

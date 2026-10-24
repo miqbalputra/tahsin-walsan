@@ -11,6 +11,7 @@ $pageTitle = 'Tahsin ' . ucfirst($state['program']);
 $teacherNavProvided = true;
 $autosavePageActive = true;
 $boot = ['user_id' => (int) $_SESSION['user_id'], 'halaqoh_id' => (int) $groupId, 'tanggal' => $date,
+    'group_name'=>$ctx['group']['nama_halaqoh'],
     'csrf_token' => generateCsrfToken(), 'api' => 'api-autosave.php', 'state' => $state];
 // Load last confirmed material in a single query, not one request per participant.
 $ids = array_map('intval', array_column($ctx['members'], 'id'));
@@ -29,7 +30,7 @@ $boot['references'] = array_map('autosaveFromRecord', $references);
 require __DIR__ . '/../includes/header.php';
 require __DIR__ . '/../includes/sidebar.php';
 ?>
-<link rel="stylesheet" href="../assets/css/tahsin-autosave.css?v=1">
+<link rel="stylesheet" href="<?= appEscape(appAssetUrl('assets/css/tahsin-autosave.css')) ?>">
 <section id="tahsin-autosave" class="tas-app" aria-label="Pencatatan Tahsin otomatis">
     <header class="tas-heading">
         <a href="hari-ini.php" class="tas-back">← Hari Ini</a>
@@ -40,9 +41,11 @@ require __DIR__ . '/../includes/sidebar.php';
             <button type="submit" class="tas-button">Buka</button>
         </form>
         <p>Sesi Ahad <?= date('d/m/Y', strtotime($ctx['session'])) ?> · Presensi dan capaian tersimpan otomatis.</p>
+        <button type="button" class="tas-button" data-export-drafts hidden>Unduh cadangan isian perangkat (data pribadi)</button>
     </header>
     <noscript><p class="tas-alert">Aktifkan JavaScript untuk autosave. <a href="?<?= htmlspecialchars(http_build_query(['id' => $groupId, 'tanggal' => $date, 'legacy' => 1])) ?>">Buka formulir daring dengan simpan manual</a>.</p></noscript>
     <div data-banner class="tas-alert" role="status" hidden></div>
+    <section data-orphans class="tas-alert" hidden><h2>Isian perangkat di luar daftar peserta saat ini</h2><p>Nomor peserta atau penempatannya mungkin berubah. Isian ini belum dikirim otomatis. Periksa isian, unduh salinannya, lalu hubungi admin untuk peninjauan.</p><div data-orphan-list></div></section>
     <?php if (!$state['active']): ?><p class="tas-alert">Sesi ini libur. Data tersimpan dapat dilihat, pencatatan baru tidak dikirim.</p><?php endif; ?>
     <div class="tas-overview" aria-live="polite"><strong data-progress>Memuat keadaan penyimpanan…</strong><span data-pending></span></div>
     <div class="tas-toolbar">
@@ -99,5 +102,5 @@ $surahs = ['Al-Fatihah','Al-Baqarah',"Ali 'Imran",'An-Nisa',"Al-Ma’idah","Al-A
 foreach ($surahs as $name) echo '<option value="' . htmlspecialchars($name, ENT_QUOTES) . '"></option>';
 ?></datalist>
 <script id="tahsin-autosave-data" type="application/json"><?= json_encode($boot, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) ?></script>
-<script defer src="../assets/js/tahsin-autosave.js?v=1"></script>
+<script defer src="<?= appEscape(appAssetUrl('assets/js/tahsin-autosave.js')) ?>"></script>
 <?php require __DIR__ . '/../includes/footer.php'; ?>

@@ -4,19 +4,29 @@ require_once 'includes/auth_helper.php';
 
 $error = '';
 $warning = '';
+$username = '';
+if (($_GET['session'] ?? '') === 'expired') {
+    $warning = 'Sesi akun berakhir atau akses akun berubah. Silakan masuk kembali. Draft presensi di perangkat tetap tersimpan.';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // CSRF Validation
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
-    }
+    requireValidCsrfToken($_POST['csrf_token'] ?? '');
 
-    $username = $_POST['username'] ?? '';
-    $password = $_POST['password'] ?? '';
+    $password = '';
+    try {
+        $username = appRequestString($_POST, 'username');
+        $password = appRequestString($_POST, 'password', '', false);
+        if (appTextLength($username) > 50 || strlen($password) > 4096) {
+            throw new InvalidArgumentException('Periksa kembali nama pengguna dan kata sandi.');
+        }
+    } catch (InvalidArgumentException $failure) {
+        $error = $failure->getMessage();
+    }
     $remember = isset($_POST['remember']);
     $client_ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 
-    if ($username && $password) {
+    if ($username !== '' && $password !== '' && $error === '') {
         // Rate Limiting: Cek apakah login diblokir
         $rate_check = checkLoginAttempts($pdo, $username, $client_ip);
 
@@ -28,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$username]);
             $user = $stmt->fetch();
 
-            if ($user && password_verify($password, $user['password'])) {
+            if ($user && in_array($user['role'], APP_USER_ROLES, true) && password_verify($password, $user['password'])) {
                 // Login berhasil: hapus catatan percobaan gagal
                 clearLoginAttempts($pdo, $username, $client_ip);
 
@@ -39,6 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['username'] = $user['username'];
                 $_SESSION['nama_lengkap'] = $user['nama_lengkap'];
                 $_SESSION['role'] = $user['role'];
+                $_SESSION['auth_password_fingerprint'] = hash('sha256', $user['password']);
 
                 addLog($pdo, 'LOGIN', "User {$_SESSION['username']} berhasil masuk.");
 
@@ -59,13 +70,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 addLog($pdo, 'LOGIN_FAILED', "Login gagal untuk user '{$username}' dari IP {$client_ip}. Sisa percobaan: {$remaining}.");
             }
         }
-    } else {
+    } elseif ($error === '') {
         $error = "Silakan isi semua bidang!";
     }
 }
 
 // Redirect if already logged in
 if (isset($_SESSION['user_id'])) {
+    checkLogin();
     redirectTo(roleHomePath());
 }
 ?>
@@ -80,8 +92,8 @@ if (isset($_SESSION['user_id'])) {
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2563eb">
     <link rel="apple-touch-icon" href="icon-512.png">
-    <link rel="stylesheet" href="assets/css/app.css">
-    <script defer src="assets/js/alpine.min.js"></script>
+    <link rel="stylesheet" href="<?= appEscape(appAssetUrl('assets/css/app.css')) ?>">
+    <script defer src="<?= appEscape(appAssetUrl('assets/js/alpine.min.js')) ?>"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -171,7 +183,7 @@ if (isset($_SESSION['user_id'])) {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
-                    <?php echo $error; ?>
+                    <?= appEscape($error) ?>
                 </div>
             <?php endif; ?>
 
@@ -183,7 +195,7 @@ if (isset($_SESSION['user_id'])) {
                             d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z">
                         </path>
                     </svg>
-                    <?php echo $warning; ?>
+                    <?= appEscape($warning) ?>
                 </div>
             <?php endif; ?>
 
@@ -193,7 +205,7 @@ if (isset($_SESSION['user_id'])) {
 
                 <!-- Username -->
                 <div class="mb-4 sm:mb-5 relative group">
-                    <label
+                    <label for="login-username"
                         class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2">Username</label>
                     <div class="relative">
                         <span
@@ -203,7 +215,7 @@ if (isset($_SESSION['user_id'])) {
                                     d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                             </svg>
                         </span>
-                        <input type="text" name="username" required autocomplete="username"
+                        <input id="login-username" type="text" name="username" maxlength="50" value="<?= appEscape($username) ?>" required autocomplete="username"
                             class="w-full pl-12 pr-6 py-3.5 sm:py-4 rounded-2xl border border-slate-100 bg-white/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold text-slate-700 placeholder:text-slate-300 placeholder:font-normal text-sm sm:text-base"
                             placeholder="Masukkan username">
                     </div>
@@ -211,7 +223,7 @@ if (isset($_SESSION['user_id'])) {
 
                 <!-- Password -->
                 <div class="mb-6 sm:mb-8 relative group">
-                    <label
+                    <label for="login-password"
                         class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2">Password</label>
                     <div class="relative">
                         <span
@@ -222,11 +234,11 @@ if (isset($_SESSION['user_id'])) {
                                 </path>
                             </svg>
                         </span>
-                        <input :type="showPass ? 'text' : 'password'" name="password" required
+                        <input id="login-password" :type="showPass ? 'text' : 'password'" name="password" required
                             autocomplete="current-password"
                             class="w-full pl-12 pr-12 py-3.5 sm:py-4 rounded-2xl border border-slate-100 bg-white/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold text-slate-700 placeholder:text-slate-300 text-sm sm:text-base"
                             placeholder="••••••••">
-                        <button type="button" @click="showPass = !showPass"
+                        <button type="button" @click="showPass = !showPass" :aria-label="showPass ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'" :aria-pressed="showPass" aria-controls="login-password"
                             class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-blue-600 transition-colors">
                             <svg x-show="!showPass" class="w-5 h-5" fill="none" stroke="currentColor"
                                 viewBox="0 0 24 24">

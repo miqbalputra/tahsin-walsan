@@ -13,22 +13,17 @@ $assetBase = strpos($_SERVER['REQUEST_URI'], '/ustadz/') !== false ? '../' : '';
     <title>
         <?php echo $pageTitle ?? 'Dashboard'; ?> - Presensi Tahsin
     </title>
-    <link rel="manifest" href="<?php echo $assetBase; ?>manifest.json">
+    <link rel="manifest" href="<?= appEscape(appAssetUrl('manifest.json')) ?>">
     <meta name="theme-color" content="#2563eb">
-    <link rel="apple-touch-icon" href="<?php echo $assetBase; ?>icon-512.png">
-    <link rel="stylesheet" href="<?php echo $assetBase; ?>assets/css/app.css">
-    <script defer src="<?php echo $assetBase; ?>assets/js/alpine.min.js"></script>
+    <link rel="apple-touch-icon" href="<?= appEscape(appAssetUrl('icon-512.png')) ?>">
+    <link rel="stylesheet" href="<?= appEscape(appAssetUrl('assets/css/app.css')) ?>">
+    <script defer src="<?= appEscape(appAssetUrl('assets/js/alpine.min.js')) ?>"></script>
     <script>
-        // Use a dynamic base path for assets based on whether we are in a subdirectory
-        const swPath = '<?php echo $assetBase; ?>sw.js';
-        const manifestPath = '<?php echo $assetBase; ?>manifest.json';
-
-        // Update manifest link dynamically if needed (already set in HTML but good to be sure)
-        document.querySelector('link[rel="manifest"]').setAttribute('href', manifestPath);
+        const swPath = <?= json_encode(appUrl('sw.js'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register(swPath)
+                navigator.serviceWorker.register(swPath, { updateViaCache: 'none' })
                     .then(reg => console.log('SW Registered', reg))
                     .catch(err => console.log('SW Register Error', err));
             });

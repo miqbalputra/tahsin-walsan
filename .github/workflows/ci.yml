@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'codex/**', 'feat/**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: PHP + Node test suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql, zip, mbstring, gd
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # Fixture credentials must match tests/*: root/tahsin_local_test on 127.0.0.1:13317.
+      # MariaDB is installed explicitly (not the preinstalled MySQL) because the suites
+      # are validated against MariaDB.
+      - name: Start MariaDB on 127.0.0.1:13317
+        run: |
+          sudo systemctl stop mysql 2>/dev/null || true
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends mariadb-server
+          printf '[mysqld]\nport=13317\nbind-address=127.0.0.1\n' | sudo tee /etc/mysql/mariadb.conf.d/99-ci-port.cnf >/dev/null
+          # apt postinst already started the service on the default port;
+          # restart so the port override above actually takes effect.
+          sudo systemctl restart mariadb
+          for i in $(seq 1 60); do
+            if sudo mariadb -e 'SELECT 1' >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          sudo mariadb -e "ALTER USER 'root'@'localhost' IDENTIFIED BY 'tahsin_local_test'; CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY 'tahsin_local_test'; GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION; FLUSH PRIVILEGES;"
+          mariadb -h 127.0.0.1 -P 13317 -u root -ptahsin_local_test -e 'SELECT VERSION();'
+
+      - name: PHPUnit unit tests
+        run: |
+          composer install --no-interaction --no-progress
+          vendor/bin/phpunit --configuration phpunit.xml
+
+      - name: PHP integration suites
+        run: |
+          set -e
+          php tests/run-tahsin-tests.php
+          php tests/rapor-tests.php
+          php tests/tahsin-reminder-tests.php
+          php tests/security-integration.php
+          php tests/backup-integration.php
+          php -d memory_limit=256M tests/participant-import-integration.php
+          php -d memory_limit=256M tests/participant-management-integration.php
+          php -d memory_limit=256M tests/participant-merge-integration.php
+          php -d memory_limit=256M tests/family-integration.php
+
+      - name: Asset, service worker, and workflow suites
+        run: |
+          set -e
+          php tests/asset-tests.php
+          node tests/autosave-storage-tests.cjs
+          node tests/service-worker-tests.cjs
+          node tests/n8n-reminder-workflow.cjs
+
+      - name: Security HTTP suite
+        run: node tests/security-http-tests.cjs
+
+      - name: Weekly reminder HTTP checks
+        run: |
+          mariadb -h 127.0.0.1 -P 13317 -u root -ptahsin_local_test -e "DROP DATABASE IF EXISTS tahsin_test_weekly_reminder_ci"
+          php tests/tahsin-reminder-mysql-integration.php tahsin_test_weekly_reminder_ci
+          mkdir -p .sessions/ci-reminder-http
+          DB_HOST=127.0.0.1 DB_PORT=13317 DB_DATABASE=tahsin_test_weekly_reminder_ci \
+            DB_USERNAME=root DB_PASSWORD=tahsin_local_test \
+            N8N_API_KEY=tahsin-test-api HERMES_API_KEY=tahsin-test-api \
+            SESSION_SAVE_PATH="$PWD/.sessions/ci-reminder-http" \
+            php -S 127.0.0.1:18083 dev-router.php > .sessions/ci-reminder-http/server.log 2>&1 &
+          SERVER_PID=$!
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18083/health.php >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          node tests/tahsin-reminder-http-checks.cjs
+          kill $SERVER_PID
