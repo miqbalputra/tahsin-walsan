@@ -196,6 +196,7 @@ cetak rapor, backup-restore (pratinjau → restore di DB uji).
 - [x] Lingkungan: PHP 8.2 (pdo_mysql, zip, mbstring, gd), Node 20, MariaDB terisolasi di `127.0.0.1:13317` dengan kredensial fixture yang sama dengan suite uji.
 - [x] Menjalankan: phpunit (tests/Unit), 9 suite PHP, asset/service-worker/n8n workflow, security HTTP (184 assertion), dan reminder HTTP checks.
 - [x] Badge CI ditambahkan di README. Catatan: suite browser (Playwright) belum masuk CI — butuh instalasi browser; bisa menyusul.
+- [x] **Stabilisasi CI (2026-10-24, iterasi sampai hijau di runner Ubuntu):** restart MariaDB setelah override port (apt auto-start memakai port default), pin `SET time_zone '+07:00'` pada koneksi uji integrasi (TZ runner UTC menggeser pembacaan TIMESTAMP setelah migrasi), normalisasi CRLF→LF saat hashing aset (checkout Windows vs Linux berbeda EOL), flag `pdo_mysql` kondisional (menghindari warning di assertion stderr), dan autentikasi password untuk cleanup fixture reminder. PR #1 kini hijau: **semua step lulus** (phpunit, 9 suite PHP, aset/SW/n8n, security HTTP 184, reminder HTTP 13).
 
 ### L2 [x] Backup database terjadwal ke storage terpisah
 - [x] `scripts/backup-database.php` (CLI-only): ZIP backup penuh memakai `createBackupZip()` yang sama dengan fitur aplikasi, disimpan ke `BACKUP_STORAGE_PATH` (di luar webroot), mode 0600.
