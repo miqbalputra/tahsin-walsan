@@ -136,28 +136,44 @@ function safeFilename($name): ?string
 }
 
 /**
- * Cadangan pre-restore tidak boleh menumpuk di server: simpan paling banyak
- * $keep arsip terbaru dan hapus sisanya setelah berumur lebih dari $maxAgeDays.
+ * Buang arsip cadangan dengan prefix tertentu. Selalu menyimpan $keep arsip
+ * terbaru; jika $maxAgeDays > 0, arsip di luar $keep yang berumur melebihi
+ * batas juga ikut dihapus. $maxAgeDays = 0 berarti retensi murni berdasarkan
+ * jumlah (cron backup: arsip terbaru dipertahankan walau cron lama berhenti).
+ * Mengembalikan jumlah file yang dihapus.
  */
-function purgeSafetyBackups(string $dir, int $maxAgeDays = 7, int $keep = 3): void
+function purgeBackupArchives(string $dir, string $prefix, int $maxAgeDays, int $keep): int
 {
-    if (!is_dir($dir)) return;
+    if (!is_dir($dir) || $prefix === '' || !preg_match('/^[A-Za-z0-9_]+$/', $prefix)) {
+        return 0;
+    }
+    $pattern = '/^' . $prefix . '_[A-Za-z0-9_\-]+\.zip$/';
     $files = [];
     foreach (scandir($dir) ?: [] as $name) {
-        if (in_array($name, ['.', '..'], true)) continue;
-        if (preg_match('/^backup_pre_restore_[A-Za-z0-9_\-]+\.zip$/', $name)) {
+        if (preg_match($pattern, $name)) {
             $mtime = @filemtime($dir . '/' . $name);
             if ($mtime !== false) $files[$name] = $mtime;
         }
     }
     arsort($files);
-    $cutoff = time() - $maxAgeDays * 86400;
+    $cutoff = $maxAgeDays > 0 ? time() - $maxAgeDays * 86400 : 0;
     $position = 0;
+    $removed = 0;
     foreach ($files as $name => $mtime) {
         $position++;
-        if ($position <= $keep && $mtime > $cutoff) continue;
-        @unlink($dir . '/' . $name);
+        if ($position <= $keep && ($maxAgeDays <= 0 || $mtime > $cutoff)) continue;
+        if (@unlink($dir . '/' . $name)) $removed++;
     }
+    return $removed;
+}
+
+/**
+ * Cadangan pre-restore tidak boleh menumpuk di server: simpan paling banyak
+ * $keep arsip terbaru dan hapus sisanya setelah berumur lebih dari $maxAgeDays.
+ */
+function purgeSafetyBackups(string $dir, int $maxAgeDays = 7, int $keep = 3): void
+{
+    purgeBackupArchives($dir, 'backup_pre_restore', $maxAgeDays, $keep);
 }
 
 /**
