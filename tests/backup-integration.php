@@ -83,6 +83,16 @@ function bkSnapshot(PDO $connection): array {
     }
     return $result;
 }
+function bkDiff(array $expected, array $actual): string {
+    $parts=[];
+    foreach ($expected as $table=>$info) {
+        if (!isset($actual[$table])) { $parts[]="$table hilang"; continue; }
+        if ($actual[$table]['rows']!==$info['rows']) $parts[]="$table baris {$info['rows']}=>{$actual[$table]['rows']}";
+        elseif ($actual[$table]['sha256']!==$info['sha256']) $parts[]="$table isi berubah";
+    }
+    foreach (array_diff(array_keys($actual),array_keys($expected)) as $table) $parts[]="$table tabel baru";
+    return $parts ? implode('; ',$parts) : 'tanpa selisih';
+}
 function bkCsv(array $rows,int $version=3): string {
     $stream=fopen('php://temp','w+');
     foreach ($rows as $row) fputcsv($stream,$row,',','"',$version<3?'\\':'');
@@ -119,13 +129,16 @@ $target=new PDO('mysql:host=127.0.0.1;port=13317;dbname='.$restoredDatabase.';ch
 foreach ($tables as $table) $target->exec($pdo->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_ASSOC)['Create Table']);
 $restore=executeMergeRestore($target,$directory.'/original.zip',discoverBackupTables($target),'\\N');
 bkCheck($restore['error']===null,'Fresh separate database recovery succeeds');
-bkCheck(bkSnapshot($target)===$before,'All source rows, binary values, NULL, literal backslashes, quotes, Unicode and relations recover exactly');
-$freshRecovery=bkSnapshot($target);
+$freshSnapshot=bkSnapshot($target);
+bkCheck($freshSnapshot===$before,'All source rows, binary values, NULL, literal backslashes, quotes, Unicode and relations recover exactly ['.bkDiff($before,$freshSnapshot).']');
+$freshRecovery=$freshSnapshot;
 $repeat=executeMergeRestore($target,$directory.'/original.zip',$tables,'\\N');
 bkCheck($repeat['error']===null && array_sum($repeat['counts'])===0,'Repeated merge is idempotent');
-bkCheck(bkSnapshot($target)===$before,'Repeated merge preserves every existing row');
+$repeatSnapshot=bkSnapshot($target);
+bkCheck($repeatSnapshot===$before,'Repeated merge preserves every existing row ['.bkDiff($before,$repeatSnapshot).']');
 tahsinApplyMigration($target); autosaveApplyMigration($target); familyApplyMigration($target); participantImportApplyMigration($target); participantApplyMigration($target); participantMergeApplyMigration($target);
-bkCheck(bkSnapshot($target)===$before,'Reinstalling views and triggers after fresh recovery preserves table contents');
+$migratedSnapshot=bkSnapshot($target);
+bkCheck($migratedSnapshot===$before,'Reinstalling views and triggers after fresh recovery preserves table contents ['.bkDiff($before,$migratedSnapshot).']');
 bkCheck($target->query('SELECT * FROM family_children ORDER BY wali_santri_id,nama_anak')->fetchAll(PDO::FETCH_ASSOC)===$pdo->query('SELECT * FROM family_children ORDER BY wali_santri_id,nama_anak')->fetchAll(PDO::FETCH_ASSOC),'Recovered family view retains shared father/mother child links without duplication');
 $revivedAlias=bkCase('revived_merged_participant',function($z,&$m){ bkReplace($z,$m,'wali_santri',bkCsv([['id','nama_bapak'],[4,'Old source resurrected']]),1); });
 bkCheck(executeMergeRestore($target,$revivedAlias,$tables,'\\N')['error']!==null,'A legacy backup cannot resurrect a merged participant ID');
