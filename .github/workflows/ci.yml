@@ -55,15 +55,15 @@ jobs:
       - name: PHP integration suites
         run: |
           set -e
-          php -d extension=pdo_mysql tests/run-tahsin-tests.php
-          php -d extension=pdo_mysql tests/rapor-tests.php
-          php -d extension=pdo_mysql tests/tahsin-reminder-tests.php
-          php -d extension=pdo_mysql tests/security-integration.php
-          php -d extension=pdo_mysql tests/backup-integration.php
-          php -d extension=pdo_mysql -d memory_limit=256M tests/participant-import-integration.php
-          php -d extension=pdo_mysql -d memory_limit=256M tests/participant-management-integration.php
-          php -d extension=pdo_mysql -d memory_limit=256M tests/participant-merge-integration.php
-          php -d extension=pdo_mysql -d memory_limit=256M tests/family-integration.php
+          php tests/run-tahsin-tests.php
+          php tests/rapor-tests.php
+          php tests/tahsin-reminder-tests.php
+          php tests/security-integration.php
+          php tests/backup-integration.php
+          php -d memory_limit=256M tests/participant-import-integration.php
+          php -d memory_limit=256M tests/participant-management-integration.php
+          php -d memory_limit=256M tests/participant-merge-integration.php
+          php -d memory_limit=256M tests/family-integration.php
 
       - name: Asset, service worker, and workflow suites
         run: |
@@ -79,13 +79,13 @@ jobs:
       - name: Weekly reminder HTTP checks
         run: |
           sudo mariadb -e "DROP DATABASE IF EXISTS tahsin_test_weekly_reminder_ci"
-          php -d extension=pdo_mysql tests/tahsin-reminder-mysql-integration.php tahsin_test_weekly_reminder_ci
+          php tests/tahsin-reminder-mysql-integration.php tahsin_test_weekly_reminder_ci
           mkdir -p .sessions/ci-reminder-http
           DB_HOST=127.0.0.1 DB_PORT=13317 DB_DATABASE=tahsin_test_weekly_reminder_ci \
             DB_USERNAME=root DB_PASSWORD=tahsin_local_test \
             N8N_API_KEY=tahsin-test-api HERMES_API_KEY=tahsin-test-api \
             SESSION_SAVE_PATH="$PWD/.sessions/ci-reminder-http" \
-            php -d extension=pdo_mysql -S 127.0.0.1:18083 dev-router.php > .sessions/ci-reminder-http/server.log 2>&1 &
+            php -S 127.0.0.1:18083 dev-router.php > .sessions/ci-reminder-http/server.log 2>&1 &
           SERVER_PID=$!
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:18083/health.php >/dev/null 2>&1; then break; fi

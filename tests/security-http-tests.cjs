@@ -6,7 +6,9 @@ const fs = require('node:fs');
 const crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..');
 const php = process.env.TEST_PHP_BINARY || 'php';
-const setup = spawnSync(php, ['-d','extension=pdo_mysql','tests/security-integration.php'], {cwd:root,encoding:'utf8',windowsHide:true});
+const phpHasPdoMysql = /pdo_mysql/i.test(spawnSync(php, ['-m'], {encoding:'utf8',windowsHide:true}).stdout ?? '');
+const dbArgs = phpHasPdoMysql ? [] : ['-d','extension=pdo_mysql'];
+const setup = spawnSync(php, [...dbArgs,'tests/security-integration.php'], {cwd:root,encoding:'utf8',windowsHide:true});
 if (setup.status !== 0) throw Error(setup.stderr || setup.stdout || 'Fixture creation failed');
 process.stdout.write(setup.stdout);
 const database = setup.stdout.match(/STAGING_DATABASE=(tahsin_test_security_\d+_[a-f0-9]{8})/)?.[1];
@@ -19,7 +21,7 @@ const env = {...process.env, DB_HOST:'127.0.0.1', DB_PORT:'13317', DB_DATABASE:d
   BACKUP_STORAGE_PATH:path.join(root,'.sessions','audit-20261023',`http-backups-${process.pid}`),
   HERMES_API_KEY:'audit-fixture-key', N8N_API_KEY:'audit-fixture-key', TAHSIN_AUTOSAVE_ENABLED:'1'};
 fs.mkdirSync(env.SESSION_SAVE_PATH,{recursive:true});
-const server = spawn(php, ['-d','extension=pdo_mysql','-d','display_errors=0','-S',`127.0.0.1:${port}`,'dev-router.php'],
+const server = spawn(php, [...dbArgs,'-d','display_errors=0','-S',`127.0.0.1:${port}`,'dev-router.php'],
   {cwd:root,env,windowsHide:true,stdio:['ignore','ignore','pipe']});
 let serverErrors = '';
 server.stderr.on('data', bytes => { serverErrors += bytes.toString(); });
@@ -43,12 +45,12 @@ async function login(username) {
 }
 function localSql(sql) {
   const program = '$p=new PDO("mysql:host=127.0.0.1;port=13317;dbname='+database+';charset=utf8mb4","root","tahsin_local_test",[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);$p->exec(base64_decode("'+Buffer.from(sql).toString('base64')+'"));';
-  const result = spawnSync(php,['-d','extension=pdo_mysql','-r',program],{cwd:root,encoding:'utf8',windowsHide:true});
+  const result = spawnSync(php,[...dbArgs,'-r',program],{cwd:root,encoding:'utf8',windowsHide:true});
   assert.equal(result.status,0,result.stderr);
 }
 function domainDigest() {
   const code = '$p=new PDO("mysql:host=127.0.0.1;port=13317;dbname='+database+';charset=utf8mb4","root","tahsin_local_test",[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);$rows=[];foreach(["wali_santri","santri_detail","halaqoh","halaqoh_members","presensi"] as $t){$rows[$t]=$p->query("SELECT * FROM `$t` ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);}echo hash("sha256",json_encode($rows));';
-  const result = spawnSync(php,['-d','extension=pdo_mysql','-r',code],{cwd:root,encoding:'utf8',windowsHide:true});
+  const result = spawnSync(php,[...dbArgs,'-r',code],{cwd:root,encoding:'utf8',windowsHide:true});
   assert.equal(result.status,0,result.stderr);
   return result.stdout;
 }
@@ -216,7 +218,7 @@ require 'includes/participant_import_helper.php'; participantImportApplyMigratio
 require 'includes/participant_helper.php'; participantApplyMigration($p);
 $p->exec('ALTER TABLE halaqoh_members ADD archived_at DATETIME NULL, ADD archive_reason VARCHAR(50) NULL');
 `);
-  const prepareResult=spawnSync(php,['-d','extension=pdo_mysql',prepareImport],{cwd:root,encoding:'utf8',windowsHide:true,env});
+  const prepareResult=spawnSync(php,[...dbArgs,prepareImport],{cwd:root,encoding:'utf8',windowsHide:true,env});
   assert.equal(prepareResult.status,0,prepareResult.stderr);
   const importPage=await req('/import-peserta.php',admin);
   check(importPage.status===200 && importPage.body.includes('for="participant-csv"'),'Import opens with an accessible upload after migration');
@@ -356,7 +358,7 @@ require 'includes/tahsin_migration_helper.php'; tahsinApplyMigration($p);
 require 'includes/autosave_migration_helper.php'; autosaveApplyMigration($p);
 require 'includes/participant_merge_helper.php'; participantMergeApplyMigration($p);
 `);
-  const mergePrepared=spawnSync(php,['-d','extension=pdo_mysql',prepareMerge],{cwd:root,encoding:'utf8',windowsHide:true,env}); assert.equal(mergePrepared.status,0,mergePrepared.stderr);
+  const mergePrepared=spawnSync(php,[...dbArgs,prepareMerge],{cwd:root,encoding:'utf8',windowsHide:true,env}); assert.equal(mergePrepared.status,0,mergePrepared.stderr);
   const beforeEditorRead=domainDigest();
   const editorRead=await req('/ustadz/form-presensi.php?id=1&tanggal=2026-10-18',initialTeacher);
   check(editorRead.status===200 && editorRead.body.includes('id="tahsin-autosave"') && editorRead.body.includes('data-export-drafts') && editorRead.body.includes('data-orphans'),'Enabled autosave editor exposes device export and unmatched-draft review controls');
@@ -441,7 +443,7 @@ require 'includes/participant_merge_helper.php'; participantMergeApplyMigration(
   const apiUsers = await (await fetch(base+'/api/hermes.php?action=users',{headers:{'X-API-Key':'audit-fixture-key'}})).json();
   check(apiUsers.status==='ok' && apiUsers.data.length>0 && !('no_hp' in apiUsers.data[0]),'Users action no longer exposes phone numbers');
   check(!/Fatal error|Uncaught|Warning:/.test(serverErrors),'HTTP scenarios produce no PHP runtime errors');
-  const offlineDatabase = spawnSync(php,['-d','extension=pdo_mysql','-r','require "config/database.php";'], {
+  const offlineDatabase = spawnSync(php,[...dbArgs,'-r','require "config/database.php";'], {
     cwd:root,encoding:'utf8',windowsHide:true,env:{...env,DB_PORT:'9',DB_CONNECT_TIMEOUT:'1'}
   });
   check(offlineDatabase.status===1 && offlineDatabase.stderr.includes('Layanan database belum tersedia'),'CLI operations fail clearly when the database cannot be reached');
