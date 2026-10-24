@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       # Fixture credentials must match tests/*: root/tahsin_local_test on 127.0.0.1:13317.
       # MariaDB is installed explicitly (not the preinstalled MySQL) because the suites
@@ -37,7 +37,9 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends mariadb-server
           printf '[mysqld]\nport=13317\nbind-address=127.0.0.1\n' | sudo tee /etc/mysql/mariadb.conf.d/99-ci-port.cnf >/dev/null
-          sudo systemctl start mariadb
+          # apt postinst already started the service on the default port;
+          # restart so the port override above actually takes effect.
+          sudo systemctl restart mariadb
           for i in $(seq 1 60); do
             if sudo mariadb -e 'SELECT 1' >/dev/null 2>&1; then break; fi
             sleep 1
