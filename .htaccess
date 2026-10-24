@@ -16,7 +16,9 @@ Options -Indexes
 DirectoryIndex index.php login.php
 
 # Private source files and local exports never belong in an HTTP response.
-<FilesMatch "(?i)(^\.(?!well-known$)|\.(sql|sqlite3?|db|zip|gz|bak|ini|log|phar|md|xlsx|toml|ya?ml|lock)$|^(composer\.json|package(-lock)?\.json|n8n.*\.json|Dockerfile|phpunit\.xml|tailwind\.config\.js)$)">
+# JSON diblokir kecuali manifest.json (dibutuhkan PWA); CSV diblokir kecuali
+# template_*.csv (template impor publik yang tidak berisi data nyata).
+<FilesMatch "(?i)(^\.(?!well-known$)|\.(sql|sqlite3?|db|zip|gz|bak|ini|log|phar|md|xlsx|toml|ya?ml|lock)$|^(?!manifest\.json$)[^/]*\.json$|^(?!template_)[^/]*\.csv$|^(Dockerfile|phpunit\.xml|tailwind\.config\.js)$)">
     Require all denied
 </FilesMatch>
 
@@ -31,3 +33,12 @@ DirectoryIndex index.php login.php
 <FilesMatch "^(migrate.*|dev-router)\.php$">
     Require all denied
 </FilesMatch>
+
+<Files "sw.js">
+    <IfModule mod_headers.c>
+        Header set Cache-Control "no-store, no-cache, must-revalidate"
+    </IfModule>
+    <IfModule mod_expires.c>
+        ExpiresActive Off
+    </IfModule>
+</Files>

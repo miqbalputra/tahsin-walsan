@@ -141,17 +141,18 @@ Dengan API ini, Hermes Agent bisa:
 
 ### Autentikasi
 
-Semua request **wajib** menyertakan API key. Dua cara:
+Semua request **wajib** menyertakan API key via header:
 
-**Via Header (recommended):**
 ```
 X-API-Key: <your-secret-key>
 ```
 
-**Via Query Parameter:**
-```
-?api_key=<your-secret-key>
-```
+> Key via query parameter (`?api_key=`) **tidak lagi didukung** agar secret tidak tertinggal di access log/riwayat browser.
+
+**Catatan keamanan tambahan:**
+- Rate limit bawaan: 120 permintaan/menit per IP.
+- Action `schema` nonaktif kecuali env `HERMES_EXPOSE_SCHEMA=1`.
+- CORS hanya aktif untuk origin yang didaftarkan di env `HERMES_ALLOWED_ORIGINS` (dipisah koma).
 
 **Setup API Key:**
 Set environment variable di server/Coolify:
@@ -426,7 +427,8 @@ curl -s -H "X-API-Key: rahasia123" \
   "https://tahsin.domain.com/api/hermes.php?action=status" | jq .
 
 # 2. Cari peserta
-curl -s "https://tahsin.domain.com/api/hermes.php?action=peserta&search=ahmad&api_key=rahasia123" | jq .
+curl -s -H "X-API-Key: rahasia123" \
+  "https://tahsin.domain.com/api/hermes.php?action=peserta&search=ahmad" | jq .
 
 # 3. Peringatan dini
 curl -s -H "X-API-Key: rahasia123" \

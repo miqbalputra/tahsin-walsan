@@ -31,13 +31,16 @@ function userRequestId(array $input, bool $required = false): ?int
     return $id;
 }
 
-function userRequireManager(PDO $pdo, int $actorId): void
+/** Returns the actor role so callers can enforce admin-only privileges. */
+function userRequireManager(PDO $pdo, int $actorId): string
 {
     $statement = $pdo->prepare('SELECT role FROM users WHERE id=?');
     $statement->execute([$actorId]);
-    if (!in_array($statement->fetchColumn(), ['admin', 'pj_tahfidz'], true)) {
+    $role = $statement->fetchColumn();
+    if (!in_array($role, ['admin', 'pj_tahfidz'], true)) {
         throw new UserManagementException('Akun Anda tidak memiliki izin mengelola pengguna.');
     }
+    return $role;
 }
 
 /** Lock administrators first so concurrent requests cannot remove the last one. */
@@ -65,7 +68,7 @@ function saveManagedUser(PDO $pdo, int $actorId, array $input): int
     if ($ownsTransaction) $pdo->beginTransaction();
     try {
         $administrators = userLockAdministrators($pdo);
-        userRequireManager($pdo, $actorId);
+        $actorRole = userRequireManager($pdo, $actorId);
         $existing = null;
         if ($id !== null) {
             $statement = $pdo->prepare('SELECT ' . userPublicColumns($pdo) . ' FROM users WHERE id=? FOR UPDATE');
@@ -75,6 +78,12 @@ function saveManagedUser(PDO $pdo, int $actorId, array $input): int
             if ($existing['role'] === 'admin' && $role !== 'admin' && count($administrators) <= 1) {
                 throw new UserManagementException('Admin terakhir harus tetap aktif. Tetapkan admin lain sebelum mengganti peran ini.');
             }
+            if ($actorRole !== 'admin' && $existing['role'] === 'admin') {
+                throw new UserManagementException('Akun admin hanya dapat diubah oleh admin.');
+            }
+        }
+        if ($actorRole !== 'admin' && $role === 'admin') {
+            throw new UserManagementException('Hanya admin yang dapat menetapkan peran admin.');
         }
         $identityLocked = !empty($existing['data_induk_teacher_id']);
         if (!$identityLocked && ($name === '' || appTextLength($name) > 100 || appTextLength($phone) > 20)) {
@@ -112,11 +121,14 @@ function deleteManagedUser(PDO $pdo, int $actorId, int $id): void
     if ($ownsTransaction) $pdo->beginTransaction();
     try {
         $administrators = userLockAdministrators($pdo);
-        userRequireManager($pdo, $actorId);
+        $actorRole = userRequireManager($pdo, $actorId);
         $statement = $pdo->prepare('SELECT role FROM users WHERE id=? FOR UPDATE');
         $statement->execute([$id]);
         $role = $statement->fetchColumn();
         if ($role === false) throw new UserManagementException('Pengguna tidak ditemukan. Buka kembali daftar pengguna.');
+        if ($actorRole !== 'admin' && $role === 'admin') {
+            throw new UserManagementException('Akun admin hanya dapat dihapus oleh admin.');
+        }
         if ($role === 'admin' && count($administrators) <= 1) {
             throw new UserManagementException('Admin terakhir tidak dapat dihapus. Tetapkan admin lain terlebih dahulu.');
         }

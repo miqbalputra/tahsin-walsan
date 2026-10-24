@@ -118,7 +118,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Gagal: ' . $e->getMessage()));
+            reportApplicationError($e, 'naik-kelas-promosi');
+            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Kenaikan kelas belum tersimpan. Coba lagi atau hubungi pengelola.'));
         }
     }
 
@@ -155,7 +156,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Gagal: ' . $e->getMessage()));
+            reportApplicationError($e, 'naik-kelas-lulus-manual');
+            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Pelulusan manual belum tersimpan. Coba lagi atau hubungi pengelola.'));
         }
     }
 
@@ -175,7 +177,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             addLog($pdo, 'SET_KELAS_SANTRI', "santri $sid -> kelas '$kelas'");
             redirectTo('naik-kelas.php?tab=naik&msg=' . rawurlencode("Kelas santri dikembalikan ke '$kelas'."));
         } catch (Exception $e) {
-            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Gagal: ' . $e->getMessage()));
+            reportApplicationError($e, 'naik-kelas-batal-lulus');
+            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Perubahan kelas belum tersimpan. Coba lagi atau hubungi pengelola.'));
         }
     }
 
@@ -204,7 +207,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode('Gagal: ' . $e->getMessage()));
+            reportApplicationError($e, 'naik-kelas-arsip');
+            redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode('Pengarsipan belum tersimpan. Coba lagi atau hubungi pengelola.'));
         }
     }
 
@@ -221,11 +225,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 addLog($pdo, 'UNARCHIVE_WALI', "Aktifkan kembali wali: $wid; membership halaqoh lama tidak dipulihkan otomatis");
                 $pdo->commit();
                 redirectTo('naik-kelas.php?tab=arsip&msg=' . rawurlencode('Wali berhasil diaktifkan kembali. Silakan tetapkan halaqoh bila diperlukan.'));
-            } catch (Throwable $e) {
+            } catch (RuntimeException $e) {
                 if ($pdo->inTransaction()) {
                     $pdo->rollBack();
                 }
                 redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode($e->getMessage()));
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                reportApplicationError($e, 'naik-kelas-aktifkan-wali');
+                redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode('Aktivasi wali belum tersimpan. Coba lagi atau hubungi pengelola.'));
             }
         }
         redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode('ID wali tidak valid.'));

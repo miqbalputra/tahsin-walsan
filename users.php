@@ -185,7 +185,9 @@ require_once 'includes/sidebar.php';
                         <label for="user-role" class="block text-sm font-semibold text-slate-700 mb-1">Peran dan Hak Akses</label>
                         <select id="user-role" name="role" x-model="userData.role" required
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
+                            <?php if ($_SESSION['role'] === 'admin'): ?>
                             <option value="admin">Admin</option>
+                            <?php endif; ?>
                             <option value="pj_tahfidz">PJ Tahfidz</option>
                             <option value="kepsek">Kepala Sekolah</option>
                             <option value="ustadz">Ustadz / Ustadzah</option>

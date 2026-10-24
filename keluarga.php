@@ -36,7 +36,11 @@ try {
         }
     }
     if (!empty($_SESSION['family_import'])) $plan = familyImportPlan($pdo, $_SESSION['family_import']['data'], $_SESSION['family_import']['choices']);
-} catch (Throwable $e) { $error = $e->getMessage(); }
+} catch (RuntimeException $e) { $error = $e->getMessage(); }
+catch (Throwable $e) {
+    reportApplicationError($e, 'keluarga-impor');
+    $error = 'Impor keluarga belum selesai. Coba lagi atau hubungi pengelola.';
+}
 $search = substr(trim((string) ($_GET['q'] ?? '')), 0, 100);
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $families = familyFetchStudents($pdo, 50, ($page - 1) * 50, $search);

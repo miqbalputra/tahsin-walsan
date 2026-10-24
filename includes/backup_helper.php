@@ -136,12 +136,39 @@ function safeFilename($name): ?string
 }
 
 /**
+ * Cadangan pre-restore tidak boleh menumpuk di server: simpan paling banyak
+ * $keep arsip terbaru dan hapus sisanya setelah berumur lebih dari $maxAgeDays.
+ */
+function purgeSafetyBackups(string $dir, int $maxAgeDays = 7, int $keep = 3): void
+{
+    if (!is_dir($dir)) return;
+    $files = [];
+    foreach (scandir($dir) ?: [] as $name) {
+        if (in_array($name, ['.', '..'], true)) continue;
+        if (preg_match('/^backup_pre_restore_[A-Za-z0-9_\-]+\.zip$/', $name)) {
+            $mtime = @filemtime($dir . '/' . $name);
+            if ($mtime !== false) $files[$name] = $mtime;
+        }
+    }
+    arsort($files);
+    $cutoff = time() - $maxAgeDays * 86400;
+    $position = 0;
+    foreach ($files as $name => $mtime) {
+        $position++;
+        if ($position <= $keep && $mtime > $cutoff) continue;
+        @unlink($dir . '/' . $name);
+    }
+}
+
+/**
  * Bangun ZIP backup lengkap di $zipPath dengan snapshot konsisten dan
  * checksum per tabel. CSV ditulis ke file sementara agar tidak memuat satu
  * tabel penuh ke memory PHP.
+ * $maskPasswords=true mengosongkan kolom users.password untuk unduhan
+ * non-admin; arsip pemulihan (safety backup) harus selalu memakai hash asli.
  * Mengembalikan ['ok'=>bool, 'counts'=>[], 'error'=>string].
  */
-function createBackupZip(PDO $pdo, string $zipPath, array $tables, string $nullToken): array
+function createBackupZip(PDO $pdo, string $zipPath, array $tables, string $nullToken, bool $maskPasswords = false): array
 {
     if (!is_dir(dirname($zipPath))) {
         mkdir(dirname($zipPath), 0755, true);
@@ -167,6 +194,9 @@ function createBackupZip(PDO $pdo, string $zipPath, array $tables, string $nullT
         foreach ($tables as $tbl) {
             $cols = tableColumns($pdo, $tbl);
             $colList = implode(', ', array_map(static fn($column) => "`$column`", $cols));
+            if ($maskPasswords && $tbl === 'users' && in_array('password', $cols, true)) {
+                $colList = implode(', ', array_map(static fn($column) => $column === 'password' ? "'' AS `password`" : "`$column`", $cols));
+            }
             $orderClause = tableOrderClause($pdo, $tbl, $cols);
             $tempPath = tempnam(sys_get_temp_dir(), 'tahsin_backup_');
             if ($tempPath === false) {

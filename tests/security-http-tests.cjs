@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {spawn, spawnSync} = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..');
 const php = process.env.TEST_PHP_BINARY || 'php';
 const setup = spawnSync(php, ['-d','extension=pdo_mysql','tests/security-integration.php'], {cwd:root,encoding:'utf8',windowsHide:true});
@@ -16,7 +17,7 @@ const env = {...process.env, DB_HOST:'127.0.0.1', DB_PORT:'13317', DB_DATABASE:d
   DB_USERNAME:'root', DB_PASSWORD:'tahsin_local_test', DATA_INDUK_ENABLED:'0',
   SESSION_SAVE_PATH:path.join(root,'.sessions','audit-20261023',`http-sessions-${process.pid}`),
   BACKUP_STORAGE_PATH:path.join(root,'.sessions','audit-20261023',`http-backups-${process.pid}`),
-  HERMES_API_KEY:'audit-fixture-key', N8N_API_KEY:'audit-fixture-key', TAHSIN_AUTOSAVE_ENABLED:'0'};
+  HERMES_API_KEY:'audit-fixture-key', N8N_API_KEY:'audit-fixture-key', TAHSIN_AUTOSAVE_ENABLED:'1'};
 fs.mkdirSync(env.SESSION_SAVE_PATH,{recursive:true});
 const server = spawn(php, ['-d','extension=pdo_mysql','-d','display_errors=0','-S',`127.0.0.1:${port}`,'dev-router.php'],
   {cwd:root,env,windowsHide:true,stdio:['ignore','ignore','pipe']});
@@ -77,6 +78,10 @@ const importGroup = body => body.match(/name="targets\[([a-f0-9]{64})\]"/)?.[1];
   const anonymous = {}, initial = await req('/login.php',anonymous);
   check(/no-store/.test(initial.headers.get('cache-control')),'Login and session responses are not cached');
   check(initial.body.includes('for="login-username"') && initial.body.includes('aria-controls="login-password"'),'Login controls have accessible names');
+  const assetVersion=file=>crypto.createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex').slice(0,16);
+  check(initial.body.includes('/assets/css/app.css?v='+assetVersion('assets/css/app.css')) && initial.body.includes('/assets/js/alpine.min.js?v='+assetVersion('assets/js/alpine.min.js')),'Login assets use versions derived from the current file contents');
+  const loginCss=await req('/assets/css/app.css?v='+assetVersion('assets/css/app.css'));
+  check(loginCss.status===200 && /text\/css/.test(loginCss.headers.get('content-type')),'Versioned CSS remains a public stylesheet');
   const invalidCsrf = await req('/login.php',anonymous,{'csrf_token[]':'bad',username:'audit_admin',password:'AuditTest-2026'});
   check(invalidCsrf.status===403 && invalidCsrf.body.includes('Buka kembali halaman'),'Malformed CSRF receives an actionable 403');
   const malformed = await req('/login.php',anonymous,{csrf_token:csrf(initial.body),'username[]':'bad',password:'AuditTest-2026'});
@@ -86,6 +91,10 @@ const importGroup = body => body.match(/name="targets\[([a-f0-9]{64})\]"/)?.[1];
   check(users.status===200 && !/\$2[aby]\$\d\d\$/.test(users.body),'User management HTML contains no password hashes');
   check(users.body.includes('role="dialog"') && users.body.includes('for="user-role"'),'User form has labelled controls and dialog semantics');
   const token = csrf(users.body);
+  const initialTeacher=await login('audit_teacher');
+  const teacherBeforeSetup=await req('/ustadz/akun.php',initialTeacher);
+  const pendingBeforeSetup=teacherBeforeSetup.body.match(/id="tahsin-pending-data" type="application\/json">([^<]+)<\/script>/)?.[1];
+  check(teacherBeforeSetup.status===200 && JSON.parse(pendingBeforeSetup).enabled===false && teacherBeforeSetup.body.includes('id="tahsin-export-pending"'),'Teachers retain device draft backup access while autosave schema is unavailable');
   const groups = await req('/halaqoh.php',admin);
   check(groups.status===200 && groups.body.includes('Kelompok Uji'),'Group list works before optional archive migration');
   const protectedGroup = await req('/halaqoh.php',admin,{csrf_token:token,action:'delete',id:'1'});
@@ -348,6 +357,10 @@ require 'includes/autosave_migration_helper.php'; autosaveApplyMigration($p);
 require 'includes/participant_merge_helper.php'; participantMergeApplyMigration($p);
 `);
   const mergePrepared=spawnSync(php,['-d','extension=pdo_mysql',prepareMerge],{cwd:root,encoding:'utf8',windowsHide:true,env}); assert.equal(mergePrepared.status,0,mergePrepared.stderr);
+  const beforeEditorRead=domainDigest();
+  const editorRead=await req('/ustadz/form-presensi.php?id=1&tanggal=2026-10-18',initialTeacher);
+  check(editorRead.status===200 && editorRead.body.includes('id="tahsin-autosave"') && editorRead.body.includes('data-export-drafts') && editorRead.body.includes('data-orphans'),'Enabled autosave editor exposes device export and unmatched-draft review controls');
+  check(editorRead.body.includes('/assets/js/tahsin-autosave.js?v='+assetVersion('assets/js/tahsin-autosave.js')) && domainDigest()===beforeEditorRead,'Autosave editor loads the current script and reads without changing domain tables');
   localSql("INSERT INTO wali_santri(id,nama_bapak,no_hp) VALUES(10001,'Merge Keep <script>alert(8)</script>','08111'),(10002,'Merge Source <script>alert(9)</script>','08222'); INSERT INTO santri_detail(wali_santri_id,nama_anak,kelas) VALUES(10001,'Same Child','1A'),(10002,'Same Child','2B'); INSERT INTO halaqoh_members(halaqoh_id,wali_santri_id) VALUES(1,10001),(1,10002); INSERT INTO tahsin_capaian_awal(wali_santri_id,jenis_materi,halaman,updated_by) VALUES(10001,'Iqro','1',1),(10002,'Al Quran','1-7',1); INSERT INTO tahsin_autosave_drafts(user_id,halaqoh_id,session_date,wali_id,payload_json,official_revision,context_revision) VALUES(3,1,'2026-10-18',10001,'{\"status\":\"H\"}','old','ctx'),(3,1,'2026-10-18',10002,'{\"status\":\"I\",\"alasan\":\"Source draft\"}','old-source','ctx-source');");
   check((await req('/merge-peserta.php',pj)).status===302 && (await req('/merge-peserta.php',reportTeacher)).status===302,'Merge is admin-only before page rendering');
   check(!(await req('/peserta.php',pj)).body.includes('href="merge-peserta.php"'),'PJ participant list does not advertise an admin-only merge action');
@@ -419,6 +432,14 @@ require 'includes/participant_merge_helper.php'; participantMergeApplyMigration(
   check(health.status===200 && JSON.parse(health.body).ok===true && /no-store/.test(health.headers.get('cache-control')),'Health check is healthy and never cached');
   const apiBad = await req('/api/hermes.php?action=status&api_key[]=bad');
   check(apiBad.status===401,'Array API key is rejected without crashing');
+  const apiQuery = await req('/api/hermes.php?action=status&api_key=audit-fixture-key');
+  check(apiQuery.status===401,'Valid API key in the query string is no longer accepted');
+  const apiHeader = await fetch(base+'/api/hermes.php?action=users',{headers:{'X-API-Key':'audit-fixture-key'}});
+  check(apiHeader.status===200 && !(apiHeader.headers.get('access-control-allow-origin')),'Header API key still works and CORS stays closed by default');
+  const apiSchema = await fetch(base+'/api/hermes.php?action=schema',{headers:{'X-API-Key':'audit-fixture-key'}});
+  check(apiSchema.status===403,'Schema action stays disabled without HERMES_EXPOSE_SCHEMA');
+  const apiUsers = await (await fetch(base+'/api/hermes.php?action=users',{headers:{'X-API-Key':'audit-fixture-key'}})).json();
+  check(apiUsers.status==='ok' && apiUsers.data.length>0 && !('no_hp' in apiUsers.data[0]),'Users action no longer exposes phone numbers');
   check(!/Fatal error|Uncaught|Warning:/.test(serverErrors),'HTTP scenarios produce no PHP runtime errors');
   const offlineDatabase = spawnSync(php,['-d','extension=pdo_mysql','-r','require "config/database.php";'], {
     cwd:root,encoding:'utf8',windowsHide:true,env:{...env,DB_PORT:'9',DB_CONNECT_TIMEOUT:'1'}

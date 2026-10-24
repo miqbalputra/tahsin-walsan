@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../includes/security_helper.php';
 require_once __DIR__ . '/../includes/tahsin_report_helper.php';
 /**
  * ============================================================
@@ -11,7 +12,7 @@ require_once __DIR__ . '/../includes/tahsin_report_helper.php';
  * 
  * AUTENTIKASI:
  *   Header: X-API-Key: <your-secret-key>
- *   Atau:   ?api_key=<your-secret-key>
+ *   Key di query string/POST body TIDAK lagi diterima (tercatat di access log).
  * 
  * FORMAT RESPON:
  *   Semua respon dalam JSON.
@@ -43,18 +44,25 @@ require_once __DIR__ . '/../includes/tahsin_report_helper.php';
  * 
  * CONTOH:
  *   curl -H "X-API-Key: rahasia" "https://domain.com/api/hermes.php?action=peserta&halaqoh_id=2&page=1&limit=10"
- *   curl "https://domain.com/api/hermes.php?action=stats&api_key=rahasia"
- *   curl "https://domain.com/api/hermes.php?action=search&q=ahmad&api_key=rahasia"
+ *   curl -H "X-API-Key: rahasia" "https://domain.com/api/hermes.php?action=stats"
+ *   curl -H "X-API-Key: rahasia" "https://domain.com/api/hermes.php?action=search&q=ahmad"
  */
 
 // ============================================================
 // BOOTSTRAP
 // ============================================================
 
-// CORS headers — allow any origin for Hermes Agent
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, X-API-Key, Authorization');
+// CORS headers — hanya origin yang didaftarkan di HERMES_ALLOWED_ORIGINS
+// (dipisah koma). Pemanggil server-side (n8n/Hermes agent) tidak memerlukan
+// CORS; tanpa env ini API tidak mengirim header CORS sama sekali.
+$hermesAllowedOrigins = array_filter(array_map('trim', explode(',', (string) (getenv('HERMES_ALLOWED_ORIGINS') ?: ''))));
+$hermesRequestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (is_string($hermesRequestOrigin) && $hermesRequestOrigin !== '' && in_array($hermesRequestOrigin, $hermesAllowedOrigins, true)) {
+    header('Access-Control-Allow-Origin: ' . $hermesRequestOrigin);
+    header('Vary: Origin');
+    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, X-API-Key, Authorization');
+}
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 header('X-Content-Type-Options: nosniff');
@@ -117,15 +125,20 @@ function jsonError($httpCode, $message)
 }
 
 /**
- * Validasi API key — dilakukan SEBELUM koneksi database
+ * Validasi API key — dilakukan SEBELUM koneksi database.
+ * Key hanya diterima via header X-API-Key; parameter URL/POST tidak lagi
+ * didukung agar secret tidak tercatat di access log / riwayat browser.
  */
 function authenticate()
 {
     $headers = array_change_key_case(function_exists('getallheaders') ? getallheaders() : [], CASE_LOWER);
-    $key = $headers['x-api-key'] ?? $_GET['api_key'] ?? $_POST['api_key'] ?? '';
+    $key = $headers['x-api-key'] ?? '';
 
-    if (!is_string($key) || !hash_equals(HERMES_API_KEY, $key)) {
-        jsonError(401, 'Unauthorized. Provide valid API key via X-API-Key header or api_key parameter.');
+    if (!is_string($key) || $key === '' || !hash_equals(HERMES_API_KEY, $key)) {
+        jsonError(401, 'Unauthorized. Provide the API key via the X-API-Key request header.');
+    }
+    if (!apiRateLimitAllow('hermes', 120, 60)) {
+        jsonError(429, 'Terlalu banyak permintaan. Tunggu sebentar lalu coba lagi.');
     }
 }
 
@@ -889,6 +902,11 @@ function handleSearch($pdo)
  */
 function handleSchema($pdo)
 {
+    // Struktur database membantu penyerang menyusun query; hanya aktif
+    // secara eksplisit untuk kebutuhan integrasi tertentu.
+    if (getenv('HERMES_EXPOSE_SCHEMA') !== '1') {
+        jsonError(403, 'Aksi schema dinonaktifkan. Set HERMES_EXPOSE_SCHEMA=1 untuk mengaktifkannya.');
+    }
     $tables = $pdo->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
     $schema = [];
 
@@ -946,7 +964,7 @@ function handleLogs($pdo)
 
     $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
 
-    $baseSql = "SELECT * FROM activity_logs {$where} ORDER BY created_at DESC";
+    $baseSql = "SELECT id, user_id, username, action, description, created_at FROM activity_logs {$where} ORDER BY created_at DESC";
     $total = getTotalCount($pdo, $baseSql, $params);
 
     $sql = $baseSql . " LIMIT {$limit} OFFSET {$offset}";
@@ -976,7 +994,8 @@ function handleUsers($pdo)
 
     $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
 
-    $baseSql = "SELECT id, username, nama_lengkap, role, no_hp, created_at FROM users {$where} ORDER BY nama_lengkap";
+    // no_hp tidak ikut dibocorkan melalui API agent.
+    $baseSql = "SELECT id, username, nama_lengkap, role, created_at FROM users {$where} ORDER BY nama_lengkap";
     $total = getTotalCount($pdo, $baseSql, $params);
 
     $sql = $baseSql . " LIMIT {$limit} OFFSET {$offset}";

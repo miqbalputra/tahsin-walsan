@@ -30,6 +30,7 @@ $MAX_UPLOAD_MB = min(512, max(1, (int) (getenv('BACKUP_MAX_UPLOAD_MB') ?: 100)))
 $MAX_UPLOAD   = $MAX_UPLOAD_MB * 1024 * 1024;
 try {
     $TEMP_DIR = resolveTempDir();
+    purgeSafetyBackups($TEMP_DIR);
     $BACKUP_TABLES = discoverBackupTables($pdo);
 } catch (Throwable $failure) {
     reportApplicationError($failure, 'backup-initialization');
@@ -40,13 +41,16 @@ try {
 // GET handler: export
 // ---------------------------------------------------------------------------
 if (($_GET['export'] ?? '') === '1') {
+    // Hash password hanya ikut diunduh oleh admin; PJ menerima salinan yang
+    // kolom passwordnya dikosongkan agar tidak bisa di-crack offline.
+    $maskPasswords = ($_SESSION['role'] ?? '') !== 'admin';
     $stamp    = date('Y-m-d_His') . '_' . bin2hex(random_bytes(16));
     $zipPath  = $TEMP_DIR . '/backup_' . $stamp . '.zip';
-    $result   = createBackupZip($pdo, $zipPath, $BACKUP_TABLES, $NULL_TOKEN);
+    $result   = createBackupZip($pdo, $zipPath, $BACKUP_TABLES, $NULL_TOKEN, $maskPasswords);
     if (!$result['ok']) {
         appRequestError(503, 'Cadangan belum dibuat', $result['error'] ?? 'Coba lagi atau hubungi pengelola.');
     }
-    addLog($pdo, 'EXPORT_BACKUP', json_encode($result['counts']));
+    addLog($pdo, 'EXPORT_BACKUP', json_encode($result['counts']) . ($maskPasswords ? '; password-masked' : ''));
     // Bersihkan output buffer (ob_start dari auth_helper) & matikan kompresi
     // supaya stream ZIP tidak ter-truncate/korup (penyebab download 0 B).
     if (function_exists('gzclose')) { @ini_set('zlib.output_compression', '0'); }
@@ -66,6 +70,12 @@ if (($_GET['export'] ?? '') === '1') {
 // ---------------------------------------------------------------------------
 $dl = $_GET['download'] ?? '';
 if ($dl !== '') {
+    // Arsip di temp_excel memuat hash password asli (peran pemulihan data),
+    // sehingga unduhannya dibatasi hanya untuk admin.
+    if (($_SESSION['role'] ?? '') !== 'admin') {
+        appRequestError(403, 'Unduhan arsip khusus admin',
+            'Arsip cadangan penuh memuat kredensial akun sehingga hanya admin yang dapat mengunduhnya. Hubungi admin untuk mendapatkan salinan.');
+    }
     $name = safeFilename($dl);
     $valid = $name !== null
         && preg_match('/^(backup_|backup_pre_restore_|restore_)[A-Za-z0-9_\-]+\.zip$/', $name)
@@ -256,7 +266,8 @@ require_once 'includes/sidebar.php';
                 Unduh cadangan (ZIP)
             </a>
             <p class="text-xs text-amber-700 mt-3 bg-amber-50 border border-amber-100 rounded-lg p-2">
-                ⚠️ Cadangan berisi <strong>data peserta dan kredensial akun</strong>. Simpan di tempat pribadi dan jangan dibagikan.
+                ⚠️ Cadangan berisi <strong>data peserta</strong><?php if (($_SESSION['role'] ?? '') === 'admin'): ?> dan <strong>hash kata sandi akun</strong><?php endif; ?>. Simpan di tempat pribadi dan jangan dibagikan.
+                <?php if (($_SESSION['role'] ?? '') !== 'admin'): ?>Salinan unduhan Anda <strong>tidak memuat kata sandi akun</strong> (kolom dikosongkan).<?php endif; ?>
             </p>
         </div>
     </div>

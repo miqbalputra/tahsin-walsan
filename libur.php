@@ -20,7 +20,8 @@ try {
         UNIQUE KEY unique_tanggal (tanggal)
     ) ENGINE=InnoDB");
 } catch (Exception $e) {
-    $error = "Gagal inisialisasi tabel: " . $e->getMessage();
+    reportApplicationError($e, 'libur-inisialisasi');
+    $error = 'Gagal menyiapkan tabel hari libur. Tampilkan ulang halaman atau hubungi pengelola.';
 }
 
 // Handle Actions
@@ -52,15 +53,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 addLog($pdo, 'ADD_HOLIDAY', "Menambah libur kajian tanggal $tanggal. Clean Alfa: " . ($clean_alfa ? 'Ya' : 'Tidak'));
             } catch (Exception $e) {
-                $error = "Gagal menyimpan: " . $e->getMessage();
+                reportApplicationError($e, 'libur-simpan');
+                $error = 'Hari libur belum tersimpan. Periksa tanggal lalu coba lagi.';
             }
         }
     } elseif ($action === 'delete') {
         $id = $_POST['id'] ?? null;
         if ($id) {
-            $stmt = $pdo->prepare("DELETE FROM holidays WHERE id = ?");
-            $stmt->execute([$id]);
-            $message = "Hari libur berhasil dihapus.";
+            try {
+                $stmt = $pdo->prepare("DELETE FROM holidays WHERE id = ?");
+                $stmt->execute([$id]);
+                $message = "Hari libur berhasil dihapus.";
+            } catch (Exception $e) {
+                reportApplicationError($e, 'libur-hapus');
+                $error = 'Hari libur belum terhapus. Coba lagi atau hubungi pengelola.';
+            }
         }
     } elseif ($action === 'clean_bulk') {
         $start_date = $_POST['start_date'] ?? '';
@@ -78,7 +85,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message = "Berhasil membersihkan $count data Alfa pada hari-hari libur di rentang tersebut.";
                 addLog($pdo, 'CLEAN_ALFA_HOLIDAY', "Membersihkan $count data Alfa dari $start_date sampai $end_date");
             } catch (Exception $e) {
-                $error = "Gagal membersihkan: " . $e->getMessage();
+                reportApplicationError($e, 'libur-bersihkan');
+                $error = 'Pembersihan data Alfa belum selesai. Coba lagi atau hubungi pengelola.';
             }
         }
     }

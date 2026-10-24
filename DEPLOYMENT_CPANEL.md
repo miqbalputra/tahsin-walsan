@@ -13,8 +13,9 @@ Gunakan file `database_production.sql` yang baru saja saya buat. File ini berisi
 5. Pilih file `database_production.sql` dan jalankan.
 
 **Akun Admin Awal:**
-*   Username: `admin`
-*   Password: `admin123` (Segera ganti setelah login di menu Data User).
+*   Seed SQL tidak memuat kata sandi (kolom `password` kosong = tidak bisa login).
+*   Buat akun admin pertama via CLI hosting dengan `password_hash()` (contoh perintah
+    ada di komentar `database.sql`), atau tambahkan lewat phpMyAdmin setelah instalasi.
 
 ## 2. Konfigurasi Koneksi
 Sebelum diupload, edit file `config/database.php` dan sesuaikan dengan data database di hosting Anda:
@@ -26,11 +27,13 @@ $pass = 'password_database_anda';
 ```
 
 ## 3. Daftar File yang PERLU di-Upload
-Anda bisa mengompres semua file dalam direktori ini kecuali file-file berikut yang bersifat internal/development:
+Anda bisa mengompres semua file dalam direktori ini **kecuali** file-file berikut yang bersifat internal/development:
 *   `database.sql` (file skema lama)
-*   `migrate.php` atau file berawalan `migrate_...` (tidak diperlukan untuk install baru)
+*   `migrate.php` atau file berawalan `migrate_...` (tidak diperlukan untuk install baru) dan `dev-router.php`
 *   `.gemini` (jika ada)
 *   `Presensi Tahsin Bapak.zip` (lama)
+*   Semua file data/dump lokal: `*.sql` selain `database_production.sql`, `*.xlsx`, `*.csv` selain `template_*.csv`, `*.json` selain `manifest.json`, `*.pdf`, `*.md`
+*   Folder internal: `backup/`, `outputs/`, `temp_excel/`, `docs/`, `tests/`, `scripts/`, `docker/`, `migrations/`, `.sessions`, `node_modules`, `vendor`, `next`, `.codex-build`, `.git`
 
 **Struktur folder utama yang harus ada:**
 *   `/config`

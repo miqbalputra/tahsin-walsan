@@ -44,6 +44,10 @@ function normName(string $n): string
     return strtolower(trim(preg_replace('/\s+/', ' ', $n)));
 }
 
+/** Batas ukuran & jumlah baris CSV impor, selaras dengan alur import-peserta.php. */
+const IMPORT_BARU_MAX_BYTES = 5 * 1024 * 1024;
+const IMPORT_BARU_MAX_ROWS = 5000;
+
 /** Baca CSV (handle BOM, delimiter ',' atau ';'). Kembalikan array asosiatif baris. */
 function parseCsvFile(string $path): array
 {
@@ -261,6 +265,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log('Import santri baru: temporary upload tidak valid.');
             redirectTo('import-santri-baru.php?err=' . rawurlencode('File upload tidak valid atau sudah kedaluwarsa.'));
         }
+        if ((int) ($_FILES['file_csv']['size'] ?? 0) > IMPORT_BARU_MAX_BYTES) {
+            redirectTo('import-santri-baru.php?err=' . rawurlencode('Ukuran file melebihi 5 MB. Pecah berkas atau gunakan alur Impor Peserta.'));
+        }
 
         $tempDir = resolveImportTempDir();
         if ($tempDir === '') {
@@ -296,6 +303,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $csvRows = parseCsvFile($source);
         if (!$csvRows) {
             redirectTo('import-santri-baru.php?err=' . rawurlencode('File CSV kosong atau tidak terbaca.'));
+        }
+        if (count($csvRows) > IMPORT_BARU_MAX_ROWS) {
+            redirectTo('import-santri-baru.php?err=' . rawurlencode('Jumlah baris melebihi ' . IMPORT_BARU_MAX_ROWS . '. Pecah berkas atau gunakan alur Impor Peserta.'));
         }
 
         // hitung ulang disposition dari DB live (jangan percaya input POST)
@@ -380,7 +390,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            redirectTo('import-santri-baru.php?err=' . rawurlencode('Gagal import: ' . $e->getMessage()));
+            reportApplicationError($e, 'import-santri-baru');
+            redirectTo('import-santri-baru.php?err=' . rawurlencode('Impor belum selesai. Periksa format CSV lalu coba lagi; rincian tercatat di log.'));
         }
     }
 
@@ -395,6 +406,10 @@ $done = $_GET['done'] ?? '';
 $error = $_GET['err'] ?? '';
 $source = activeSourceFile();
 $csvRows = $source !== '' ? parseCsvFile($source) : [];
+if (count($csvRows) > IMPORT_BARU_MAX_ROWS) {
+    $csvRows = array_slice($csvRows, 0, IMPORT_BARU_MAX_ROWS);
+    $error = 'Berkas melebihi ' . IMPORT_BARU_MAX_ROWS . ' baris; pratinjau terpotong. Pecah berkas atau gunakan alur Impor Peserta.';
+}
 $disp = $csvRows ? computeDispositions($pdo, $csvRows) : ['rows' => [], 'counts' => ['attach' => 0, 'new' => 0, 'dup' => 0, 'error' => 0, 'new_families' => 0], 'new_families' => [], 'halaqoh_map' => []];
 $previewRows = $disp['rows'];
 $counts = $disp['counts'];

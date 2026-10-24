@@ -58,6 +58,10 @@ foreach (['role'=>'superuser','username'=>['array'],'password'=>'short','nama_le
     secCheck(secUsers($pdo)===$usersBefore,'Rejected request preserves all user rows');
 }
 secReject(fn()=>saveManagedUser($pdo,4,$new),'Read-only role cannot create accounts');
+$escalation=$new; $escalation['role']='admin';
+secReject(fn()=>saveManagedUser($pdo,2,$escalation),'PJ cannot create admin accounts');
+$selfEscalation=$escalation; $selfEscalation['id']='2'; $selfEscalation['username']='audit_pj';
+secReject(fn()=>saveManagedUser($pdo,2,$selfEscalation),'PJ cannot promote itself to admin');
 secReject(fn()=>deleteManagedUser($pdo,1,1),'Own account cannot be deleted');
 secReject(fn()=>deleteManagedUser($pdo,2,1),'Last admin cannot be deleted by another manager');
 $demote=$new; $demote['id']='1'; $demote['username']='audit_admin';

@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/tahsin_reminder_helper.php';
+require_once __DIR__ . '/security_helper.php';
 function tahsinReminderApi(PDO $pdo, bool $daily): void
 {
     header('Content-Type: application/json; charset=utf-8');
@@ -7,8 +8,10 @@ function tahsinReminderApi(PDO $pdo, bool $daily): void
     $apiKey = trim(getenv('N8N_API_KEY') ?: '');
     if ($apiKey === '') { http_response_code(503); echo json_encode(['error' => 'API belum dikonfigurasi.']); return; }
     $headers = array_change_key_case(function_exists('getallheaders') ? getallheaders() : [], CASE_LOWER);
-    $provided = trim((string) ($headers['x-api-key'] ?? ($_GET['key'] ?? '')));
+    // Key hanya via header X-API-Key agar tidak tertinggal di access log.
+    $provided = trim((string) ($headers['x-api-key'] ?? ''));
     if (!hash_equals($apiKey, $provided)) { http_response_code(401); echo json_encode(['error' => 'Unauthorized']); return; }
+    if (!apiRateLimitAllow('reminder', 120, 60)) { http_response_code(429); echo json_encode(['error' => 'Terlalu banyak permintaan.']); return; }
     $now = tahsinNow();
     $weekday = (int) $now->format('w');
     if (($daily && $weekday === 0) || (!$daily && $weekday !== 0)) {
