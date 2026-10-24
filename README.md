@@ -1,5 +1,7 @@
 # 📖 Presensi Tahsin Bapak — Griya Qur'an
 
+[![CI](https://github.com/miqbalputra/tahsin-walsan/actions/workflows/ci.yml/badge.svg)](https://github.com/miqbalputra/tahsin-walsan/actions/workflows/ci.yml)
+
 Sistem pencatatan kehadiran dan perkembangan materi **Tahsin Al-Qur'an** untuk para **Bapak/Wali Santri** di **Griya Qur'an**. Dibangun dengan PHP 8.2.35 + MySQL, Tailwind CSS, Alpine.js, dan PWA support.
 
 ---
