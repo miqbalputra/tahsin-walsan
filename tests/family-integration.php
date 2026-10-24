@@ -5,6 +5,7 @@ putenv('DATA_INDUK_ENABLED=0');
 foreach (['family_helper','family_migration_helper','alumni_archive_helper','attendance_helper','report_helper'] as $file) require_once __DIR__ . '/../includes/' . $file . '.php';
 $db='tahsin_test_family_'.getmypid();
 $pdo=new PDO('mysql:host=127.0.0.1;port=13317;charset=utf8mb4','root','tahsin_local_test',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_EMULATE_PREPARES=>false]);
+$pdo->exec("SET time_zone = '+07:00'");
 $pdo->exec("CREATE DATABASE `$db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"); $pdo->exec("USE `$db`");
 $pdo->exec(file_get_contents(__DIR__.'/fixtures/tahsin-schema.sql'));
 $pdo->exec('ALTER TABLE halaqoh_members ADD archived_at DATETIME NULL, ADD archive_reason VARCHAR(100) NULL');

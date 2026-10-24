@@ -11,6 +11,7 @@ putenv('DATA_INDUK_ENABLED=0');
 $database = 'tahsin_test_backup_' . getmypid() . '_' . bin2hex(random_bytes(4));
 $pdo = new PDO('mysql:host=127.0.0.1;port=13317;charset=utf8mb4','root','tahsin_local_test',[
     PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_EMULATE_PREPARES=>false]);
+$pdo->exec("SET time_zone = '+07:00'");
 $pdo->exec("CREATE DATABASE `$database` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
 $pdo->exec("USE `$database`");
 $pdo->exec(file_get_contents(__DIR__ . '/fixtures/tahsin-schema.sql'));
@@ -126,6 +127,7 @@ $restoredDatabase=$database.'_restored';
 $pdo->exec("CREATE DATABASE `$restoredDatabase` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
 $target=new PDO('mysql:host=127.0.0.1;port=13317;dbname='.$restoredDatabase.';charset=utf8mb4','root','tahsin_local_test',[
     PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_EMULATE_PREPARES=>false]);
+$target->exec("SET time_zone = '+07:00'");
 foreach ($tables as $table) $target->exec($pdo->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_ASSOC)['Create Table']);
 $restore=executeMergeRestore($target,$directory.'/original.zip',discoverBackupTables($target),'\\N');
 bkCheck($restore['error']===null,'Fresh separate database recovery succeeds');

@@ -7,6 +7,7 @@ foreach (['tahsin','autosave','family'] as $name) require_once __DIR__ . '/../in
 $database = 'tahsin_test_participant_' . getmypid() . '_' . bin2hex(random_bytes(4));
 $pdo = new PDO('mysql:host=127.0.0.1;port=13317;charset=utf8mb4','root','tahsin_local_test',[
     PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_EMULATE_PREPARES=>false]);
+$pdo->exec("SET time_zone = '+07:00'");
 $pdo->exec("CREATE DATABASE `$database` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; USE `$database`");
 $pdo->exec(file_get_contents(__DIR__ . '/fixtures/tahsin-schema.sql'));
 $pdo->exec("INSERT INTO users(id,username,password,nama_lengkap,role) VALUES(1,'participant_admin','synthetic','Admin Peserta','admin'),(2,'participant_pj','synthetic','PJ Peserta','pj_tahfidz'),(3,'participant_teacher','synthetic','Guru Peserta','ustadz');
