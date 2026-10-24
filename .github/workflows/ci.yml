@@ -78,7 +78,7 @@ jobs:
 
       - name: Weekly reminder HTTP checks
         run: |
-          sudo mariadb -e "DROP DATABASE IF EXISTS tahsin_test_weekly_reminder_ci"
+          mariadb -h 127.0.0.1 -P 13317 -u root -ptahsin_local_test -e "DROP DATABASE IF EXISTS tahsin_test_weekly_reminder_ci"
           php tests/tahsin-reminder-mysql-integration.php tahsin_test_weekly_reminder_ci
           mkdir -p .sessions/ci-reminder-http
           DB_HOST=127.0.0.1 DB_PORT=13317 DB_DATABASE=tahsin_test_weekly_reminder_ci \
