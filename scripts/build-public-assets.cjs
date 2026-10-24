@@ -2,7 +2,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..');
-const version = file => crypto.createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex').slice(0,16);
+// Hash file teks dinormalisasi CRLF->LF agar versi aset identik di Windows
+// maupun Linux (checkout dengan .gitattributes text=auto berbeda EOL).
+const textNormalized = file => {
+  const bytes = fs.readFileSync(path.join(root, file));
+  if (!/\.(css|js|json)$/.test(file)) return bytes;
+  return Buffer.from(bytes.toString('utf8').replace(/\r\n/g, '\n'), 'utf8');
+};
+const version = file => crypto.createHash('sha256').update(textNormalized(file)).digest('hex').slice(0,16);
 const iconVersion=version('icon-512.png');
 const manifestPath=path.join(root,'manifest.json');
 const manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));

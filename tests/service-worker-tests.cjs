@@ -45,7 +45,7 @@ const asset=name=>'/tahsin/'+app.assets.find(item=>item.split('?')[0]===name);
   for(const entry of app.assets){
     const [file,query]=entry.split('?');
     check(/^(assets\/(css|js)\/[A-Za-z0-9][A-Za-z0-9_.-]*\.(css|js)|manifest\.json|icon-512\.png)$/.test(file),'Only reviewed public asset locations enter precache');
-    const hash=crypto.createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex').slice(0,16);
+    const bytes=fs.readFileSync(path.join(root,file));const normalized=/\.(css|js|json)$/.test(file)?Buffer.from(bytes.toString('utf8').replace(/\r\n/g,'\n'),'utf8'):bytes;const hash=crypto.createHash('sha256').update(normalized).digest('hex').slice(0,16);
     check(query==='v='+hash,'Generated version matches current contents: '+file);
   }
   check(app.release===crypto.createHash('sha256').update(JSON.stringify(app.assets)).digest('hex').slice(0,16),'Worker cache version tracks the asset collection');
