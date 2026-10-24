@@ -189,6 +189,28 @@ cetak rapor, backup-restore (pratinjau → restore di DB uji).
 
 ---
 
+## LANJUTAN 2026-10-24 — CI otomatis & backup terjadwal
+
+### L1 [x] CI otomatis (GitHub Actions)
+- [x] `.github/workflows/ci.yml`: berjalan pada push (main/codex/feat), pull_request, dan manual.
+- [x] Lingkungan: PHP 8.2 (pdo_mysql, zip, mbstring, gd), Node 20, MariaDB terisolasi di `127.0.0.1:13317` dengan kredensial fixture yang sama dengan suite uji.
+- [x] Menjalankan: phpunit (tests/Unit), 9 suite PHP, asset/service-worker/n8n workflow, security HTTP (184 assertion), dan reminder HTTP checks.
+- [x] Badge CI ditambahkan di README. Catatan: suite browser (Playwright) belum masuk CI — butuh instalasi browser; bisa menyusul.
+
+### L2 [x] Backup database terjadwal ke storage terpisah
+- [x] `scripts/backup-database.php` (CLI-only): ZIP backup penuh memakai `createBackupZip()` yang sama dengan fitur aplikasi, disimpan ke `BACKUP_STORAGE_PATH` (di luar webroot), mode 0600.
+- [x] `includes/backup_helper.php`: `purgeBackupArchives()` — retensi berbasis jumlah (14 arsip terbaru; `purgeSafetyBackups` kini memakai fungsi yang sama).
+- [x] Status eksekusi terakhir tersimpan di `backup_auto_last.json` (sukses maupun gagal — kegagalan koneksi DB tercatat lewat probe koneksi tersendiri).
+- [x] `docs/BACKUP_AUTOMATION.md`: panduan Scheduled Task Coolify + cron cPanel + checklist operasional mingguan + alur pemulihan.
+- Verifikasi lokal: eksekusi sukses (exit 0, ZIP + last.json ok), eksekusi gagal DB (exit 1, last.json `ok:false`), retensi 18→14 arsip, `tests/backup-integration.php` tetap PASS 102.
+
+### Ke depan (menaikkan skor kualitas menuju 90%)
+- [ ] Rotasi password ustadz + pembersihan riwayat git (tertahan keputusan pemilik).
+- [ ] Penyatuan alur impor & deduplikasi laporan (3.4/3.6).
+- [ ] Suite browser (Playwright) masuk CI; monitoring/alerting sederhana.
+
+---
+
 ## Catatan penutup (2026-10-24)
 
 - Semua perubahan ada di working tree cabang `codex/application-audit-20261023` — **belum di-commit**; silakan tinjau `git status`/`git diff` lalu commit.
