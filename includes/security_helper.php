@@ -67,23 +67,66 @@ function requireValidCsrfToken($token): void
  * Rate limiter berbasis file untuk API tanpa sesi (hermes/n8n). Cukup untuk
  * membatasi abuse per IP; bukan pengganti proteksi DDoS level infrastruktur.
  */
-function apiRateLimitAllow(string $scope, int $maxRequests = 120, int $windowSeconds = 60): bool
+function apiRateLimitAllow(string $scope, int $maxRequests = 120, int $windowSeconds = 60): ?bool
 {
+    if ($scope === '' || $maxRequests < 1 || $windowSeconds < 1) return null;
+
     $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
     if (!is_string($ip) || $ip === '') $ip = 'unknown';
     $directory = ini_get('session.save_path') ?: sys_get_temp_dir();
     if (!is_dir($directory)) $directory = sys_get_temp_dir();
-    $path = $directory . '/api-rate-' . preg_replace('/[^A-Za-z0-9_-]+/', '-', $scope . '-' . $ip) . '.json';
+    $identity = realpath(dirname(__DIR__)) ?: dirname(__DIR__);
+    $path = rtrim($directory, '/\\') . DIRECTORY_SEPARATOR . 'api-rate-' . hash('sha256', $identity . "\0" . $scope . "\0" . $ip) . '.json';
     $now = time();
-    $hits = [];
-    if (is_file($path)) {
-        $decoded = json_decode((string) @file_get_contents($path), true);
-        if (is_array($decoded)) {
-            $hits = array_values(array_filter($decoded, static fn($stamp) => is_int($stamp) && $stamp > $now - $windowSeconds));
+
+    // Lock around the complete read/decide/write sequence. Locking only the
+    // write lets concurrent requests all observe the same old counter.
+    $handle = @fopen($path, 'c+');
+    if (!is_resource($handle)) return null;
+    try {
+        if (!flock($handle, LOCK_EX)) return null;
+        @chmod($path, 0600);
+
+        $stat = fstat($handle);
+        if (!is_array($stat)) return null;
+        $decoded = [];
+        if (($stat['size'] ?? 0) <= 65536) {
+            rewind($handle);
+            $contents = stream_get_contents($handle, 65537);
+            if (!is_string($contents)) return null;
+            if ($contents !== '') {
+                $stored = json_decode($contents, true);
+                if (is_array($stored) && array_is_list($stored)) {
+                    foreach ($stored as $stamp) {
+                        if (!is_int($stamp)) {
+                            $stored = [];
+                            break;
+                        }
+                    }
+                    $decoded = $stored;
+                }
+            }
         }
+
+        $hits = array_values(array_filter($decoded, static fn($stamp) => $stamp > $now - $windowSeconds));
+        if (count($hits) >= $maxRequests) return false;
+        $hits[] = $now;
+        $encoded = json_encode($hits, JSON_THROW_ON_ERROR);
+
+        rewind($handle);
+        if (!ftruncate($handle, 0)) return null;
+        $offset = 0;
+        while ($offset < strlen($encoded)) {
+            $written = fwrite($handle, substr($encoded, $offset));
+            if ($written === false || $written === 0) return null;
+            $offset += $written;
+        }
+        if (!fflush($handle)) return null;
+        return true;
+    } catch (Throwable $error) {
+        return null;
+    } finally {
+        @flock($handle, LOCK_UN);
+        fclose($handle);
     }
-    if (count($hits) >= $maxRequests) return false;
-    $hits[] = $now;
-    @file_put_contents($path, json_encode($hits), LOCK_EX);
-    return true;
 }

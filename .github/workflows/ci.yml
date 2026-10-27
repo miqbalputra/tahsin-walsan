@@ -58,6 +58,7 @@ jobs:
           php tests/run-tahsin-tests.php
           php tests/rapor-tests.php
           php tests/tahsin-reminder-tests.php
+          php tests/api-rate-limit-tests.php
           php tests/security-integration.php
           php tests/backup-integration.php
           php -d memory_limit=256M tests/participant-import-integration.php

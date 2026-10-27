@@ -310,6 +310,24 @@ kemudian menghentikan server setelah selesai. Ia tidak memakai URL aplikasi
 aktif, mengubah database produksi, atau mengirim pengingat ke pengguna.
 Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
 
+## Perbaikan API 27 Oktober 2026
+
+- Audit menemukan parameter query array pada Hermes API dapat mencapai fungsi
+  string/tanggal PHP sebelum divalidasi. Request dengan parameter berbentuk
+  array kini ditolak sebagai HTTP 400 setelah autentikasi dan sebelum koneksi
+  database.
+- Pembatasan request Hermes dan pengingat n8n kini mengunci keseluruhan proses
+  baca/periksa/tulis. Request serentak tidak dapat memakai hitungan lama yang
+  sama. Kegagalan penyimpanan limiter menghasilkan HTTP 503; hitungan yang
+  rusak dipulihkan dengan memulai jendela baru.
+- Pemeriksaan terisolasi mencakup batas normal, pemisahan IP/scope, konfigurasi
+  tidak valid, pemulihan hitungan rusak, dan 16 proses bersamaan untuk batas
+  empat request. Uji HTTP menambahkan kasus array pada action dan tanggal.
+- Tidak ada koneksi atau perubahan pada database aplikasi aktif. Suite HTTP
+  yang memerlukan database tidak dijalankan karena port fixture lokal
+  `127.0.0.1:13317` tidak aktif. Audit penerimaan fitur keseluruhan masih
+  berlangsung.
+
 ## Urutan pekerjaan
 
 1. Perbaiki fondasi akun, sesi, validasi permintaan, privasi respons/cache,

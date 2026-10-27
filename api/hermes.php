@@ -137,7 +137,11 @@ function authenticate()
     if (!is_string($key) || $key === '' || !hash_equals(HERMES_API_KEY, $key)) {
         jsonError(401, 'Unauthorized. Provide the API key via the X-API-Key request header.');
     }
-    if (!apiRateLimitAllow('hermes', 120, 60)) {
+    $rateLimit = apiRateLimitAllow('hermes', 120, 60);
+    if ($rateLimit === null) {
+        jsonError(503, 'Pembatasan permintaan belum tersedia. Coba lagi sebentar.');
+    }
+    if (!$rateLimit) {
         jsonError(429, 'Terlalu banyak permintaan. Tunggu sebentar lalu coba lagi.');
     }
 }
@@ -215,6 +219,12 @@ function escapeLike($value)
 // ============================================================
 
 authenticate();
+
+// PHP parses bracketed query values as arrays. Reject them explicitly before
+// handlers pass query values to string functions or SQL filters.
+foreach ($_GET as $queryValue) {
+    if (!is_string($queryValue)) jsonError(400, 'Format parameter tidak valid. Gunakan satu nilai untuk setiap parameter.');
+}
 
 // ============================================================
 // KONEKSI DATABASE (setelah auth, sebelum router)

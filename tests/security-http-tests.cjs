@@ -434,6 +434,10 @@ require 'includes/participant_merge_helper.php'; participantMergeApplyMigration(
   check(health.status===200 && JSON.parse(health.body).ok===true && /no-store/.test(health.headers.get('cache-control')),'Health check is healthy and never cached');
   const apiBad = await req('/api/hermes.php?action=status&api_key[]=bad');
   check(apiBad.status===401,'Array API key is rejected without crashing');
+  const apiArrayAction = await fetch(base+'/api/hermes.php?action[]=users',{headers:{'X-API-Key':'audit-fixture-key'}});
+  check(apiArrayAction.status===400,'Array query values receive a client error before API handlers run');
+  const apiArrayDate = await fetch(base+'/api/hermes.php?action=stats&start[]=2026-10-01',{headers:{'X-API-Key':'audit-fixture-key'}});
+  check(apiArrayDate.status===400,'Array date filters are rejected without PHP type errors');
   const apiQuery = await req('/api/hermes.php?action=status&api_key=audit-fixture-key');
   check(apiQuery.status===401,'Valid API key in the query string is no longer accepted');
   const apiHeader = await fetch(base+'/api/hermes.php?action=users',{headers:{'X-API-Key':'audit-fixture-key'}});

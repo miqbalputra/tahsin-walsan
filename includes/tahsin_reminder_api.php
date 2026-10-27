@@ -11,7 +11,9 @@ function tahsinReminderApi(PDO $pdo, bool $daily): void
     // Key hanya via header X-API-Key agar tidak tertinggal di access log.
     $provided = trim((string) ($headers['x-api-key'] ?? ''));
     if (!hash_equals($apiKey, $provided)) { http_response_code(401); echo json_encode(['error' => 'Unauthorized']); return; }
-    if (!apiRateLimitAllow('reminder', 120, 60)) { http_response_code(429); echo json_encode(['error' => 'Terlalu banyak permintaan.']); return; }
+    $rateLimit = apiRateLimitAllow('reminder', 120, 60);
+    if ($rateLimit === null) { http_response_code(503); echo json_encode(['error' => 'Pembatasan permintaan belum tersedia.']); return; }
+    if (!$rateLimit) { http_response_code(429); echo json_encode(['error' => 'Terlalu banyak permintaan.']); return; }
     $now = tahsinNow();
     $weekday = (int) $now->format('w');
     if (($daily && $weekday === 0) || (!$daily && $weekday !== 0)) {
