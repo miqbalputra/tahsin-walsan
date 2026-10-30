@@ -22,11 +22,20 @@
    dengan `APP_LOAD_ENV_FILE=1 APPLY_MIGRATIONS=1 php migrate_tahsin_reporting.php`. Migrasi ini
    additive; jangan melewati validasi backup/staging.
 
-2. Setelah duplikasi presensi sudah nol, terapkan migrasi sekali:
+2. Pastikan pemeriksaan duplikasi lulus, lalu terapkan migrasi:
 
    ```sh
    APP_LOAD_ENV_FILE=1 php migrate_data_induk.php --apply
    ```
+
+   Migrasi memeriksa semua prasyarat, definisi kolom/indeks yang sudah ada,
+   duplikasi presensi, dan UUID yang akan diberi indeks unik sebelum DDL
+   pertama. Tiap kolom dan indeks ditambahkan sendiri-sendiri supaya migrasi
+   yang sempat terhenti dapat dilanjutkan dengan perintah yang sama. Migrasi
+   tidak menghapus baris atau menulis ulang nilai lama; tabel status sync
+   memakai InnoDB. Jika definisi lama berbenturan atau ada data duplikat,
+   migrasi berhenti sebelum perubahan skema dan menjelaskan pemeriksaan yang
+   perlu dilakukan.
 
 3. Di VPS/Coolify masukkan secret `DATA_INDUK_ENABLED`, `DATA_INDUK_BASE_URL`,
    `DATA_INDUK_API_KEY`, dan `DATA_INDUK_UNIT_ID`. Nilai tersebut tidak boleh

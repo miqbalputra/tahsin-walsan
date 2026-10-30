@@ -1112,3 +1112,20 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   tabel yang sudah berisi, serta pemulihan ulang tanpa duplikasi. Hasil CI
   lulus pada commit 8971c3d (run 41028951148). Fixture memakai database
   sintetis dan tidak mengakses database produksi.
+
+## Pra-validasi migrasi Data Induk — 30 Oktober 2026
+
+- Temuan: migrasi menjalankan beberapa ALTER sebelum memeriksa duplikasi
+  presensi. Ia juga mengabaikan nama kolom/indeks duplikat pada seluruh ALTER
+  multiobjek, sehingga skema yang sudah terpasang sebagian dapat tertinggal
+  dengan kolom atau indeks lain yang hilang.
+- Migrasi kini memvalidasi tabel prasyarat, definisi kolom dan indeks yang
+  sudah ada, engine InnoDB, duplikasi kunci presensi, dan duplikasi UUID
+  sebelum DDL pertama. Perubahan skema menjadi satu kolom atau indeks per
+  operasi agar dapat dilanjutkan setelah interupsi. Tabel status sync baru
+  selalu memakai InnoDB; migrasi tidak menghapus baris atau menimpa nilai lama.
+- Fixture MariaDB kini menguji penolakan duplikasi sebelum DDL, penyelesaian
+  migrasi parsial, pengulangan tanpa perubahan, benturan nama indeks, dan hash
+  nilai lama. Lint PHP lokal lulus. Runner lokal tidak memiliki driver
+  `pdo_mysql`, jadi bukti integrasi menunggu CI; tidak ada akses atau penulisan
+  database produksi.

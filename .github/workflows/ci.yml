@@ -114,6 +114,7 @@ jobs:
           run_suite participant-merge php -d memory_limit=256M tests/participant-merge-integration.php
           run_suite family php -d memory_limit=256M tests/family-integration.php
           run_suite data-induk-archive php -d memory_limit=256M tests/data-induk-archive-integration.php
+          run_suite data-induk-migration php -d memory_limit=256M tests/data-induk-migration-integration.php
           exit "$failures"
 
       - name: Data Induk roster sync integration
