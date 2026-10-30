@@ -316,12 +316,13 @@ putenv('BACKUP_STORAGE_PATH='.$webrootChild);
 try { resolveTempDir(); throw new LogicException('New backup path inside webroot was accepted'); }
 catch (RuntimeException $error) { bkCheck(str_contains($error->getMessage(),'luar webroot'),'New explicit backup directory inside webroot is rejected'); }
 bkCheck(!file_exists($webrootChild),'Rejected webroot backup path is not created');
+$linkedWebrootChild='backup-path-link-audit-'.bin2hex(random_bytes(5));
 if (@symlink($insideWebroot,$directory.'/webroot-link')) {
     try {
-        putenv('BACKUP_STORAGE_PATH='.$directory.'/webroot-link/backup-child');
+        putenv('BACKUP_STORAGE_PATH='.$directory.'/webroot-link/'.$linkedWebrootChild);
         try { resolveTempDir(); throw new LogicException('Symlink into webroot was accepted'); }
         catch (RuntimeException $error) { bkCheck(str_contains($error->getMessage(),'luar webroot'),'Symlinked backup path resolving into webroot is rejected'); }
-        bkCheck(!file_exists($insideWebroot.DIRECTORY_SEPARATOR.'backup-child'),'Rejected symlink path is not created');
+        bkCheck(!file_exists($insideWebroot.DIRECTORY_SEPARATOR.$linkedWebrootChild),'Rejected symlink path is not created');
     } finally { unlink($directory.'/webroot-link'); }
 }
 putenv('BACKUP_STORAGE_PATH='.$directory.'/configured-storage');
