@@ -1023,5 +1023,9 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   bukan `BACKUP_STORAGE_PATH` eksplisit.
 - Lint PHP serta pemeriksaan path webroot, traversal, symlink, path luar, dan
   mode direktori lulus lokal. Regresi integrasi backup juga mencakup path baru
-  di webroot tanpa membuat folder; eksekusi suite database menunggu CI karena
-  MariaDB fixture lokal tidak aktif.
+  di webroot tanpa membuat folder. CI sempat mengungkap dua fixture test yang
+  masih mengatur penyimpanan backup di dalam webroot; keduanya dipindah ke
+  direktori temp OS dan pemeriksaan HTTP `.sessions` dipisahkan. Pada commit
+  `98f7e11`, suite PHP integrasi dan HTTP keamanan serta kedua run CI
+  (`41022497464`, `41022503116`) lulus. MariaDB fixture lokal tidak aktif,
+  sehingga pembuktian end-to-end dilakukan CI dengan database sintetis.
