@@ -163,7 +163,7 @@ if (isset($_SESSION['user_id'])) {
                 </div>
                 <h1 class="text-2xl sm:text-3xl font-[900] text-slate-800 tracking-tight leading-none uppercase">
                     Presensi <span class="text-blue-600">Tahsin</span></h1>
-                <p class="text-slate-400 mt-2 sm:mt-3 font-medium text-xs sm:text-sm">Kelompok Tahfidz Griya Qur'an
+                <p class="text-slate-600 mt-2 sm:mt-3 font-medium text-xs sm:text-sm">Kelompok Tahfidz Griya Qur'an
                 </p>
             </div>
 
@@ -198,7 +198,7 @@ if (isset($_SESSION['user_id'])) {
                 <!-- Username -->
                 <div class="mb-4 sm:mb-5 relative group">
                     <label for="login-username"
-                        class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2">Username</label>
+                        class="block text-[10px] font-black text-slate-600 uppercase tracking-widest ml-4 mb-2">Username</label>
                     <div class="relative">
                         <span
                             class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors">
@@ -208,7 +208,7 @@ if (isset($_SESSION['user_id'])) {
                             </svg>
                         </span>
                         <input id="login-username" type="text" name="username" maxlength="50" value="<?= appEscape($username) ?>" required autocomplete="username"
-                            class="w-full pl-12 pr-6 py-3.5 sm:py-4 rounded-2xl border border-slate-100 bg-white/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold text-slate-700 placeholder:text-slate-300 placeholder:font-normal text-sm sm:text-base"
+                            class="w-full pl-12 pr-6 py-3.5 sm:py-4 rounded-2xl border border-slate-100 bg-white/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold text-slate-700 placeholder:text-slate-600 placeholder:font-normal text-sm sm:text-base"
                             placeholder="Masukkan username">
                     </div>
                 </div>
@@ -216,7 +216,7 @@ if (isset($_SESSION['user_id'])) {
                 <!-- Password -->
                 <div class="mb-6 sm:mb-8 relative group">
                     <label for="login-password"
-                        class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2">Password</label>
+                        class="block text-[10px] font-black text-slate-600 uppercase tracking-widest ml-4 mb-2">Password</label>
                     <div class="relative">
                         <span
                             class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors">
@@ -228,7 +228,7 @@ if (isset($_SESSION['user_id'])) {
                         </span>
                         <input id="login-password" :type="showPass ? 'text' : 'password'" name="password" required
                             autocomplete="current-password"
-                            class="w-full pl-12 pr-12 py-3.5 sm:py-4 rounded-2xl border border-slate-100 bg-white/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold text-slate-700 placeholder:text-slate-300 text-sm sm:text-base"
+                            class="w-full pl-12 pr-12 py-3.5 sm:py-4 rounded-2xl border border-slate-100 bg-white/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold text-slate-700 placeholder:text-slate-600 text-sm sm:text-base"
                             placeholder="••••••••">
                         <button type="button" @click="showPass = !showPass" :aria-label="showPass ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'" :aria-pressed="showPass" aria-controls="login-password"
                             class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-blue-600 transition-colors">
@@ -253,7 +253,7 @@ if (isset($_SESSION['user_id'])) {
                 <!-- Auto-persistent Login Notice -->
                 <div class="mb-6 flex justify-center">
                     <p
-                        class="text-[10px] font-bold text-slate-400 italic flex items-center gap-1.5 bg-slate-50 px-4 py-2 rounded-full border border-slate-100">
+                        class="text-[10px] font-bold text-slate-600 italic flex items-center gap-1.5 bg-slate-50 px-4 py-2 rounded-full border border-slate-100">
                         <svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z">
@@ -285,10 +285,10 @@ if (isset($_SESSION['user_id'])) {
                         Install ke Perangkat
                     </button>
                 </div>
-                <p class="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1 italic">
+                <p class="text-[9px] sm:text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] mb-1 italic">
                     &copy; 2026
                     Presensi Tahsin - Wali Santri</p>
-                <p class="text-[9px] sm:text-[10px] text-slate-400 font-medium tracking-wide">Developed by <a
+                <p class="text-[9px] sm:text-[10px] text-slate-600 font-medium tracking-wide">Developed by <a
                         href="https://sistemflow.com" target="_blank"
                         class="text-blue-600 font-bold hover:underline transition-all">SistemFlow</a></p>
             </div>
@@ -296,7 +296,7 @@ if (isset($_SESSION['user_id'])) {
 
         <!-- Helpful text below -->
         <p
-            class="text-center text-slate-400 text-[9px] sm:text-[10px] font-bold mt-6 sm:mt-8 uppercase tracking-[0.3em]">
+            class="text-center text-slate-600 text-[9px] sm:text-[10px] font-bold mt-6 sm:mt-8 uppercase tracking-[0.3em]">
             Bapak Tahsin
             Presensi System v2.0</p>
     </div>

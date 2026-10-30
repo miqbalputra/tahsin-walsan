@@ -986,3 +986,17 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   run 41019923645 dan 41019931129 pada commit b30d350 juga lulus.
 - Gate ini membatasi generator penggantian ke sandbox; generator tersebut tetap
   bersifat destruktif dan tidak boleh dipakai untuk database operasional.
+
+## Keterbacaan halaman masuk — 30 Oktober 2026
+
+- Pemeriksaan UI halaman login menemukan teks keterangan, label isian, placeholder,
+  dan catatan kecil terlalu pucat. Pada latar putih, warna Tailwind slate-400
+  hanya berkontras 2,56:1 dan slate-300 1,48:1, di bawah target WCAG AA 4,5:1
+  untuk teks normal.
+- Teks informatif dan placeholder halaman masuk digelapkan ke slate-600
+  (7,58:1 terhadap putih); ikon dekoratif tidak diubah. CSS dibangun ulang dari
+  sumber lokal agar halaman memakai kelas yang sama saat dilayani.
+- `php -l login.php` dan `php tests/asset-tests.php` lulus (19 assertion).
+  Perubahan ini hanya menyentuh markup dan stylesheet; tidak ada koneksi,
+  migrasi, impor, atau penulisan ke database. Audit visual/perangkat dan
+  penerimaan alur halaman lain masih belum lengkap.
