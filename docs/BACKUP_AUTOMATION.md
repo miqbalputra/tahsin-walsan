@@ -47,7 +47,7 @@ tabel + `schema.sql` + manifest checksum, snapshot konsisten REPEATABLE READ).
 
 ## Pemulihan
 
-Gunakan menu **Backup & Restore** di aplikasi (login admin/PJ): upload ZIP →
+Gunakan menu **Backup & Restore** di aplikasi (login admin): upload ZIP →
 pratinjau → konfirmasi `RESTORE`. Restore selalu merge-only (baris dengan ID
 yang sudah ada dilewati) dan otomatis membuat safety backup sebelum
 pemulihan. Panduan lengkap: `docs/BACKUP_RECOVERY.md`.

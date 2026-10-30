@@ -1097,3 +1097,17 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
 - Verifikasi dokumentasi: seluruh perintah backup dan audit merujuk file yang
   tercatat Git; tidak ada lagi referensi ke skrip snapshot/baseline yang
   hilang. Tidak ada koneksi atau perubahan database.
+
+## Pemulihan tabel tanpa primary key — 30 Oktober 2026
+
+- Ulasan backup menemukan baris tabel tanpa primary key ikut tersimpan dalam
+  ZIP, tetapi selalu dilewati saat restore. Ini membuat pemulihan penuh ke
+  tabel kosong tidak lengkap.
+- Restore kini mengisi tabel tanpa primary key hanya jika tabel tujuan kosong,
+  di dalam transaksi REPEATABLE READ dengan locking read untuk mencegah insert
+  serentak. Tabel yang sudah berisi tetap utuh dan dilewati agar tidak
+  menggandakan atau mencampur baris tanpa identitas. Kolom generated pada
+  arsip tanpa primary key ditandai dan memerlukan tinjauan.
+- Regresi membandingkan pratinjau, pemulihan ke tabel kosong, pelestarian isi
+  tabel yang sudah berisi, serta pemulihan ulang tanpa duplikasi. Hasil CI
+  untuk perubahan ini dicatat setelah verifikasi.

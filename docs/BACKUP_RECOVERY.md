@@ -2,8 +2,9 @@
 
 ## Menu aplikasi
 
-Admin dan PJ Tahfidz dapat mengunduh cadangan, mengunggah ZIP untuk
-pratinjau, lalu mengetik `RESTORE` untuk mengonfirmasi pemulihan.
+Admin dapat mengunggah ZIP untuk pratinjau, lalu mengetik `RESTORE` untuk
+mengonfirmasi pemulihan. Admin dan PJ Tahfidz dapat mengunduh cadangan;
+ekspor PJ mengosongkan hash kata sandi.
 Pratinjau tidak menulis data domain. Log aktivitas mencatat penggunaannya.
 
 Pemulihan memakai **merge dengan ID asli**:
@@ -16,8 +17,12 @@ Pemulihan memakai **merge dengan ID asli**:
 - Seluruh penambahan berjalan dalam satu transaksi. Kegagalan validasi,
   foreign key, nilai terlalu panjang, atau kolom otomatis yang berbeda
   membatalkan perubahan parsial. Tabel non-InnoDB ditolak sebelum operasi.
-- Tabel tanpa primary key tetap masuk cadangan, tetapi tidak dimasukkan
-  saat merge. Pratinjau dan hasil menyebut tabel yang dilewati.
+- Tabel tanpa primary key tetap masuk cadangan. Baris dipulihkan jika tabel
+  tujuan kosong. Jika sudah ada baris, seluruh tabel dilewati dan disebutkan
+  saat pratinjau/hasil agar restore tidak menggandakan atau mencampur baris
+  yang identitasnya tidak dapat diverifikasi.
+- Tabel tanpa primary key yang memiliki kolom generated dan berisi baris arsip
+  memerlukan tinjauan pengelola; restore berhenti sebelum perubahan parsial.
 - Cadangan kondisi sebelum pemulihan dibuat terlebih dahulu. Unduh salinan
   tersebut; mengunggahnya kembali melalui menu merge **tidak menghapus**
   baris tambahan dari pemulihan sebelumnya.

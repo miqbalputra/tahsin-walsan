@@ -132,6 +132,7 @@ function backupInspect(PDO $pdo, ZipArchive $zip, array $manifest, array $tables
         $stream = backupCsvStream($zip, $manifest, $table);
         try {
             $header = null;
+            $generated = [];
             $count = 0;
             $keys = tablePrimaryKeyColumns($pdo, $table);
             foreach (backupCsvRows($stream, $manifest['version'] ?? 1) as $record) {
@@ -140,6 +141,7 @@ function backupInspect(PDO $pdo, ZipArchive $zip, array $manifest, array $tables
                     if (count(array_unique($header)) !== count($header) || array_diff($header, tableColumns($pdo, $table)) || array_diff($keys, $header)) throw new InvalidArgumentException('Kolom atau primary key CSV ' . $table . ' tidak cocok. Pemulihan tidak dijalankan.');
                     $info = $pdo->query("SHOW COLUMNS FROM `$table`")->fetchAll(PDO::FETCH_ASSOC);
                     foreach ($info as $column) {
+                        if (str_contains($column['Extra'],'GENERATED') && !str_contains($column['Extra'],'DEFAULT_GENERATED')) $generated[] = $column['Field'];
                         if ($column['Null'] === 'NO' && $column['Default'] === null && $column['Extra'] === '' && !in_array($column['Field'], $header, true)) throw new InvalidArgumentException('CSV ' . $table . ' tidak memiliki kolom wajib ' . $column['Field'] . '.');
                     }
                     continue;
@@ -152,8 +154,14 @@ function backupInspect(PDO $pdo, ZipArchive $zip, array $manifest, array $tables
             }
             if ($header === null || $count !== $manifest['tables'][$table]) throw new InvalidArgumentException('Jumlah baris CSV ' . $table . ' tidak sesuai manifest atau header tidak terbaca.');
             $totalZip += $count;
+            $note = '';
+            if (!$keys) {
+                if ($generated && $count > 0) $note = 'Tanpa primary key dan memiliki kolom otomatis; pemulihan memerlukan tinjauan pengelola.';
+                elseif ($dbCount === 0) $note = 'Tanpa primary key: tabel tujuan kosong dan baris dapat dipulihkan tanpa menggabungkan data yang tidak beridentitas.';
+                else $note = 'Tanpa primary key: tabel tujuan sudah berisi data, sehingga tabel dilewati agar tidak membuat duplikasi.';
+            }
             $rows[] = ['table'=>$table,'zip_rows'=>$count,'db_rows'=>$dbCount,'cols_ok'=>true,'checksum_ok'=>true,'missing'=>[],
-                'note'=>$keys ? '' : 'Tanpa primary key: disertakan dalam cadangan, tetapi dilewati saat merge agar tidak membuat duplikasi.'];
+                'note'=>$note];
         } finally { fclose($stream); }
     }
     return ['error'=>null,'rows'=>$rows,'total_zip'=>$totalZip,'total_db'=>$totalDb,
@@ -252,6 +260,9 @@ function executeMergeRestore(PDO $pdo, string $zipPath, array $tables, string $n
         [$zip, $manifest] = backupOpenArchive($zipPath);
         backupInspect($pdo, $zip, $manifest, $tables, $nullToken);
         $originalSqlMode = appUseStrictSqlMode($pdo,true);
+        // Keep InnoDB gap locks for empty keyless tables so concurrent inserts
+        // cannot race a restore and create rows without a safe merge identity.
+        $pdo->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
         $pdo->beginTransaction();
         $foreignKeys = backupForeignKeys($pdo);
         $changedParents = backupChangedParentKeys($pdo,$zip,$manifest,$foreignKeys,$nullToken);
@@ -261,7 +272,19 @@ function executeMergeRestore(PDO $pdo, string $zipPath, array $tables, string $n
             $counts[$table] = $conflicts[$table] = 0;
             if (!isset($manifest['tables'][$table])) continue;
             $keys = tablePrimaryKeyColumns($pdo, $table);
-            if (!$keys) { $skipped[$table] = 'Tanpa primary key; dilewati agar tidak membuat duplikasi.'; continue; }
+            $restoreKeylessTable = false;
+            if (!$keys) {
+                // Without a primary key, merge cannot identify individual
+                // rows. Restore only when the target table is empty.
+                $existingRows = $pdo->query("SELECT 1 FROM `$table` LIMIT 1 FOR UPDATE");
+                $hasExistingRows = $existingRows->fetchColumn() !== false;
+                $existingRows->closeCursor();
+                if ($hasExistingRows) {
+                    $skipped[$table] = 'Tanpa primary key dan tabel tujuan sudah berisi data; dilewati agar tidak membuat duplikasi.';
+                    continue;
+                }
+                $restoreKeylessTable = true;
+            }
             $stream = backupCsvStream($zip, $manifest, $table);
             $header = null;
             foreach (backupCsvRows($stream, $manifest['version'] ?? 1) as $row) {
@@ -274,15 +297,18 @@ function executeMergeRestore(PDO $pdo, string $zipPath, array $tables, string $n
                     $writeHeader = array_values(array_diff($header,$generated));
                     $columns = implode(',', array_map(static fn($column)=>"`$column`", $writeHeader));
                     $where = implode(' AND ', array_map(static fn($key)=>"`$key`=?", $keys));
-                    $exists = $pdo->prepare("SELECT 1 FROM `$table` WHERE $where LIMIT 1 FOR UPDATE");
+                    $exists = $restoreKeylessTable ? null : $pdo->prepare("SELECT 1 FROM `$table` WHERE $where LIMIT 1 FOR UPDATE");
                     $insert = $pdo->prepare("INSERT INTO `$table` ($columns) VALUES (" . implode(',',array_fill(0,count($writeHeader),'?')) . ')');
-                    $verifyGenerated = $generated ? $pdo->prepare("SELECT * FROM `$table` WHERE $where LIMIT 1") : null;
+                    if ($restoreKeylessTable && $generated && ($manifest['tables'][$table] ?? 0) > 0) throw new InvalidArgumentException('Tabel tanpa primary key memiliki kolom otomatis; pemulihan aman memerlukan tinjauan pengelola.');
+                    $verifyGenerated = $generated && !$restoreKeylessTable ? $pdo->prepare("SELECT * FROM `$table` WHERE $where LIMIT 1") : null;
                     continue;
                 }
                 $values = array_map(static fn($value)=>backupDecodeValue($value,$manifest['version'] ?? 1,$nullToken), $row);
                 $byName = array_combine($header,$values);
-                $exists->execute(array_map(static fn($key)=>$byName[$key], $keys));
-                if ($exists->fetchColumn() !== false) { $conflicts[$table]++; continue; }
+                if ($exists) {
+                    $exists->execute(array_map(static fn($key)=>$byName[$key], $keys));
+                    if ($exists->fetchColumn() !== false) { $conflicts[$table]++; continue; }
+                }
                 foreach ($foreignKeys as $reference) {
                     if ($reference['table'] !== $table) continue;
                     $tuple = array_map(static fn($column)=>$byName[$column] ?? null,$reference['columns']);
