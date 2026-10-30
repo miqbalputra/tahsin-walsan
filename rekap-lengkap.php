@@ -17,12 +17,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Anda tidak berwenang atau token keamanan tidak valid.';
     } elseif (($_POST['action'] ?? '') === 'verify') {
         try {
-            if (!isset($_POST['selected_id']) || !preg_match('/^\d+$/', (string) $_POST['selected_id'])) throw new InvalidArgumentException('Pilih catatan yang sah.');
-            tahsinSaveVerification($pdo, (int) ($_POST['wali_id'] ?? 0), (string) ($_POST['session'] ?? ''), (string) ($_POST['fingerprint'] ?? ''), (int) $_POST['selected_id'] ?: null, $userId, (string) ($_POST['note'] ?? ''));
-            addLog($pdo, 'VERIFY_TAHSIN_SESSION', 'Wali ID ' . (int) $_POST['wali_id'] . ', sesi ' . $_POST['session'] . ', pilihan #' . (int) $_POST['selected_id']);
+            $verification = tahsinVerificationRequestValues($_POST);
+            tahsinSaveVerification(
+                $pdo,
+                $verification['wali_id'],
+                $verification['session'],
+                $verification['fingerprint'],
+                $verification['selected_id'],
+                $userId,
+                $verification['note']
+            );
+            addLog($pdo, 'VERIFY_TAHSIN_SESSION', 'Wali ID ' . $verification['wali_id'] . ', sesi ' . $verification['session'] . ', pilihan #' . ($verification['selected_id'] ?? 0));
             redirectTo('rekap-lengkap.php?' . http_build_query(array_merge($_GET, ['msg' => 'verified'])) . '#detail-wali');
         } catch (PDOException $e) { reportApplicationError($e, 'verify-tahsin-database'); $error = 'Verifikasi gagal disimpan. Silakan coba kembali.'; }
-        catch (InvalidArgumentException | RuntimeException $e) { $error = $e->getMessage(); }
+        catch (InvalidArgumentException $e) { http_response_code(422); $error = $e->getMessage(); }
+        catch (RuntimeException $e) { http_response_code(409); $error = $e->getMessage(); }
         catch (Throwable $e) { reportApplicationError($e, 'verify-tahsin'); $error = 'Verifikasi gagal disimpan. Silakan coba kembali.'; }
     }
 }

@@ -818,3 +818,22 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   integrasi MariaDB dan HTTP.
 - Migrasi tidak dijalankan pada database produksi; hasilnya hanya diverifikasi
   pada basis kode dan lint lokal.
+
+## Validasi mutasi wali dan verifikasi presensi — 30 Oktober 2026
+
+- Temuan: dua formulir di `naik-kelas.php` mengubah `wali_id[]` menjadi angka
+  `1` dan menerima array sebagai nilai lanjutan tahsin. Validasi kini menolak
+  ID/nilai yang bukan teks skalar sah sebelum SQL. Perubahan flag dan catatan
+  aktivitas berada dalam satu transaksi.
+- Form verifikasi di `rekap-lengkap.php` kini memvalidasi ID wali/catatan,
+  tanggal sesi kanonis, sidik sumber 64 karakter, dan alasan sebelum memanggil
+  transaksi penyimpanan. Nilai array atau ID di luar rentang mendapat status
+  HTTP 422 tanpa dipaksa menjadi nilai lain.
+- Regresi lokal: lint PHP untuk helper, halaman, dan suite lulus; 172 assertion
+  pelaporan Tahsin lulus. Suite HTTP membandingkan hash data sebelum/sesudah
+  permintaan rusak untuk kedua jalur, tetapi belum terkonfirmasi lewat CI.
+- CI `41011947429` berhenti pada langkah PHP integration suites sebelum
+  menjalankan suite HTTP; penyebab kegagalan belum diketahui. Hasil lama
+  `41011240257` lulus pada checkpoint kode sebelumnya. Ulangi verifikasi penuh
+  setelah kegagalan CI sebelumnya didiagnosis.
+- Tidak ada migrasi, deployment, atau koneksi/perubahan ke database produksi.

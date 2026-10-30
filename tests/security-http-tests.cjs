@@ -480,6 +480,11 @@ require 'includes/participant_merge_helper.php'; participantMergeApplyMigration(
   check(progressPage.status===200 && progressToken && (progressPage.body.match(/Anak Naik Uji/g)||[]).length===1,'Class page binds its form to the session and lists a child with two memberships only once');
   check((await req('/naik-kelas.php?kelas[]=x',admin)).status===422,'Array class filters receive an actionable client error');
   check((await req('/naik-kelas.php?msg[]=x',admin)).status===200,'Array notification values cannot crash the class page');
+  const beforeMalformedVerification=domainDigest();
+  const malformedVerificationId=await req('/rekap-lengkap.php?start_date=2026-10-01&end_date=2026-10-31',admin,{csrf_token:progressCsrf,action:'verify','wali_id[]':'1',session:'2026-10-18',fingerprint:'a'.repeat(64),selected_id:'1',note:'Konfirmasi uji'});
+  check(malformedVerificationId.status===422 && malformedVerificationId.body.includes('ID wali tidak valid') && domainDigest()===beforeMalformedVerification,'Malformed verification guardian IDs are rejected before changing domain data');
+  const malformedVerificationRecord=await req('/rekap-lengkap.php?start_date=2026-10-01&end_date=2026-10-31',admin,{csrf_token:progressCsrf,action:'verify',wali_id:'1',session:'2026-10-18',fingerprint:'a'.repeat(64),'selected_id[]':'1',note:'Konfirmasi uji'});
+  check(malformedVerificationRecord.status===422 && malformedVerificationRecord.body.includes('catatan yang sah') && domainDigest()===beforeMalformedVerification,'Malformed verification record IDs are rejected before changing domain data');
   const progressBefore=domainDigest();
   const malformedArchive=await req('/naik-kelas.php',admin,{csrf_token:progressCsrf,action:'bulk_archive',wali_ids:'30001'});
   check(malformedArchive.status===422 && domainDigest()===progressBefore,'Scalar alumni archive IDs are rejected before any participant data changes');

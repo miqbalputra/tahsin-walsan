@@ -13,6 +13,12 @@ function expectTahsin($expected, $actual, string $message): void
     $checks++;
     if ($expected !== $actual) throw new RuntimeException($message . ': expected ' . json_encode($expected) . ', got ' . json_encode($actual));
 }
+function expectTahsinInvalid(callable $operation, string $message): void
+{
+    global $checks;
+    try { $operation(); } catch (InvalidArgumentException) { $checks++; return; }
+    throw new RuntimeException($message . ': malformed verification input was accepted');
+}
 function tahsinFixture(): array
 {
     $data = ['wali' => [], 'children' => [], 'halaqoh' => [['id' => 1, 'ustadz_id' => 1, 'nama_halaqoh' => 'Halaqoh Uji', 'nama_ustadz' => 'Guru Uji', 'ustadz_phone' => '081234567890']],
@@ -35,6 +41,15 @@ function fixtureRecord(int $id, int $wali, string $status, string $date = '2026-
 }
 $now = new DateTimeImmutable('2026-10-12 10:00:00', new DateTimeZone('Asia/Jakarta'));
 $filters = tahsinFilters(['start_date' => '2026-10-11', 'end_date' => '2026-10-12'], $now);
+$verificationInput = ['wali_id' => '12', 'session' => '2026-10-11', 'fingerprint' => str_repeat('a', 64), 'selected_id' => '0', 'note' => 'Konfirmasi guru'];
+expectTahsin(['wali_id' => 12, 'session' => '2026-10-11', 'fingerprint' => str_repeat('a', 64), 'selected_id' => null, 'note' => 'Konfirmasi guru'], tahsinVerificationRequestValues($verificationInput), 'Valid verification form produces canonical values');
+foreach (['wali_id', 'session', 'fingerprint', 'selected_id', 'note'] as $field) {
+    $malformedVerification = $verificationInput;
+    $malformedVerification[$field] = ['invalid'];
+    expectTahsinInvalid(static fn() => tahsinVerificationRequestValues($malformedVerification), 'Array verification field ' . $field . ' is rejected');
+}
+$malformedVerification = $verificationInput; $malformedVerification['selected_id'] = '999999999999999999999999999';
+expectTahsinInvalid(static fn() => tahsinVerificationRequestValues($malformedVerification), 'Out-of-range verification ID is rejected');
 $data = tahsinFixture();
 $data['records'] = [fixtureRecord(1, 1, 'H'), fixtureRecord(2, 2, 'A')];
 $report = tahsinAssembleReport($data, $filters, 'admin', 0, $now);

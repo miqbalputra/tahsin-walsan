@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/family_helper.php';
+require_once __DIR__ . '/security_helper.php';
 /**
  * Weekly attendance is calculated here, never by treating an absent row as A.
  * The pure assembler is shared by HTML, exports, dashboards and integrations.
@@ -820,6 +821,33 @@ function tahsinSaveVerification(PDO $pdo, int $waliId, string $session, string $
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $e;
     }
+}
+
+/** Parse the report verification form without coercing arrays or malformed IDs. */
+function tahsinVerificationRequestValues(array $input): array
+{
+    $waliId = filter_var(appRequestString($input, 'wali_id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    if ($waliId === false) throw new InvalidArgumentException('ID wali tidak valid. Muat ulang rekap dan pilih catatan kembali.');
+
+    $session = appRequestString($input, 'session');
+    if (!tahsinDate($session) || tahsinSessionDate($session) !== $session) throw new InvalidArgumentException('Tanggal sesi tidak valid. Muat ulang rekap dan pilih catatan kembali.');
+
+    $fingerprint = appRequestString($input, 'fingerprint');
+    if (!preg_match('/^[a-f0-9]{64}$/D', $fingerprint)) throw new InvalidArgumentException('Versi data sumber tidak valid. Muat ulang rekap sebelum memverifikasi.');
+
+    $selectedId = filter_var(appRequestString($input, 'selected_id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+    if ($selectedId === false) throw new InvalidArgumentException('Pilih catatan yang sah setelah memeriksa data sumber.');
+
+    $note = appRequestString($input, 'note');
+    if ($note === '') throw new InvalidArgumentException('Isi alasan verifikasi.');
+
+    return [
+        'wali_id' => $waliId,
+        'session' => $session,
+        'fingerprint' => $fingerprint,
+        'selected_id' => $selectedId ?: null,
+        'note' => $note,
+    ];
 }
 
 function tahsinPercent($value): string
