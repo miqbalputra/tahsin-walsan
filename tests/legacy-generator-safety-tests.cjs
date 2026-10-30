@@ -23,7 +23,15 @@ function check(condition, message) {
 
 const dockerIgnore = fs.readFileSync(path.join(root, '.dockerignore'), 'utf8')
   .split(/\r?\n/).map(line => line.trim());
-for (const artifact of ['/DAFTAR_AKUN_USTADZ.md', '/teacher-credentials.json']) {
+for (const artifact of [
+  '/DAFTAR_AKUN_USTADZ.md',
+  '/teacher-credentials.json',
+  '/n8n_workflow_laporan_admin_tahsin.json',
+  '/scripts/database-snapshot.php',
+  '/scripts/production-baseline.php',
+  '/docs/',
+  '/tests/'
+]) {
   check(dockerIgnore.includes(artifact), artifact + ' is excluded from Docker image context');
 }
 
