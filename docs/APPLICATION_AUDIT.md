@@ -1131,3 +1131,11 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   image Apache. Runner lokal tidak memiliki driver `pdo_mysql`; fixture CI
   menggunakan database sintetis. Tidak ada akses atau penulisan database
   produksi.
+
+## Dokumentasi keamanan Hermes — 30 Oktober 2026
+
+- Catatan API Hermes masih menyebut CORS wildcard dan rate limit belum ada,
+  padahal kode sudah membatasi origin dari `HERMES_ALLOWED_ORIGINS` dan
+  menerapkan 120 request per menit per IP.
+- Dokumentasi kini menyamakan aturan origin, batas request, dan respons 503
+  saat penyimpanan penghitung tidak tersedia dengan perilaku endpoint.

@@ -364,7 +364,10 @@ Atau gunakan `N8N_API_KEY` yang sudah ada sebagai fallback.
 ## 📝 Catatan
 
 - Semua response dalam **UTF-8 JSON** dengan `JSON_UNESCAPED_UNICODE`
-- Mendukung **CORS** (Access-Control-Allow-Origin: *)
+- **CORS** hanya mengizinkan origin pada `HERMES_ALLOWED_ORIGINS`; tanpa env
+  tersebut, API tidak mengirim header CORS.
 - Method: **GET** (dan POST untuk kompatibilitas)
-- Rate limiting: belum diimplementasikan (gunakan dengan bijak)
+- Rate limit: **120 request per menit per IP**. Jika penyimpanan penghitung
+  tidak tersedia, API menolak request dengan status 503; ini membantu membatasi
+  abuse aplikasi dan bukan perlindungan DDoS tingkat infrastruktur.
 - Password user **tidak pernah** diekspos di response
