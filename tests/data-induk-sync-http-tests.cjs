@@ -20,12 +20,16 @@ function dataset(scenario, endpoint) {
     {id:'student-ambiguous',fullName:'Anak Kembar',status:'active',classId:'class-new'},
     {id:'student-mapped',fullName:'Anak Terpetakan',status:'active',classId:'class-new',enrollmentId:'enrollment-new'},
     {id:'student-new',fullName:'Anak Baru',status:'active',classId:'class-new',enrollmentId:'enrollment-new-child'},
+    {id:'guardian-candidate-unique',fullName:'Anak kandidat wali satu',status:'active',classId:'class-new'},
+    {id:'guardian-candidate-ambiguous',fullName:'Anak kandidat wali dua',status:'active',classId:'class-new'},
   ];
   const links = [
     {studentId:'student-unique',guardianId:'central-mapped',relationship:'father',archivedAt:null},
     {studentId:'student-ambiguous',guardianId:'central-mapped',relationship:'father',archivedAt:null},
     {studentId:'student-mapped',guardianId:'central-mapped',relationship:'father',archivedAt:null},
     {studentId:'student-new',guardianId:'central-new',relationship:'father',archivedAt:null},
+    {studentId:'guardian-candidate-unique',guardianId:'central-unique',relationship:'father',archivedAt:null},
+    {studentId:'guardian-candidate-ambiguous',guardianId:'central-ambiguous',relationship:'father',archivedAt:null},
   ];
   if (scenario === 'invalid-status') students[2].status = 'graduated';
   if (scenario === 'missing-status') delete students[2].status;

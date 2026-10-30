@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if (($_POST['action'] ?? '') === 'sync') {
             $stats = dataIndukSync($pdo, (string) ($_POST['scope'] ?? 'all'));
-            $message = 'Sinkronisasi selesai: ' . htmlspecialchars(json_encode($stats, JSON_UNESCAPED_UNICODE));
+            $message = 'Sinkronisasi selesai: ' . json_encode($stats, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         } elseif (($_POST['action'] ?? '') === 'conflict') {
             dataIndukResolveConflict($pdo, (int) ($_POST['conflict_id'] ?? 0), (string) ($_POST['decision'] ?? 'ignore'));
             $message = 'Konflik telah diproses. Jalankan sync kembali untuk mengambil profil pusat terbaru.';
@@ -55,8 +55,8 @@ $isStale = $state && $state['last_success_at'] && strtotime($state['last_success
         <button class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700" <?= dataIndukIsConfigured() ? '' : 'disabled' ?>>Sync sekarang</button>
     </form>
 </div>
-<?php if ($message): ?><div class="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700"><?= $message ?></div><?php endif; ?>
-<?php if ($error): ?><div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+<?php if ($message): ?><div class="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700"><?= appEscape($message) ?></div><?php endif; ?>
+<?php if ($error): ?><div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800"><?= appEscape($error) ?></div><?php endif; ?>
 <div class="grid gap-4 md:grid-cols-3 xl:grid-cols-6 mb-8">
     <div class="rounded-2xl bg-white p-5 shadow-sm border border-slate-100"><p class="text-xs font-bold uppercase text-slate-400">Konfigurasi</p><p class="mt-2 font-bold <?= dataIndukIsConfigured() ? 'text-emerald-600' : 'text-amber-600' ?>"><?= dataIndukIsConfigured() ? 'Siap sync' : 'Belum aktif' ?></p></div>
     <div class="rounded-2xl bg-white p-5 shadow-sm border border-slate-100"><p class="text-xs font-bold uppercase text-slate-400">Sync terakhir</p><p class="mt-2 font-bold <?= $isStale ? 'text-amber-600' : 'text-slate-700' ?>"><?= htmlspecialchars($state['last_success_at'] ?? 'Belum pernah') ?></p></div>

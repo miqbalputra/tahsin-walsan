@@ -639,6 +639,27 @@ PHP tidak mengganti prototipe tersebut.
   kelas yang tidak dikirim, serta kesamaan presensi dan keanggotaan. Semua
   fixture memakai database sintetis `tahsin_test_*`; belum mengakses produksi.
 
+## Escape output halaman bersama dan Log Aktivitas — 30 Oktober 2026
+
+- Pemeriksaan statis menemukan kolom `action` dan `ip_address` dari tabel log,
+  serta nama profil pada navigasi/dashboard, dirender tanpa encoding HTML.
+  Data nama profil bisa diubah melalui pengelolaan akun; nilai HTML di sana
+  dapat menjalankan script setiap kali pengguna membuka halaman.
+- Nilai dinamis pada layout bersama, dashboard, dan seluruh kolom log kini
+  melalui `appEscape()`. Daftar rekap presensi juga meng-escape filter, hasil,
+  URL dan nilai lama dari tabel. ID/hitungan yang dipakai sebagai angka turut
+  dicast. Regresi HTTP menyisipkan nilai sintetis berbentuk HTML pada profil,
+  tindakan, IP, dan halaman bacaan, lalu memastikan hasilnya tampil sebagai
+  teks aman.
+- Perubahan ini hanya mengubah rendering; tidak menulis ulang atau menghapus
+  isi log lama. Verifikasi penuh menunggu CI karena MariaDB fixture lokal
+  sedang tidak tersedia.
+- CI `41006415667` lulus untuk lint, build aset, PHPUnit, dan seluruh PHP
+  integration suites, lalu gagal pada step tes HTTP sinkronisasi Data Induk.
+  Fixture pemeriksaan telah dilengkapi relasi yang memang mengaktifkan kasus
+  pencocokan wali unik dan ambigu; CI ulang diperlukan untuk memastikan suite
+  Data Induk lulus bersama regresi rendering baru.
+
 ## Menjalankan pemeriksaan lokal
 
 Database uji harus berjalan hanya pada `127.0.0.1:13317`, dengan akun fixture

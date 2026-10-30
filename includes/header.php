@@ -11,7 +11,7 @@ $assetBase = strpos($_SERVER['REQUEST_URI'], '/ustadz/') !== false ? '../' : '';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>
-        <?php echo $pageTitle ?? 'Dashboard'; ?> - Presensi Tahsin
+        <?php echo appEscape($pageTitle ?? 'Dashboard'); ?> - Presensi Tahsin
     </title>
     <link rel="manifest" href="<?= appEscape(appAssetUrl('manifest.json')) ?>">
     <meta name="theme-color" content="#2563eb">
