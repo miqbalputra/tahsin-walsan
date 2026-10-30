@@ -63,26 +63,40 @@ jobs:
 
       - name: PHP integration suites
         run: |
-          set -e
-          php tests/run-tahsin-tests.php
-          php tests/rapor-tests.php
-          php tests/tahsin-reminder-tests.php
-          php tests/api-rate-limit-tests.php
-          php -d memory_limit=256M tests/attendance-history-integration.php
-          php tests/halaqoh-fk-migration-integration.php
-          php -d memory_limit=256M tests/attendance-form-integration.php
-          php tests/security-integration.php
-          php tests/backup-integration.php
-          php -d memory_limit=256M tests/tahsin-mysql-integration.php
-          php -d memory_limit=256M tests/autosave-integration.php
-          php -d memory_limit=256M tests/participant-import-integration.php
-          php -d memory_limit=256M tests/participant-management-integration.php
-          php -d memory_limit=256M tests/membership-integration.php
-          php -d memory_limit=256M tests/student-progress-integration.php
-          php -d memory_limit=256M tests/achievement-integration.php
-          php -d memory_limit=256M tests/participant-merge-integration.php
-          php -d memory_limit=256M tests/family-integration.php
-          php -d memory_limit=256M tests/data-induk-archive-integration.php
+          set +e
+          failures=0
+          run_suite() {
+            suite="$1"
+            shift
+            printf '::group::%s\n' "$suite"
+            "$@"
+            suite_status=$?
+            printf '::endgroup::\n'
+            if [ "$suite_status" -ne 0 ]; then
+              echo "::error title=Failed PHP suite - $suite::exit code $suite_status"
+              failures=$((failures + 1))
+            fi
+          }
+          run_suite tahsin-regression php tests/run-tahsin-tests.php
+          run_suite rapor-regression php tests/rapor-tests.php
+          run_suite tahsin-reminder php tests/tahsin-reminder-tests.php
+          run_suite api-rate-limits php tests/api-rate-limit-tests.php
+          run_suite attendance-history php -d memory_limit=256M tests/attendance-history-integration.php
+          run_suite halaqoh-fk-migration php tests/halaqoh-fk-migration-integration.php
+          run_suite attendance-form php -d memory_limit=256M tests/attendance-form-integration.php
+          run_suite security php tests/security-integration.php
+          run_suite backup-recovery php tests/backup-integration.php
+          run_suite tahsin-mysql php -d memory_limit=256M tests/tahsin-mysql-integration.php
+          run_suite autosave php -d memory_limit=256M tests/autosave-integration.php
+          run_suite participant-import php -d memory_limit=256M tests/participant-import-integration.php
+          run_suite participant-management php -d memory_limit=256M tests/participant-management-integration.php
+          run_suite membership php -d memory_limit=256M tests/membership-integration.php
+          run_suite student-progress php -d memory_limit=256M tests/student-progress-integration.php
+          run_suite achievement php -d memory_limit=256M tests/achievement-integration.php
+          run_suite participant-merge php -d memory_limit=256M tests/participant-merge-integration.php
+          run_suite family php -d memory_limit=256M tests/family-integration.php
+          run_suite data-induk-archive php -d memory_limit=256M tests/data-induk-archive-integration.php
+          exit "$failures"
 
       - name: Data Induk roster sync integration
         run: node tests/data-induk-sync-http-tests.cjs
