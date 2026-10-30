@@ -1029,3 +1029,20 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   `98f7e11`, suite PHP integrasi dan HTTP keamanan serta kedua run CI
   (`41022497464`, `41022503116`) lulus. MariaDB fixture lokal tidak aktif,
   sehingga pembuktian end-to-end dilakukan CI dengan database sintetis.
+
+## Privasi file sesi dan smoke test image Apache — 30 Oktober 2026
+
+- Temuan: `SESSION_SAVE_PATH` dapat dikustomisasi ke direktori dalam webroot.
+  Apache sebelumnya hanya memblokir direktori `.sessions` bawaan, sehingga file
+  sesi bernama `sess_*` di lokasi lain berpotensi dapat diminta lewat HTTP.
+- Aturan `.htaccess` dan konfigurasi Apache container kini menolak file
+  `sess_*` di seluruh webroot. `.dockerignore` juga mengecualikan file sesi
+  maupun direktori `.sessions`, agar data sesi lokal tidak terbawa ke image.
+- CI membangun image Docker, memeriksa sintaks konfigurasi Apache, memastikan
+  aset publik tetap tersedia, mengecek artefak lokal sintetis tidak masuk image,
+  lalu meminta file sesi sintetis dan jalur privat melalui HTTP. Smoke test ini
+  lulus bersama seluruh rangkaian CI pada commit `924a247`, run `41023776349`.
+- Uji dijalankan pada image sementara tanpa database produksi. File sesi,
+  backup, dan data lama tidak dipindah atau dihapus. Verifikasi deployment
+  cPanel/hosting produksi, pemulihan dari backup nyata, pemeriksaan visual
+  lintas perangkat, dan matriks seluruh fitur masih belum lengkap.
