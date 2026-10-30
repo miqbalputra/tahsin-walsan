@@ -539,6 +539,32 @@ PHP tidak mengganti prototipe tersebut.
   ukuran layar berubah, Apache/PHP produksi serta pemulihan cadangan
   produksi nyata belum seluruhnya diverifikasi.
 
+## Pembatas percobaan login dan CI — 30 Oktober 2026
+
+- Temuan: hitungan percobaan login dibaca sebelum password diperiksa lalu
+  kegagalan ditulis sesudahnya tanpa penguncian. Request bersamaan untuk akun
+  atau alamat IP yang sama dapat melewati ambang lima percobaan.
+- Login kini mengunci username dan IP dalam urutan stabil, lalu mengunci ID
+  akun untuk username yang ekuivalen menurut collation database. Hitungan
+  diperiksa ulang di dalam penguncian akun. Kegagalan dicatat atomik terhadap
+  ambang; login sukses menghapus catatan terkait. Jika lock tak tersedia,
+  server menolak permintaan dengan 503 sebelum perubahan akun.
+- Tidak ada migrasi baru. Verifikasi database sintetis lulus 53 pemeriksaan,
+  termasuk benturan lock antar koneksi, batas lima kegagalan, blokir berikutnya,
+  dan penghapusan hitungan pada login valid. Pemeriksaan HTTP lulus 205 kasus,
+  termasuk enam pengiriman gagal melalui halaman login.
+- Audit CI menemukan lint semua berkas PHP, build aset, suite autosave,
+  reporting MySQL dan arsip Data Induk belum dipanggil otomatis. Workflow kini
+  menjalankan lint pada PHP yang dilacak Git, membangun aset dan menolak
+  perbedaan hasil build, serta memasukkan suite yang terlewat. `npm run build`
+  berhasil lokal; Tailwind memberi peringatan bahwa `caniuse-lite` sudah lama.
+- Suite tambahan pada branch ini lulus: 41 integrasi laporan MySQL/MariaDB
+  dan 28 pemeriksaan autosave. Seluruh DB pengujian bernama `tahsin_test_*`;
+  database produksi tidak disentuh. PHPUnit tidak dapat dijalankan lokal karena
+  Composer tidak terpasang; runner tetap dikonfigurasi pada CI.
+- Belum dideploy. Validasi runtime produksi dan pemulihan cadangan produksi
+  nyata tetap terbuka.
+
 ## Menjalankan pemeriksaan lokal
 
 Database uji harus berjalan hanya pada `127.0.0.1:13317`, dengan akun fixture

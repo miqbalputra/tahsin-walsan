@@ -5,6 +5,7 @@ require_once 'includes/auth_helper.php';
 $error = '';
 $warning = '';
 $username = '';
+$loginRedirect = null;
 if (($_GET['session'] ?? '') === 'expired') {
     $warning = 'Sesi akun berakhir atau akses akun berubah. Silakan masuk kembali. Draft presensi di perangkat tetap tersimpan.';
 }
@@ -27,53 +28,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $client_ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 
     if ($username !== '' && $password !== '' && $error === '') {
-        // Rate Limiting: Cek apakah login diblokir
-        $rate_check = checkLoginAttempts($pdo, $username, $client_ip);
-
-        if ($rate_check['blocked']) {
+        $authentication = authenticateLoginAttempt($pdo, $username, $password, $client_ip);
+        if ($authentication['state'] === 'unavailable') {
+            appRequestError(503, 'Belum dapat memeriksa login', 'Ada proses login lain yang sedang diperiksa. Tunggu sebentar lalu kirim ulang; percobaan ini belum mengubah akun.');
+        } elseif ($authentication['state'] === 'blocked') {
+            $rate_check = $authentication['rate'];
             $error = "Terlalu banyak percobaan login gagal. Coba lagi dalam {$rate_check['retry_after_minutes']} menit.";
             addLog($pdo, 'LOGIN_BLOCKED', "Login diblokir untuk user '{$username}' dari IP {$client_ip} (rate limit).");
+        } elseif ($authentication['state'] === 'success') {
+            $user = $authentication['user'];
+            // Security: Regenerate session ID on login.
+            regenerateSession($remember);
+
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['nama_lengkap'] = $user['nama_lengkap'];
+            $_SESSION['role'] = $user['role'];
+            $_SESSION['auth_password_fingerprint'] = hash('sha256', $user['password']);
+
+            addLog($pdo, 'LOGIN', "User {$_SESSION['username']} berhasil masuk.");
+            $loginRedirect = roleHomePath($user['role']);
         } else {
-            $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
-            $stmt->execute([$username]);
-            $user = $stmt->fetch();
+            $remaining = $authentication['remaining_attempts'];
+            $error = 'Username atau password salah!';
 
-            if ($user && in_array($user['role'], APP_USER_ROLES, true) && password_verify($password, $user['password'])) {
-                // Login berhasil: hapus catatan percobaan gagal
-                clearLoginAttempts($pdo, $username, $client_ip);
-
-                // Security: Regenerate session ID on login
-                regenerateSession($remember);
-
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['username'] = $user['username'];
-                $_SESSION['nama_lengkap'] = $user['nama_lengkap'];
-                $_SESSION['role'] = $user['role'];
-                $_SESSION['auth_password_fingerprint'] = hash('sha256', $user['password']);
-
-                addLog($pdo, 'LOGIN', "User {$_SESSION['username']} berhasil masuk.");
-
-                redirectTo(roleHomePath($user['role']));
-            } else {
-                // Login gagal: catat percobaan
-                recordFailedLogin($pdo, $username, $client_ip);
-
-                $remaining = $rate_check['remaining_attempts'] - 1;
-                $error = "Username atau password salah!";
-
-                if ($remaining <= 2 && $remaining > 0) {
-                    $warning = "Peringatan: Sisa {$remaining} percobaan sebelum akun dikunci sementara.";
-                } elseif ($remaining <= 0) {
-                    $warning = "Akun dikunci selama " . LOGIN_LOCKOUT_MINUTES . " menit karena terlalu banyak percobaan gagal.";
-                }
-
-                addLog($pdo, 'LOGIN_FAILED', "Login gagal untuk user '{$username}' dari IP {$client_ip}. Sisa percobaan: {$remaining}.");
+            if ($remaining <= 2 && $remaining > 0) {
+                $warning = "Peringatan: Sisa {$remaining} percobaan sebelum akun dikunci sementara.";
+            } elseif ($remaining <= 0) {
+                $warning = 'Akun dikunci selama ' . LOGIN_LOCKOUT_MINUTES . ' menit karena terlalu banyak percobaan gagal.';
             }
+
+            addLog($pdo, 'LOGIN_FAILED', "Login gagal untuk user '{$username}' dari IP {$client_ip}. Sisa percobaan: {$remaining}.");
         }
     } elseif ($error === '') {
         $error = "Silakan isi semua bidang!";
     }
 }
+
+if ($loginRedirect !== null) redirectTo($loginRedirect);
 
 // Redirect if already logged in
 if (isset($_SESSION['user_id'])) {

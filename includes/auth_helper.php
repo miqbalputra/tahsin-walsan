@@ -361,6 +361,98 @@ function clearLoginAttempts($pdo, $username, $ip)
     $stmt->execute([$ip, $username]);
 }
 
+function loginAttemptLockName(string $scope, string $identity): string
+{
+    return 'pres_login_' . $scope . '_' . substr(hash('sha256', $identity), 0, 44);
+}
+
+/** Lock both dimensions used by the rate query, always in the same order. */
+function loginAcquireAttemptLocks(PDO $pdo, string $username, string $ip, int $waitSeconds = 5): ?array
+{
+    $normalizedUsername = function_exists('mb_strtolower') ? mb_strtolower(trim($username), 'UTF-8') : strtolower(trim($username));
+    $locks = array_values(array_unique([
+        loginAttemptLockName('ip', trim($ip)),
+        loginAttemptLockName('user', $normalizedUsername),
+    ]));
+    sort($locks, SORT_STRING);
+    $held = [];
+    try {
+        foreach ($locks as $name) {
+            $statement = $pdo->prepare('SELECT GET_LOCK(?, ?)');
+            $statement->execute([$name, max(0, min(10, $waitSeconds))]);
+            if ((int)$statement->fetchColumn() !== 1) {
+                loginReleaseAttemptLocks($pdo, $held);
+                return null;
+            }
+            $held[] = $name;
+        }
+        return $held;
+    } catch (Throwable $error) {
+        loginReleaseAttemptLocks($pdo, $held);
+        throw $error;
+    }
+}
+
+/** Existing usernames may compare equal under the database collation; serialize by stable user ID too. */
+function loginAcquireAccountLock(PDO $pdo, int $userId, int $waitSeconds = 5): bool
+{
+    $statement = $pdo->prepare('SELECT GET_LOCK(?, ?)');
+    $statement->execute([loginAttemptLockName('id', (string)$userId), max(0, min(10, $waitSeconds))]);
+    return (int)$statement->fetchColumn() === 1;
+}
+
+function loginReleaseNamedLock(PDO $pdo, string $name): void
+{
+    try {
+        $statement = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+        $statement->execute([$name]);
+    } catch (Throwable $error) {
+        error_log('Login rate-limit lock cleanup failed.');
+    }
+}
+
+function loginReleaseAttemptLocks(PDO $pdo, array $locks): void
+{
+    foreach (array_reverse($locks) as $name) loginReleaseNamedLock($pdo, (string)$name);
+}
+
+/** Make check, password verification, and attempt write atomic per IP/account. */
+function authenticateLoginAttempt(PDO $pdo, string $username, string $password, string $ip): array
+{
+    $locks = loginAcquireAttemptLocks($pdo, $username, $ip);
+    if ($locks === null) return ['state'=>'unavailable'];
+    try {
+        $rate = checkLoginAttempts($pdo, $username, $ip);
+        if ($rate['blocked']) return ['state'=>'blocked', 'rate'=>$rate];
+
+        $statement = $pdo->prepare('SELECT * FROM users WHERE username=? LIMIT 1');
+        $statement->execute([$username]);
+        $user = $statement->fetch(PDO::FETCH_ASSOC);
+        $accountLock = false;
+        if ($user) {
+            $accountLock = loginAcquireAccountLock($pdo, (int)$user['id']);
+            if (!$accountLock) return ['state'=>'unavailable'];
+        }
+        try {
+            // An equivalent username under the DB collation may have queued on the ID lock.
+            if ($user) {
+                $rate = checkLoginAttempts($pdo, $username, $ip);
+                if ($rate['blocked']) return ['state'=>'blocked', 'rate'=>$rate];
+            }
+            if ($user && in_array($user['role'], APP_USER_ROLES, true) && password_verify($password, $user['password'])) {
+                clearLoginAttempts($pdo, $username, $ip);
+                return ['state'=>'success', 'user'=>$user];
+            }
+            recordFailedLogin($pdo, $username, $ip);
+            return ['state'=>'failed', 'remaining_attempts'=>max(0, (int)$rate['remaining_attempts'] - 1)];
+        } finally {
+            if ($accountLock) loginReleaseNamedLock($pdo, loginAttemptLockName('id', (string)$user['id']));
+        }
+    } finally {
+        loginReleaseAttemptLocks($pdo, $locks);
+    }
+}
+
 /**
  * Bersihkan data percobaan login yang sudah lebih dari 1 jam (housekeeping).
  */

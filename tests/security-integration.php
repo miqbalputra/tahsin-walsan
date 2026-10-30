@@ -44,6 +44,29 @@ function secRecords(PDO $pdo): string {
         $records[$table]=$pdo->query("SELECT * FROM `$table` ORDER BY id")->fetchAll();
     } return json_encode($records);
 }
+$heldLoginLocks = loginAcquireAttemptLocks($pdo, 'CaseSensitiveUser', '203.0.113.41', 0);
+$parallelPdo = new PDO('mysql:host=127.0.0.1;port=13317;charset=utf8mb4', 'root', 'tahsin_local_test', [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES=>false]);
+$sameUserLock = loginAcquireAttemptLocks($parallelPdo, 'casesensitiveuser', '203.0.113.42', 0);
+secCheck($heldLoginLocks !== null && $sameUserLock === null, 'Concurrent attempts for one username serialize across different IPs');
+loginReleaseAttemptLocks($pdo, $heldLoginLocks ?? []);
+$heldIpLocks = loginAcquireAttemptLocks($pdo, 'first_user', '203.0.113.43', 0);
+$sameIpLock = loginAcquireAttemptLocks($parallelPdo, 'second_user', '203.0.113.43', 0);
+secCheck($heldIpLocks !== null && $sameIpLock === null, 'Concurrent attempts from one IP serialize across different usernames');
+loginReleaseAttemptLocks($pdo, $heldIpLocks ?? []);
+$rateUser = 'rate_limit_synthetic'; $rateIp = '192.0.2.241';
+for ($attempt = 1; $attempt <= MAX_LOGIN_ATTEMPTS; $attempt++) {
+    $result = authenticateLoginAttempt($pdo, $rateUser, 'wrong password', $rateIp);
+    secCheck($result['state'] === 'failed' && $result['remaining_attempts'] === MAX_LOGIN_ATTEMPTS - $attempt, 'Failed login is counted at attempt ' . $attempt);
+}
+$lockedLogin = authenticateLoginAttempt($pdo, $rateUser, 'wrong password', $rateIp);
+$attemptCount = $pdo->prepare('SELECT COUNT(*) FROM login_attempts WHERE username=? AND ip_address=?');
+$attemptCount->execute([$rateUser, $rateIp]);
+secCheck($lockedLogin['state'] === 'blocked' && (int)$attemptCount->fetchColumn() === MAX_LOGIN_ATTEMPTS, 'Lockout rejects another attempt at the configured threshold');
+$pdo->prepare('DELETE FROM login_attempts WHERE username=? AND ip_address=?')->execute([$rateUser, $rateIp]);
+$pdo->prepare('INSERT INTO login_attempts(ip_address,username) VALUES(?,?)')->execute(['192.0.2.242','audit_admin']);
+$validLogin = authenticateLoginAttempt($pdo, 'audit_admin', 'AuditTest-2026', '192.0.2.242');
+$attemptCount->execute(['audit_admin', '192.0.2.242']);
+secCheck($validLogin['state'] === 'success' && (int)$attemptCount->fetchColumn() === 0, 'Successful login clears its attempt history');
 $recordsBefore = secRecords($pdo);
 $usersBefore = secUsers($pdo);
 secReject(fn()=>deleteEmptyHalaqoh($pdo,1),'Referenced group cannot be deleted or detached from attendance');

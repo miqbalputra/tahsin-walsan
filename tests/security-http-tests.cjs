@@ -88,6 +88,14 @@ const importGroup = body => body.match(/name="targets\[([a-f0-9]{64})\]"/)?.[1];
   check(invalidCsrf.status===403 && invalidCsrf.body.includes('Buka kembali halaman'),'Malformed CSRF receives an actionable 403');
   const malformed = await req('/login.php',anonymous,{csrf_token:csrf(initial.body),'username[]':'bad',password:'AuditTest-2026'});
   check(malformed.status===200 && malformed.body.includes('Format isian tidak valid'),'Malformed form values do not cause server errors');
+  const rateSession={}; const ratePage=await req('/login.php',rateSession); const rateToken=csrf(ratePage.body);
+  for(let attempt=0;attempt<5;attempt++) {
+    const failed=await req('/login.php',rateSession,{csrf_token:rateToken,username:'http_rate_limit_synthetic',password:'wrong'});
+    check(failed.status===200 && failed.body.includes('Username atau password salah!'),'Failed login attempt '+(attempt+1)+' returns the ordinary response');
+  }
+  const rateBlocked=await req('/login.php',rateSession,{csrf_token:rateToken,username:'http_rate_limit_synthetic',password:'wrong'});
+  check(rateBlocked.status===200 && rateBlocked.body.includes('Terlalu banyak percobaan login gagal'),'Login endpoint enforces its configured attempt limit');
+  localSql("DELETE FROM login_attempts WHERE ip_address='127.0.0.1'");
   const admin = await login('audit_admin');
   const users = await req('/users.php',admin);
   check(users.status===200 && !/\$2[aby]\$\d\d\$/.test(users.body),'User management HTML contains no password hashes');

@@ -28,6 +28,15 @@ jobs:
         with:
           node-version: '24'
 
+      - name: PHP syntax check
+        run: git ls-files -z '*.php' | xargs -0 -n1 php -l
+
+      - name: Rebuild and verify public assets
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          git diff --exit-code -- assets/css/app.css assets/js/alpine.min.js assets/js/chart.umd.min.js manifest.json sw.js
+
       # Fixture credentials must match tests/*: root/tahsin_local_test on 127.0.0.1:13317.
       # MariaDB is installed explicitly (not the preinstalled MySQL) because the suites
       # are validated against MariaDB.
@@ -63,6 +72,8 @@ jobs:
           php -d memory_limit=256M tests/attendance-form-integration.php
           php tests/security-integration.php
           php tests/backup-integration.php
+          php -d memory_limit=256M tests/tahsin-mysql-integration.php
+          php -d memory_limit=256M tests/autosave-integration.php
           php -d memory_limit=256M tests/participant-import-integration.php
           php -d memory_limit=256M tests/participant-management-integration.php
           php -d memory_limit=256M tests/membership-integration.php
@@ -70,6 +81,7 @@ jobs:
           php -d memory_limit=256M tests/achievement-integration.php
           php -d memory_limit=256M tests/participant-merge-integration.php
           php -d memory_limit=256M tests/family-integration.php
+          php -d memory_limit=256M tests/data-induk-archive-integration.php
 
       - name: Asset, service worker, and workflow suites
         run: |
