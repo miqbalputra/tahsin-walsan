@@ -900,5 +900,7 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   default. Uji lokal parser lulus 17 assertion; suite HTTP lulus 227 assertion,
   termasuk pemuatan nilai uji dan HTTP 403 untuk akses langsung ke `/.env`.
   Lint PHP, sintaks Node, dan `git diff --check` juga lulus.
-- CI untuk pemeriksaan HTTP serta seluruh rangkaian belum selesai pada saat
-  catatan ini dibuat. Tidak ada koneksi atau perubahan pada database produksi.
+- Workflow CI `41016782262` pada commit `425a160` lulus seluruh rangkaian PHP
+  dan Node, termasuk parser `.env`, 227 pemeriksaan HTTP keamanan, pemulihan
+  presensi dan keanggotaan. Tidak ada koneksi atau perubahan pada database
+  produksi.
