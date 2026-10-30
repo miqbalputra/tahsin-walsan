@@ -52,6 +52,9 @@ PHP tidak mengganti prototipe tersebut.
    lain pada origin yang sama. Cache perlu dibatasi pada aset publik aplikasi.
 7. Direktori internal dan berkas konfigurasi/workflow perlu aturan penolakan
    akses HTTP yang konsisten, termasuk pada deployment cPanel.
+8. README meminta membuat `.env`, tetapi PHP sebelumnya hanya membaca
+   environment proses. Instalasi manual berisiko memakai nilai default
+   `localhost`/`root` kosong atau gagal menyambung ke database yang dimaksud.
 
 ## Dasar keselamatan dan baseline
 
@@ -880,3 +883,22 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
 - Fixture backup sintetis mencakup lima arsip baru, arsip tua di luar batas,
   arsip tua yang masih termasuk tiga terbaru, dan mode berbasis jumlah. Tidak
   ada file atau arsip pada folder backup aplikasi yang disentuh.
+
+## Pemuatan konfigurasi `.env` — 30 Oktober 2026
+
+- Temuan: README mengarahkan operator menyalin `.env.example` menjadi `.env`,
+  tetapi tidak ada parser atau library yang memuat nilainya ke environment PHP.
+  CLI juga memakai konfigurasi default bila variabel proses tidak diatur.
+- PHP kini membaca `.env` pada permintaan web. Variabel yang disediakan server
+  lebih dulu tetap menang. CLI tidak membaca file konfigurasi lokal kecuali
+  `APP_LOAD_ENV_FILE=1` diberikan secara eksplisit, agar perintah tes/audit tidak
+  tersambung ke database produksi karena konfigurasi lokal tersembunyi.
+  Docker menjalankan aplikasi dengan environment runtime, tanpa menyalin `.env`
+  ke image. Akses HTTP langsung ke `.env` diuji pada router lokal.
+- Parser mendukung format yang dipakai `.env.example`, memeriksa baris rusak dan
+  ukuran berkas, serta gagal tertutup daripada beralih diam-diam ke kredensial
+  default. Uji lokal parser lulus 17 assertion; suite HTTP lulus 227 assertion,
+  termasuk pemuatan nilai uji dan HTTP 403 untuk akses langsung ke `/.env`.
+  Lint PHP, sintaks Node, dan `git diff --check` juga lulus.
+- CI untuk pemeriksaan HTTP serta seluruh rangkaian belum selesai pada saat
+  catatan ini dibuat. Tidak ada koneksi atau perubahan pada database produksi.

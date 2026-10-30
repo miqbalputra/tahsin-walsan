@@ -92,6 +92,9 @@ cd tahsin-walsan
 # 2. Copy environment
 cp .env.example .env
 # Edit .env sesuai database Anda
+# Permintaan web PHP membaca .env secara otomatis. Perintah CLI memakai
+# variabel environment proses; tambahkan APP_LOAD_ENV_FILE=1 bila ingin CLI
+# membaca file yang sama.
 
 # 3. Build frontend assets
 npm install
@@ -104,12 +107,17 @@ mysql -u root -p < database.sql
 php -S 127.0.0.1:8000 dev-router.php
 ```
 
+Untuk operasi PHP CLI (backup, migrasi, atau pemeriksaan baseline), nilai di
+`.env` tidak dimuat otomatis. Awali perintah dengan `APP_LOAD_ENV_FILE=1`
+agar perintah tersebut memakai konfigurasi yang sama; variabel yang sudah
+diberikan oleh proses tetap diprioritaskan.
+
 ### Docker / Coolify
 
 ```bash
-# Build & run
+# Build & run (Docker tidak menyalin .env ke image; berikan saat runtime)
 docker build --pull -t tahsin-walsan .
-docker run -p 80:80 tahsin-walsan
+docker run --env-file .env -p 80:80 tahsin-walsan
 ```
 
 Lihat [COOLIFY_DEPLOY.md](COOLIFY_DEPLOY.md) untuk panduan deploy ke Coolify.
@@ -534,8 +542,8 @@ php scripts/database-snapshot.php /secure/backup/path/tahsin_YYYYmmdd.sql
 Migrasi index tidak berjalan melalui browser. Jalankan dry-run terlebih dahulu, lalu apply hanya setelah backup database berhasil dan restore staging tervalidasi:
 
 ```bash
-php migrate_performance_indexes.php
-APPLY_MIGRATIONS=1 php migrate_performance_indexes.php
+APP_LOAD_ENV_FILE=1 php migrate_performance_indexes.php
+APP_LOAD_ENV_FILE=1 APPLY_MIGRATIONS=1 php migrate_performance_indexes.php
 ```
 
 Backup ZIP dari menu **Backup & Restore** mencakup seluruh base table dan memakai checksum. Restore menambahkan baris yang belum ada dan melewati primary key yang sudah ada. Pilihan folder persisten, validasi, batas format lama, serta pemulihan penuh dijelaskan pada [panduan cadangan dan pemulihan](docs/BACKUP_RECOVERY.md).

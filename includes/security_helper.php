@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__.'/asset_helper.php';
-/** Shared request primitives. No database connection or session side effects. */
+require_once __DIR__ . '/env_loader.php';
+appLoadEnvironmentFile();
+/** Shared request primitives. Loads optional environment settings; opens no DB or session. */
 const APP_USER_ROLES = ['admin', 'pj_tahfidz', 'kepsek', 'ustadz'];
 
 function appEscape($value): string

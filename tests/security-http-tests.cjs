@@ -15,11 +15,15 @@ const database = setup.stdout.match(/STAGING_DATABASE=(tahsin_test_security_\d+_
 assert.ok(database, 'Only a newly generated isolated fixture is allowed');
 const port = 18086;
 const base = `http://127.0.0.1:${port}`;
+const environmentFile = path.join(root,'.sessions','audit-20261023',`http-env-${process.pid}.env`);
+fs.mkdirSync(path.dirname(environmentFile),{recursive:true});
+fs.writeFileSync(environmentFile,`APP_VERSION=http-env-${process.pid}\n`,{mode:0o600});
 const env = {...process.env, DB_HOST:'127.0.0.1', DB_PORT:'13317', DB_DATABASE:database,
   DB_USERNAME:'root', DB_PASSWORD:'tahsin_local_test', DATA_INDUK_ENABLED:'0',
   SESSION_SAVE_PATH:path.join(root,'.sessions','audit-20261023',`http-sessions-${process.pid}`),
   BACKUP_STORAGE_PATH:path.join(root,'.sessions','audit-20261023',`http-backups-${process.pid}`),
-  HERMES_API_KEY:'audit-fixture-key', N8N_API_KEY:'audit-fixture-key', TAHSIN_AUTOSAVE_ENABLED:'1'};
+  APP_ENV_FILE:environmentFile, HERMES_API_KEY:'audit-fixture-key', N8N_API_KEY:'audit-fixture-key', TAHSIN_AUTOSAVE_ENABLED:'1'};
+delete env.APP_VERSION;
 fs.mkdirSync(env.SESSION_SAVE_PATH,{recursive:true});
 const server = spawn(php, [...dbArgs,'-d','display_errors=0','-S',`127.0.0.1:${port}`,'dev-router.php'],
   {cwd:root,env,windowsHide:true,stdio:['ignore','ignore','pipe']});
@@ -555,13 +559,13 @@ require 'includes/participant_merge_helper.php'; participantMergeApplyMigration(
   const temporary = await login('http_created');
   localSql("DELETE FROM users WHERE username='http_created'");
   check((await req('/ustadz/api-autosave.php?halaqoh_id=1&tanggal=2026-10-18',temporary)).status===401,'Deleted account is rejected by API despite its old cookie');
-  for (const route of ['/config/database.php','/includes/auth_helper.php','/includes/participant_import_helper.php','/includes/participant_merge_page.php','/.sessions/audit-20261023/test-database.txt','/tests/security-integration.php','/tests/participant-import-integration.php','/tests/participant-merge-integration.php','/n8n_workflow_tahsin.json','/database.sql','/composer.json','/migrate.php','/migrate_participant_import.php','/migrate_participant_merge.php']) {
+  for (const route of ['/.env','/config/database.php','/includes/auth_helper.php','/includes/participant_import_helper.php','/includes/participant_merge_page.php','/.sessions/audit-20261023/test-database.txt','/tests/security-integration.php','/tests/participant-import-integration.php','/tests/participant-merge-integration.php','/n8n_workflow_tahsin.json','/database.sql','/composer.json','/migrate.php','/migrate_participant_import.php','/migrate_participant_merge.php']) {
     check((await req(route,admin)).status===403,'Development router denies private path: '+route);
   }
   check((await req('/assets/css/app.css',admin)).status===200,'Public application CSS remains accessible');
   check((await req('/manifest.json',admin)).status===200,'PWA manifest remains accessible');
   const health = await req('/health.php');
-  check(health.status===200 && JSON.parse(health.body).ok===true && /no-store/.test(health.headers.get('cache-control')),'Health check is healthy and never cached');
+  check(health.status===200 && JSON.parse(health.body).ok===true && JSON.parse(health.body).version===`http-env-${process.pid}` && /no-store/.test(health.headers.get('cache-control')),'Web requests load the selected environment file and keep health output uncached');
   const apiBad = await req('/api/hermes.php?action=status&api_key[]=bad');
   check(apiBad.status===401,'Array API key is rejected without crashing');
   const apiArrayAction = await fetch(base+'/api/hermes.php?action[]=users',{headers:{'X-API-Key':'audit-fixture-key'}});
@@ -583,4 +587,4 @@ require 'includes/participant_merge_helper.php'; participantMergeApplyMigration(
   check(offlineDatabase.status===1 && offlineDatabase.stderr.includes('Layanan database belum tersedia'),'CLI operations fail clearly when the database cannot be reached');
   console.log(`PASS ${checks} security HTTP assertions`);
   fs.writeFileSync(path.join(root,'.sessions','audit-20261023','http-results.json'),JSON.stringify({database,checks,passed:true},null,2));
-})().catch(error=>{console.error(error);console.error(serverErrors);process.exitCode=1;}).finally(()=>server.kill());
+})().catch(error=>{console.error(error);console.error(serverErrors);process.exitCode=1;}).finally(()=>{server.kill();fs.rmSync(environmentFile,{force:true});});

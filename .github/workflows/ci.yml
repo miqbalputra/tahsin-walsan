@@ -31,6 +31,9 @@ jobs:
       - name: PHP syntax check
         run: git ls-files -z '*.php' | xargs -0 -n1 php -l
 
+      - name: Environment file parser checks
+        run: php tests/env-loader-tests.php
+
       - name: Rebuild and verify public assets
         run: |
           npm ci --no-audit --no-fund

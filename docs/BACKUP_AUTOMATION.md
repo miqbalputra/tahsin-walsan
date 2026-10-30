@@ -36,10 +36,12 @@ tabel + `schema.sql` + manifest checksum, snapshot konsisten REPEATABLE READ).
    environment atau variabel di `config/database.php` environment Anda).
 2. **Cron Jobs** → tambah:
    ```
-   0 2 * * * /usr/local/bin/php /home/USER/public_html/tahsin/scripts/backup-database.php >> /home/USER/tahsin-backups/backup-cron.log 2>&1
+   0 2 * * * APP_LOAD_ENV_FILE=1 /usr/local/bin/php /home/USER/public_html/tahsin/scripts/backup-database.php >> /home/USER/tahsin-backups/backup-cron.log 2>&1
    ```
    (sesuaikan path PHP dan aplikasi dengan server Anda; output cron masuk ke
    log sehingga kegagalan terlihat).
+   `APP_LOAD_ENV_FILE=1` diperlukan jika kredensial hanya disimpan di `.env`;
+   letakkan file tersebut di root aplikasi dan pastikan tidak dapat diunduh.
 3. Verifikasi: setelah eksekusi pertama, cek folder — ada `backup_auto_*.zip`
    dan `backup_auto_last.json` berisi `"ok": true`.
 
