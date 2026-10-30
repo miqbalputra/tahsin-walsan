@@ -381,16 +381,25 @@ function createBackupZip(PDO $pdo, string $zipPath, array $tables, string $nullT
         if (!is_file($stagingPath) || filesize($stagingPath) === 0) {
             throw new RuntimeException('File ZIP kosong setelah ditulis.');
         }
-        if (!@chmod($stagingPath, 0600)
-            || (DIRECTORY_SEPARATOR !== '\\' && (fileperms($stagingPath) & 0777) !== 0600)) {
+        if (!@chmod($stagingPath, 0600)) {
+            throw new RuntimeException('Izin file cadangan harus privat (0600). Periksa pemilik dan izin folder.');
+        }
+        clearstatcache(true, $stagingPath);
+        $stagingPermissions = @fileperms($stagingPath);
+        if (DIRECTORY_SEPARATOR !== '\\'
+            && ($stagingPermissions === false || ($stagingPermissions & 0777) !== 0600)) {
             throw new RuntimeException('Izin file cadangan harus privat (0600). Periksa pemilik dan izin folder.');
         }
         // Publish only the completed ZIP. A process interrupted before this
-        // rename leaves a hidden staging file, never a corrupt final archive.
-        if (file_exists($zipPath) || is_link($zipPath) || !@rename($stagingPath, $zipPath)) {
+        // hard link leaves a hidden staging file, never a corrupt final
+        // archive. link() also fails atomically when the final path already
+        // exists, unlike rename() on POSIX systems.
+        if (file_exists($zipPath) || is_link($zipPath) || !@link($stagingPath, $zipPath)) {
             throw new RuntimeException('Cadangan selesai ditulis tetapi belum dapat dipublikasikan tanpa menimpa berkas lain.');
         }
+        $publishedStagingPath = $stagingPath;
         $stagingPath = null;
+        @unlink($publishedStagingPath);
 
         return ['ok' => true, 'counts' => $counts, 'checksums' => $checksums];
     } catch (Throwable $e) {
