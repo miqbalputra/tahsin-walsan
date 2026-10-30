@@ -40,6 +40,9 @@ jobs:
       - name: Legacy student CSV checks
         run: php tests/legacy-student-import-tests.php
 
+      - name: Legacy destructive generator safety checks
+        run: node tests/legacy-generator-safety-tests.cjs
+
       - name: Rebuild and verify public assets
         run: |
           npm ci --no-audit --no-fund

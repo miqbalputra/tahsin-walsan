@@ -1,6 +1,8 @@
+const { requireFullReplacementApproval, createPrivateOutputDirectory, writePrivateArtifact, destructiveSqlWarning } = require('./destructive-import-safety.cjs');
+requireFullReplacementApproval('generate_sql.js');
+
 const XLSX = require('xlsx');
 const path = require('path');
-const fs = require('fs');
 
 const excelFile = path.join(__dirname, '..', 'Mustawa_Ikhwan.xlsx');
 const workbook = XLSX.readFile(excelFile);
@@ -10,7 +12,7 @@ const uniqueEntries = new Set();
 const waliSantriMap = new Map(); // fatherName_phone -> id
 let waliIdCounter = 1;
 
-let sqlOutput = `-- Data Import from Mustawa_Ikhwan.xlsx\n`;
+let sqlOutput = destructiveSqlWarning(['wali_santri', 'santri_detail']) + '-- Data Import from Mustawa_Ikhwan.xlsx\n';
 sqlOutput += `SET FOREIGN_KEY_CHECKS = 0;\n`;
 sqlOutput += `TRUNCATE TABLE santri_detail;\n`;
 sqlOutput += `TRUNCATE TABLE wali_santri;\n`;
@@ -72,8 +74,8 @@ if (santriDetailInserts.length > 0) {
     sqlOutput += santriDetailInserts.join(',\n') + ';\n';
 }
 
-const outputPath = path.join(__dirname, '..', 'import_mustawa_ikhwan.sql');
-fs.writeFileSync(outputPath, sqlOutput);
+const outputDir = createPrivateOutputDirectory(path.join(__dirname, '..'));
+const outputPath = writePrivateArtifact(outputDir, 'import_mustawa_ikhwan.sql', sqlOutput);
 
 console.log(`Successfully generated SQL file: ${outputPath}`);
 console.log(`Total Wali Santri: ${waliSantriMap.size}`);

@@ -61,6 +61,13 @@ PHP tidak mengganti prototipe tersebut.
 10. Parser impor santri lama memilih pemisah dari jumlah karakter di seluruh
     isi dan mengabaikan kolom berlebih. CSV yang rusak berisiko salah dibaca
     atau membuang kolom tanpa memberi tahu operator.
+11. Lima generator SQL lama di direktori temp_excel menghasilkan perintah
+    TRUNCATE dan DELETE
+    pada wali, anak, halaqoh, membership, presensi, atau akun. Foreign key
+    dinonaktifkan dan sebagian tabel histori dibiarkan; ID yang digunakan ulang
+    dapat membuat histori lama terbaca sebagai milik orang lain. Beberapa
+    generator juga memakai kata sandi guru yang dapat ditebak dan menulis daftar
+    password teks biasa ke webroot.
 
 ## Dasar keselamatan dan baseline
 
@@ -944,10 +951,34 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   atau mengubah database.
 - Uji lokal parser lulus 13 assertion, termasuk koma dalam nama, pemisah titik
   koma, kolom tertukar, baris kurang/lebih kolom, dan batas ukuran/jumlah. Lint
-  PHP halaman/helper serta suite HTTP lulus: 234 assertion. HTTP menguji bahwa
+  PHP halaman/helper serta suite HTTP lokal lulus: 240 assertion. HTTP menguji bahwa
   CSV rusak dan pratinjau tidak mengubah data lama, sedangkan impor yang
   dikonfirmasi hanya menambah wali/anak baru dan mempertahankan seluruh baris
   peserta, anak, halaqoh, keanggotaan, dan presensi yang sebelumnya ada. Uji
   memakai database fixture lokal sementara. CI `41018496452` dan
   `41018506045` pada commit `714b9bf` juga lulus.
 - Tidak ada impor atau perubahan database produksi.
+
+## Pengamanan generator SQL lama — 30 Oktober 2026
+
+- Temuan: lima skrip utilitas temp_excel/*.js menghasilkan SQL penggantian
+  data besar tanpa konfirmasi. Beberapa skrip mengosongkan tabel domain namun
+  membiarkan sebagian histori, sehingga ID yang digunakan ulang berisiko
+  mengaitkan presensi atau capaian lama dengan peserta baru.
+- Semua generator kini berhenti sebelum membaca workbook kecuali pemanggil
+  memberi flag --replace-all-existing-data, frasa konfirmasi eksplisit, dan
+  target sandbox yang namanya berawalan tahsin_test_. SQL yang dihasilkan
+  memuat perintah USE untuk database sandbox itu, sehingga nama target tidak bergantung
+  pada database yang sedang dipilih operator.
+- SQL dan manifest kredensial kini ditulis ke direktori temporary privat di
+  luar webroot. Izin POSIX dibatasi ke pemilik. Password guru dibuat acak
+  kriptografis 192-bit, di-hash dengan bcrypt cost 12, dan hanya plaintext
+  sementara dicatat di manifest privat; output daftar password lama di webroot
+  dihentikan dan diabaikan Git.
+- Lulus 31 assertion helper keselamatan serta node --check untuk kelima
+  generator dan helper. Uji memastikan tanpa persetujuan skrip berhenti sebelum
+  memuat XLSX atau membuat output; output helper dibatasi ke direktori luar
+  webroot. Sumber Excel, SQL impor, dan database tidak dibuka atau diubah. CI
+  akan memeriksa perubahan ini pada push berikutnya.
+- Gate ini membatasi generator penggantian ke sandbox; generator tersebut tetap
+  bersifat destruktif dan tidak boleh dipakai untuk database operasional.

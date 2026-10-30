@@ -577,7 +577,7 @@ require 'includes/participant_merge_helper.php'; participantMergeApplyMigration(
   const temporary = await login('http_created');
   localSql("DELETE FROM users WHERE username='http_created'");
   check((await req('/ustadz/api-autosave.php?halaqoh_id=1&tanggal=2026-10-18',temporary)).status===401,'Deleted account is rejected by API despite its old cookie');
-  for (const route of ['/.env','/config/database.php','/includes/auth_helper.php','/includes/participant_import_helper.php','/includes/participant_merge_page.php','/.sessions/audit-20261023/test-database.txt','/tests/security-integration.php','/tests/participant-import-integration.php','/tests/participant-merge-integration.php','/n8n_workflow_tahsin.json','/database.sql','/composer.json','/migrate.php','/migrate_participant_import.php','/migrate_participant_merge.php']) {
+  for (const route of ['/.env','/config/database.php','/includes/auth_helper.php','/includes/participant_import_helper.php','/includes/participant_merge_page.php','/.sessions/audit-20261023/test-database.txt','/tests/security-integration.php','/tests/participant-import-integration.php','/tests/participant-merge-integration.php','/n8n_workflow_tahsin.json','/database.sql','/import_mustawa_ikhwan.sql','/import_mustawa_lengkap.sql','/import_database_lengkap_v2.sql','/import_database_final.sql','/DAFTAR_AKUN_USTADZ.md','/teacher-credentials.json','/composer.json','/migrate.php','/migrate_participant_import.php','/migrate_participant_merge.php']) {
     check((await req(route,admin)).status===403,'Development router denies private path: '+route);
   }
   check((await req('/assets/css/app.css',admin)).status===200,'Public application CSS remains accessible');
