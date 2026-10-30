@@ -908,7 +908,8 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   guard kontrol kemudian lulus 19 assertion lokal.
 - Workflow CI `41016782262` pada commit `425a160` lulus seluruh rangkaian PHP
   dan Node, termasuk pemuatan `.env` pada HTTP, 227 pemeriksaan HTTP keamanan,
-  pemulihan presensi dan keanggotaan. Perubahan parser terbaru menunggu CI.
+  pemulihan presensi dan keanggotaan. CI terbaru pada commit `714b9bf` juga
+  lulus seluruh rangkaian setelah perubahan parser impor dan unggahan.
   Tidak ada koneksi atau perubahan pada database produksi.
 
 ## Penyimpanan privat unggahan impor santri lama — 30 Oktober 2026
@@ -922,11 +923,12 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   lama yang sudah tersimpan di sesi tetap dapat diselesaikan atau dibatalkan.
 - Uji lokal lulus 6 assertion: webroot dan subdirektorinya ditolak, kandidat
   privat dipilih, dan berkas sementara dibuat dengan izin privat pada sistem
-  POSIX. Lint halaman impor juga lulus; verifikasi CI masih menunggu.
+  POSIX. Suite PHP dan Node terbaru juga lulus untuk commit `714b9bf`.
 - CI `41017273920` gagal pada langkah rebuild aset publik. Reproduksi lokal
   menemukan CSS tersimpan belum sesuai dengan build dari Tailwind 3.4.19 yang
   terkunci di `package-lock.json`; aset CSS dan versi cache kini disegarkan
-  mengikuti hasil build tersebut.
+  mengikuti hasil build tersebut. CI `41018496452` dan `41018506045` pada
+  commit tersebut lulus.
 - Tidak ada file unggahan lama, data peserta, atau database produksi yang
   diubah.
 
@@ -946,6 +948,6 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   CSV rusak dan pratinjau tidak mengubah data lama, sedangkan impor yang
   dikonfirmasi hanya menambah wali/anak baru dan mempertahankan seluruh baris
   peserta, anak, halaqoh, keanggotaan, dan presensi yang sebelumnya ada. Uji
-  memakai database fixture lokal sementara; CI akan berjalan kembali pada
-  push berikutnya.
+  memakai database fixture lokal sementara. CI `41018496452` dan
+  `41018506045` pada commit `714b9bf` juga lulus.
 - Tidak ada impor atau perubahan database produksi.
