@@ -1152,3 +1152,17 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
 - Seluruh workflow CI lulus pada commit `646ddf2` (run `41032419036`), termasuk
   regresi riwayat presensi, matriks keamanan HTTP, suite MariaDB, dan smoke test
   image Apache. Data produksi tidak diakses.
+
+## Identitas induk pada restore backup lama — 30 Oktober 2026
+
+- Temuan: merge backup menerima kolom opsional yang tidak ada pada arsip lama.
+  Saat ID angka induk sudah ada di database tujuan, perbandingan hanya atas
+  kolom bersama dapat melewatkan perbedaan identitas pada kolom baru; anak dari
+  arsip berisiko tertaut ke orang yang salah.
+- Restore kini menandai baris induk yang arsipnya tidak memuat seluruh kolom
+  sebagai belum terverifikasi. Pratinjau memberi peringatan; anak baru yang
+  memakai ID induk yang sudah bentrok ditolak dalam transaksi. Baris lama tetap
+  utuh dan baris induk baru tanpa benturan masih dapat dipulihkan.
+- Fixture recovery membuat arsip lama dengan satu kolom identitas yang hilang,
+  lalu memeriksa bahwa restore menolak tautan anak dan mempertahankan identitas
+  induk tujuan. Hasil CI belum dicatat.

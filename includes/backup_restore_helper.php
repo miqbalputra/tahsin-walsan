@@ -120,6 +120,7 @@ function backupInspect(PDO $pdo, ZipArchive $zip, array $manifest, array $tables
 {
     backupRequireTransactionalTables($pdo, $tables);
     if (array_diff(array_keys($manifest['tables']), $tables)) throw new InvalidArgumentException('Cadangan memuat tabel yang belum tersedia pada aplikasi ini. Minta pengelola menyesuaikan versi database terlebih dahulu.');
+    $foreignKeys = backupForeignKeys($pdo);
     $rows = [];
     $totalZip = $totalDb = 0;
     foreach ($tables as $table) {
@@ -154,14 +155,19 @@ function backupInspect(PDO $pdo, ZipArchive $zip, array $manifest, array $tables
             }
             if ($header === null || $count !== $manifest['tables'][$table]) throw new InvalidArgumentException('Jumlah baris CSV ' . $table . ' tidak sesuai manifest atau header tidak terbaca.');
             $totalZip += $count;
-            $note = '';
+            $notes = [];
             if (!$keys) {
-                if ($generated && $count > 0) $note = 'Tanpa primary key dan memiliki kolom otomatis; pemulihan memerlukan tinjauan pengelola.';
-                elseif ($dbCount === 0) $note = 'Tanpa primary key: tabel tujuan kosong dan baris dapat dipulihkan tanpa menggabungkan data yang tidak beridentitas.';
-                else $note = 'Tanpa primary key: tabel tujuan sudah berisi data, sehingga tabel dilewati agar tidak membuat duplikasi.';
+                if ($generated && $count > 0) $notes[] = 'Tanpa primary key dan memiliki kolom otomatis; pemulihan memerlukan tinjauan pengelola.';
+                elseif ($dbCount === 0) $notes[] = 'Tanpa primary key: tabel tujuan kosong dan baris dapat dipulihkan tanpa menggabungkan data yang tidak beridentitas.';
+                else $notes[] = 'Tanpa primary key: tabel tujuan sudah berisi data, sehingga tabel dilewati agar tidak membuat duplikasi.';
+            }
+            $isParentTable = array_filter($foreignKeys, static fn($reference) => $reference['parent'] === $table);
+            $missingColumns = array_values(array_diff(tableColumns($pdo, $table), $header));
+            if ($keys && $isParentTable && $missingColumns) {
+                $notes[] = 'Arsip tidak memuat semua kolom tabel induk; anak baru ditolak bila ID induk yang sama tidak dapat diverifikasi penuh.';
             }
             $rows[] = ['table'=>$table,'zip_rows'=>$count,'db_rows'=>$dbCount,'cols_ok'=>true,'checksum_ok'=>true,'missing'=>[],
-                'note'=>$note];
+                'note'=>implode(' ', $notes)];
         } finally { fclose($stream); }
     }
     return ['error'=>null,'rows'=>$rows,'total_zip'=>$totalZip,'total_db'=>$totalDb,
@@ -220,6 +226,7 @@ function backupChangedParentKeys(PDO $pdo, ZipArchive $zip, array $manifest, arr
             foreach (backupCsvRows($stream,$manifest['version'] ?? 1) as $row) {
                 if ($header === null) {
                     $header = $row;
+                    $missingColumns = array_values(array_diff(tableColumns($pdo,$table),$header));
                     $where = implode(' AND ',array_map(static fn($key)=>"`$key`=?",$keys));
                     $lookup = $pdo->prepare("SELECT * FROM `$table` WHERE $where LIMIT 1 FOR UPDATE");
                     continue;
@@ -229,7 +236,11 @@ function backupChangedParentKeys(PDO $pdo, ZipArchive $zip, array $manifest, arr
                 $lookup->execute(array_map(static fn($key)=>$record[$key],$keys));
                 $existing = $lookup->fetch(PDO::FETCH_ASSOC);
                 if (!$existing || !$references) continue;
-                $differs = false;
+                // An older archive may omit nullable columns introduced later.
+                // If this row's numeric ID already exists, missing source values
+                // make it unsafe to assume that a new child belongs to that same
+                // person. Treat the parent as uncertain and block such children.
+                $differs = $references && $missingColumns;
                 foreach ($record as $column=>$value) {
                     if ($existing[$column] === null ? $value !== null : ($value === null || (string) $existing[$column] !== (string) $value)) { $differs = true; break; }
                 }
@@ -324,7 +335,7 @@ function executeMergeRestore(PDO $pdo, string $zipPath, array $tables, string $n
                     // to the same parent under numeric/collation coercion.
                     if ($actualParent) $tuple = array_map(static fn($column)=>$actualParent[$column],$reference['parent_columns']);
                     if (isset($changedParents[backupReferenceFingerprint($reference['parent'],$reference['parent_columns'],$tuple)])) {
-                        throw new InvalidArgumentException('ID induk berbeda antara cadangan dan data saat ini (' . $reference['parent'] . '). Pemulihan dibatalkan agar data baru tidak terhubung ke identitas yang keliru. Minta pengelola meninjau cadangan pada database terpisah.');
+                        throw new InvalidArgumentException('ID induk berbeda atau arsip tidak lengkap antara cadangan dan data saat ini (' . $reference['parent'] . '). Pemulihan dibatalkan agar data baru tidak terhubung ke identitas yang keliru. Minta pengelola meninjau cadangan pada database terpisah.');
                     }
                 }
                 $insert->execute(array_map(static fn($column)=>$byName[$column],$writeHeader));
