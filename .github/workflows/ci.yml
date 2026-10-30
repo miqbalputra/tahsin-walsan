@@ -83,6 +83,9 @@ jobs:
           php -d memory_limit=256M tests/family-integration.php
           php -d memory_limit=256M tests/data-induk-archive-integration.php
 
+      - name: Data Induk roster sync integration
+        run: node tests/data-induk-sync-http-tests.cjs
+
       - name: Asset, service worker, and workflow suites
         run: |
           set -e

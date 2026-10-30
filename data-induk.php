@@ -67,6 +67,31 @@ $isStale = $state && $state['last_success_at'] && strtotime($state['last_success
 </div>
 <div class="grid gap-6 lg:grid-cols-2">
     <section class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm"><div class="border-b p-5 font-bold">Riwayat sinkronisasi</div><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th class="p-3">Waktu</th><th class="p-3">Scope</th><th class="p-3">Status</th><th class="p-3">Durasi</th></tr></thead><tbody><?php foreach ($runs as $run): ?><tr class="border-t"><td class="p-3"><?= htmlspecialchars($run['started_at']) ?></td><td class="p-3"><?= htmlspecialchars($run['scope']) ?></td><td class="p-3"><?= htmlspecialchars($run['status']) ?></td><td class="p-3"><?= htmlspecialchars((string) (json_decode($run['stats_json'] ?? '{}', true)['duration_ms'] ?? '-')) ?> ms</td></tr><?php endforeach; ?></tbody></table></div></section>
-    <section class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm"><div class="border-b p-5 font-bold">Konflik pemetaan</div><div class="divide-y"><?php foreach ($conflicts as $conflict): ?><div class="p-4 text-sm"><p class="font-bold"><?= htmlspecialchars($conflict['entity_type']) ?> · <?= htmlspecialchars($conflict['reason']) ?></p><p class="mt-1 text-xs text-slate-500">UUID pusat: <?= htmlspecialchars($conflict['master_id']) ?> · Kandidat lokal: <?= htmlspecialchars((string) $conflict['local_id']) ?></p><form method="post" class="mt-3 flex gap-2"><input type="hidden" name="action" value="conflict"><input type="hidden" name="conflict_id" value="<?= (int) $conflict['id'] ?>"><?php csrfField(); ?><button name="decision" value="approve" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">Setujui</button><button name="decision" value="ignore" class="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold">Abaikan</button></form></div><?php endforeach; ?><?php if (!$conflicts): ?><p class="p-5 text-sm text-slate-500">Tidak ada konflik tertunda.</p><?php endif; ?></div></section>
+    <section class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+        <div class="border-b p-5 font-bold">Konflik pemetaan</div>
+        <div class="divide-y">
+            <?php foreach ($conflicts as $conflict):
+                $payload = json_decode((string) ($conflict['payload_json'] ?? ''), true);
+                $candidateIds = is_array($payload['local_candidate_ids'] ?? null)
+                    ? array_values(array_filter($payload['local_candidate_ids'], static fn($id) => is_int($id) || (is_string($id) && ctype_digit($id))))
+                    : [];
+            ?>
+                <div class="p-4 text-sm">
+                    <p class="font-bold"><?= htmlspecialchars($conflict['entity_type']) ?> · <?= htmlspecialchars($conflict['reason']) ?></p>
+                    <p class="mt-1 text-xs text-slate-500">UUID pusat: <?= htmlspecialchars($conflict['master_id']) ?> · Kandidat lokal: <?= htmlspecialchars((string) ($conflict['local_id'] ?? 'belum dipilih')) ?></p>
+                    <?php if ($candidateIds): ?><p class="mt-1 text-xs text-slate-500">ID kandidat untuk ditinjau: #<?= htmlspecialchars(implode(', #', array_map('strval', $candidateIds))) ?></p><?php endif; ?>
+                    <form method="post" class="mt-3 flex gap-2">
+                        <input type="hidden" name="action" value="conflict">
+                        <input type="hidden" name="conflict_id" value="<?= (int) $conflict['id'] ?>">
+                        <?php csrfField(); ?>
+                        <?php if ($conflict['local_id'] !== null): ?><button name="decision" value="approve" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">Setujui kandidat #<?= (int) $conflict['local_id'] ?></button>
+                        <?php else: ?><p class="text-xs text-amber-700">Tidak ada satu kecocokan yang aman untuk disetujui otomatis. Periksa identitas lokal sebelum menyelesaikan konflik.</p><?php endif; ?>
+                        <button name="decision" value="ignore" class="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold">Abaikan</button>
+                    </form>
+                </div>
+            <?php endforeach; ?>
+            <?php if (!$conflicts): ?><p class="p-5 text-sm text-slate-500">Tidak ada konflik tertunda.</p><?php endif; ?>
+        </div>
+    </section>
 </div>
 <?php require_once 'includes/footer.php'; ?>

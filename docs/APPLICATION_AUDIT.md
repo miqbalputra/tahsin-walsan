@@ -617,6 +617,28 @@ PHP tidak mengganti prototipe tersebut.
 - Perubahan ini melindungi skema dari permintaan web; migrasi tetap perlu
   dijalankan eksplisit lewat CLI setelah backup dan pemeriksaan staging.
 
+## Sinkronisasi roster Data Induk — 30 Oktober 2026
+
+- Temuan: status anak selain `active` diperlakukan sebagai arsip, ID kelas
+  yang belum ada di snapshot referensi menghapus kelas lokal, relasi ayah
+  ganda memilih wali berdasarkan urutan API, dan format telepon/nama yang
+  berbeda tanda baca bisa membuat identitas lokal diduplikasi.
+- Sinkronisasi kini memvalidasi seluruh payload sebelum menulis. Status yang
+  tidak dikenal, referensi kelas yang belum tersedia, relasi ayah ganda, dan
+  nilai di luar kapasitas kolom membatalkan sinkronisasi tanpa mengubah roster.
+  Kolom kelas/enrollment yang tidak dikirim mempertahankan mapping existing.
+- Pencocokan nama dan telepon dinormalisasi. Satu kandidat menjadi konflik
+  untuk ditinjau; beberapa kandidat dicatat tanpa memilih atau membuat wali/
+  anak duplikat. Tombol persetujuan dinonaktifkan untuk konflik tanpa satu
+  kandidat tunggal.
+- Penulisan roster menunggu mutex yang sama dengan perubahan peserta lain,
+  mengunci sumber lokal, menggunakan SQL mode ketat, dan tetap atomik. Mapping
+  ID gabungan yang bentrok atau kegagalan insert anak membatalkan seluruh sync.
+- Suite integrasi loopback baru mencakup konflik identitas, payload/status/
+  kelas tidak valid, beberapa ayah aktif, alias ID hasil merge, rollback,
+  kelas yang tidak dikirim, serta kesamaan presensi dan keanggotaan. Semua
+  fixture memakai database sintetis `tahsin_test_*`; belum mengakses produksi.
+
 ## Menjalankan pemeriksaan lokal
 
 Database uji harus berjalan hanya pada `127.0.0.1:13317`, dengan akun fixture
@@ -645,6 +667,7 @@ node tests/achievement-http-tests.cjs
 php -d extension=pdo_mysql -d memory_limit=256M tests/participant-merge-integration.php
 node tests/security-http-tests.cjs
 node tests/migration-http-tests.cjs
+node tests/data-induk-sync-http-tests.cjs
 node tests/service-worker-tests.cjs
 node tests/n8n-reminder-workflow.cjs
 php -d extension=pdo_mysql tests/tahsin-mysql-integration.php
