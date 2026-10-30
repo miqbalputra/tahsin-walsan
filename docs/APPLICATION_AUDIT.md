@@ -58,6 +58,9 @@ PHP tidak mengganti prototipe tersebut.
 9. Import santri lama dapat menaruh CSV wali dan anak di `temp_excel/` dalam
    webroot bila direktori aplikasi writable. Privasi unggahan bergantung pada
    aturan Apache/router yang menolak akses ke direktori tersebut.
+10. Parser impor santri lama memilih pemisah dari jumlah karakter di seluruh
+    isi dan mengabaikan kolom berlebih. CSV yang rusak berisiko salah dibaca
+    atau membuang kolom tanpa memberi tahu operator.
 
 ## Dasar keselamatan dan baseline
 
@@ -920,5 +923,27 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
 - Uji lokal lulus 6 assertion: webroot dan subdirektorinya ditolak, kandidat
   privat dipilih, dan berkas sementara dibuat dengan izin privat pada sistem
   POSIX. Lint halaman impor juga lulus; verifikasi CI masih menunggu.
+- CI `41017273920` gagal pada tahap workflow/runner dan tidak memberikan hasil
+  suite yang dapat dipakai; langkah penyebab pastinya belum terverifikasi.
 - Tidak ada file unggahan lama, data peserta, atau database produksi yang
   diubah.
+
+## Validasi CSV impor santri lama — 30 Oktober 2026
+
+- Pengenalan pemisah kini memakai header yang valid, mendukung koma atau titik
+  koma, dan tidak dipengaruhi koma di dalam kolom bertanda kutip. Header harus
+  memiliki tepat lima kolom yang didukung. Baris dengan jumlah kolom berbeda,
+  header hilang/ganda/tidak dikenal, UTF-8 rusak, NUL, berkas di atas 5 MB, atau
+  lebih dari 5.000 baris ditolak sebelum pratinjau maupun transaksi.
+- Baris tidak lagi dipotong diam-diam. Pesan kesalahan ditampilkan pada halaman
+  pratinjau dan aksi konfirmasi menolak CSV yang tidak valid sebelum mengunci
+  atau mengubah database.
+- Uji lokal parser lulus 13 assertion, termasuk koma dalam nama, pemisah titik
+  koma, kolom tertukar, baris kurang/lebih kolom, dan batas ukuran/jumlah. Lint
+  PHP halaman/helper serta suite HTTP lulus: 234 assertion. HTTP menguji bahwa
+  CSV rusak dan pratinjau tidak mengubah data lama, sedangkan impor yang
+  dikonfirmasi hanya menambah wali/anak baru dan mempertahankan seluruh baris
+  peserta, anak, halaqoh, keanggotaan, dan presensi yang sebelumnya ada. Uji
+  memakai database fixture lokal sementara; CI akan berjalan kembali pada
+  push berikutnya.
+- Tidak ada impor atau perubahan database produksi.

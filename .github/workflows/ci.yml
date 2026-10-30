@@ -37,6 +37,9 @@ jobs:
       - name: Private import storage checks
         run: php tests/import-storage-tests.php
 
+      - name: Legacy student CSV checks
+        run: php tests/legacy-student-import-tests.php
+
       - name: Rebuild and verify public assets
         run: |
           npm ci --no-audit --no-fund

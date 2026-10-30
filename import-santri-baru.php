@@ -20,6 +20,7 @@ require_once 'includes/alumni_archive_helper.php';
 require_once 'includes/database_helper.php';
 require_once 'includes/participant_identity_helper.php';
 require_once 'includes/import_storage_helper.php';
+require_once 'includes/legacy_student_import_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
@@ -45,45 +46,6 @@ function normalizeHp(string $hp): string
 function normName(string $n): string
 {
     return strtolower(trim(preg_replace('/\s+/', ' ', $n)));
-}
-
-/** Batas ukuran & jumlah baris CSV impor, selaras dengan alur import-peserta.php. */
-const IMPORT_BARU_MAX_BYTES = 5 * 1024 * 1024;
-const IMPORT_BARU_MAX_ROWS = 5000;
-
-/** Baca CSV (handle BOM, delimiter ',' atau ';'). Kembalikan array asosiatif baris. */
-function parseCsvFile(string $path): array
-{
-    if (!is_file($path)) {
-        return [];
-    }
-    $contents = file_get_contents($path);
-    // hapus BOM
-    $contents = preg_replace('/^\xEF\xBB\xBF/', '', $contents);
-    // deteksi delimiter
-    $delim = (substr_count($contents, ';') > substr_count($contents, ',')) ? ';' : ',';
-    $rows = [];
-    $tmp = tmpfile();
-    fwrite($tmp, $contents);
-    fseek($tmp, 0);
-    $header = fgetcsv($tmp, 0, $delim, '"', '');
-    if (!$header) {
-        fclose($tmp);
-        return [];
-    }
-    $header = array_map(fn($h) => strtolower(trim($h)), $header);
-    while (($data = fgetcsv($tmp, 0, $delim, '"', '')) !== false) {
-        if (count($data) === 1 && $data[0] === '') {
-            continue;
-        }
-        $assoc = [];
-        foreach ($header as $i => $col) {
-            $assoc[$col] = trim($data[$i] ?? '');
-        }
-        $rows[] = $assoc;
-    }
-    fclose($tmp);
-    return $rows;
 }
 
 /** Sumber file aktif: upload (session) jika ada, kalau tidak pakai data_santri_baru.csv di root. */
@@ -353,12 +315,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($source === '') {
             redirectTo('import-santri-baru.php?err=' . rawurlencode('Tidak ada file sumber. Upload CSV atau letakkan data_santri_baru.csv.'));
         }
-        $csvRows = parseCsvFile($source);
+        try { $csvRows = parseCsvFile($source); }
+        catch (ImportSantriCsvException $failure) {
+            redirectTo('import-santri-baru.php?err=' . rawurlencode($failure->getMessage()));
+        }
         if (!$csvRows) {
             redirectTo('import-santri-baru.php?err=' . rawurlencode('File CSV kosong atau tidak terbaca.'));
-        }
-        if (count($csvRows) > IMPORT_BARU_MAX_ROWS) {
-            redirectTo('import-santri-baru.php?err=' . rawurlencode('Jumlah baris melebihi ' . IMPORT_BARU_MAX_ROWS . '. Pecah berkas atau gunakan alur Impor Peserta.'));
         }
         $previewToken = appRequestString($_POST, 'preview_token');
         $previews = is_array($_SESSION['import_baru_previews'] ?? null) ? $_SESSION['import_baru_previews'] : [];
@@ -518,10 +480,10 @@ $message = $_GET['msg'] ?? '';
 $done = $_GET['done'] ?? '';
 $error = $_GET['err'] ?? '';
 $source = activeSourceFile();
-$csvRows = $source !== '' ? parseCsvFile($source) : [];
-if (count($csvRows) > IMPORT_BARU_MAX_ROWS) {
-    $csvRows = array_slice($csvRows, 0, IMPORT_BARU_MAX_ROWS);
-    $error = 'Berkas melebihi ' . IMPORT_BARU_MAX_ROWS . ' baris; pratinjau terpotong. Pecah berkas atau gunakan alur Impor Peserta.';
+$csvRows = [];
+if ($source !== '') {
+    try { $csvRows = parseCsvFile($source); }
+    catch (ImportSantriCsvException $failure) { $error = $failure->getMessage(); }
 }
 $disp = $csvRows ? computeDispositions($pdo, $csvRows) : ['rows' => [], 'counts' => ['attach' => 0, 'new' => 0, 'dup' => 0, 'error' => 0, 'new_families' => 0], 'new_families' => [], 'halaqoh_map' => []];
 $previewRows = $disp['rows'];

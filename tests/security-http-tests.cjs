@@ -64,6 +64,18 @@ function domainDigest() {
   assert.equal(result.status,0,result.stderr);
   return result.stdout;
 }
+function domainSnapshot() {
+  const code = '$p=new PDO("mysql:host=127.0.0.1;port=13317;dbname='+database+';charset=utf8mb4","root","tahsin_local_test",[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);$rows=[];foreach(["wali_santri","santri_detail","halaqoh","halaqoh_members","presensi"] as $t){$rows[$t]=$p->query("SELECT * FROM `$t` ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);}echo json_encode($rows);';
+  const result = spawnSync(php,[...dbArgs,'-r',code],{cwd:root,encoding:'utf8',windowsHide:true});
+  assert.equal(result.status,0,result.stderr);
+  return JSON.parse(result.stdout);
+}
+function localRows(sql) {
+  const program = '$p=new PDO("mysql:host=127.0.0.1;port=13317;dbname='+database+';charset=utf8mb4","root","tahsin_local_test",[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);echo json_encode($p->query(base64_decode("'+Buffer.from(sql).toString('base64')+'"))->fetchAll(PDO::FETCH_ASSOC));';
+  const result = spawnSync(php,[...dbArgs,'-r',program],{cwd:root,encoding:'utf8',windowsHide:true});
+  assert.equal(result.status,0,result.stderr);
+  return JSON.parse(result.stdout);
+}
 function announcementRows() {
   const code = '$p=new PDO("mysql:host=127.0.0.1;port=13317;dbname='+database+';charset=utf8mb4","root","tahsin_local_test",[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);echo json_encode($p->query("SELECT * FROM pengumuman ORDER BY id")->fetchAll(PDO::FETCH_ASSOC));';
   const result = spawnSync(php,[...dbArgs,'-r',code],{cwd:root,encoding:'utf8',windowsHide:true});
@@ -81,6 +93,12 @@ async function previewParticipants(jar, token, csv) {
   const body=new FormData(); body.set('csrf_token',token); body.set('action','preview');
   body.set('file_csv',new Blob([csv],{type:'text/csv'}),'import-<img src=x onerror=alert(5)>.csv');
   const response=await fetch(base+'/import-peserta.php',{method:'POST',redirect:'manual',headers:{Cookie:jar.cookie},body});
+  return {status:response.status,body:await response.text()};
+}
+async function uploadLegacySantri(jar, token, csv) {
+  const body=new FormData(); body.set('csrf_token',token); body.set('action','upload');
+  body.set('file_csv',new Blob([csv],{type:'text/csv'}),'santri-baru.csv');
+  const response=await fetch(base+'/import-santri-baru.php',{method:'POST',redirect:'manual',headers:{Cookie:jar.cookie},body});
   return {status:response.status,body:await response.text()};
 }
 const importToken = body => body.match(/name="batch_id" value="([a-f0-9]{32})"/)?.[1];
@@ -580,6 +598,26 @@ require 'includes/participant_merge_helper.php'; participantMergeApplyMigration(
   check(apiSchema.status===403,'Schema action stays disabled without HERMES_EXPOSE_SCHEMA');
   const apiUsers = await (await fetch(base+'/api/hermes.php?action=users',{headers:{'X-API-Key':'audit-fixture-key'}})).json();
   check(apiUsers.status==='ok' && apiUsers.data.length>0 && !('no_hp' in apiUsers.data[0]),'Users action no longer exposes phone numbers');
+  const legacyImportPage=await req('/import-santri-baru.php',admin);
+  const legacyImportCsrf=csrf(legacyImportPage.body);
+  const legacyImportBefore=domainSnapshot();
+  const malformedLegacyUpload=await uploadLegacySantri(admin,legacyImportCsrf,'wali,telepon,anak,kelas,kelompok\nWali Uji,08123,Anak Uji,1A,\n');
+  check(legacyImportPage.status===200 && legacyImportCsrf && malformedLegacyUpload.status===302,'Legacy student import accepts only an authenticated CSV upload');
+  const malformedLegacyPreview=await req('/import-santri-baru.php',admin);
+  check(malformedLegacyPreview.status===200 && malformedLegacyPreview.body.includes('Header CSV tidak cocok') && JSON.stringify(domainSnapshot())===JSON.stringify(legacyImportBefore),'Malformed legacy CSV shows a useful error and preserves every existing domain row');
+  check((await req('/import-santri-baru.php',admin,{csrf_token:legacyImportCsrf,action:'cancel'})).status===302,'Malformed legacy CSV can be cancelled without touching database content');
+  const validLegacyUpload=await uploadLegacySantri(admin,legacyImportCsrf,'nama_bapak,no_hp,nama_anak,kelas,halaqoh\nAudit Import Baru,089999123456,Anak Import Baru,1A,\n');
+  const validLegacyPreview=await req('/import-santri-baru.php',admin);
+  const legacyPreviewToken=validLegacyPreview.body.match(/name="preview_token" value="([a-f0-9]{32})"/)?.[1];
+  check(validLegacyUpload.status===302 && validLegacyPreview.status===200 && legacyPreviewToken && validLegacyPreview.body.includes('Audit Import Baru') && validLegacyPreview.body.includes('Anak Import Baru'),'Valid legacy CSV is shown for review before writing');
+  check(JSON.stringify(domainSnapshot())===JSON.stringify(legacyImportBefore),'Legacy student preview leaves all existing domain rows unchanged');
+  const legacyImportResult=await req('/import-santri-baru.php',admin,{csrf_token:legacyImportCsrf,action:'execute',preview_token:legacyPreviewToken});
+  const legacyCreated=localRows("SELECT w.id AS wali_id,sd.id AS child_id,w.nama_bapak,sd.nama_anak FROM wali_santri w JOIN santri_detail sd ON sd.wali_santri_id=w.id WHERE w.nama_bapak='Audit Import Baru' AND sd.nama_anak='Anak Import Baru'");
+  check(legacyImportResult.status===302 && legacyCreated.length===1,'Confirmed legacy import creates exactly the requested new family');
+  const legacyImportAfter=domainSnapshot();
+  legacyImportAfter.wali_santri=legacyImportAfter.wali_santri.filter(row=>String(row.id)!==String(legacyCreated[0]?.wali_id));
+  legacyImportAfter.santri_detail=legacyImportAfter.santri_detail.filter(row=>String(row.id)!==String(legacyCreated[0]?.child_id));
+  check(JSON.stringify(legacyImportAfter)===JSON.stringify(legacyImportBefore),'Confirmed legacy import preserves every pre-existing participant, child, group, membership and attendance row');
   check(!/Fatal error|Uncaught|Warning:/.test(serverErrors),'HTTP scenarios produce no PHP runtime errors');
   const offlineDatabase = spawnSync(php,[...dbArgs,'-r','require "config/database.php";'], {
     cwd:root,encoding:'utf8',windowsHide:true,env:{...env,DB_PORT:'9',DB_CONNECT_TIMEOUT:'1'}
