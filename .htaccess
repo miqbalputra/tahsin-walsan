@@ -18,7 +18,7 @@ DirectoryIndex index.php login.php
 # Private source files and local exports never belong in an HTTP response.
 # JSON diblokir kecuali manifest.json (dibutuhkan PWA); CSV diblokir kecuali
 # template_*.csv (template impor publik yang tidak berisi data nyata).
-<FilesMatch "(?i)(^\.(?!well-known$)|\.(sql|sqlite3?|db|zip|gz|bak|ini|log|phar|md|xlsx|toml|ya?ml|lock)$|^(?!manifest\.json$)[^/]*\.json$|^(?!template_)[^/]*\.csv$|^(Dockerfile|phpunit\.xml|tailwind\.config\.js)$)">
+<FilesMatch "(?i)(^\.(?!well-known$)|^sess_.*$|\.(sql|sqlite3?|db|zip|gz|bak|ini|log|phar|md|xlsx|toml|ya?ml|lock)$|^(?!manifest\.json$)[^/]*\.json$|^(?!template_)[^/]*\.csv$|^(Dockerfile|phpunit\.xml|tailwind\.config\.js)$)">
     Require all denied
 </FilesMatch>
 

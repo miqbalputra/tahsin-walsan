@@ -1,5 +1,7 @@
 .git
 .sessions
+sess_*
+**/sess_*
 .env
 .env.*
 !.env.example

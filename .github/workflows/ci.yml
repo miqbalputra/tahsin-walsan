@@ -162,3 +162,40 @@ jobs:
           N8N_API_KEY: tahsin-test-api
           HERMES_API_KEY: tahsin-test-api
         run: node tests/tahsin-reminder-http-runner.cjs
+
+      - name: Build and smoke-test Apache image
+        run: |
+          set -euo pipefail
+          image="presensi-tahsin:audit-${GITHUB_SHA}"
+          session_probe="sess_codex_audit_${GITHUB_RUN_ID}"
+          private_doc="docs/codex-audit-private-${GITHUB_RUN_ID}.md"
+          container_id=""
+          mkdir -p docs
+          printf 'must not enter the image\n' > "$session_probe"
+          printf 'must not enter the image\n' > "$private_doc"
+          cleanup() {
+            if [ -n "$container_id" ]; then docker rm -f "$container_id" >/dev/null 2>&1 || true; fi
+            rm -f "$session_probe" "$private_doc"
+            rmdir docs 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          docker build --tag "$image" .
+          docker run --rm --entrypoint apache2ctl "$image" -t
+          docker run --rm --entrypoint sh "$image" -ec \
+            "test ! -e /var/www/html/$session_probe && test ! -e /var/www/html/docs/codex-audit-private-${GITHUB_RUN_ID}.md && test -f /var/www/html/manifest.json && test -f /var/www/html/assets/css/app.css"
+
+          container_id="$(docker run -d -p 127.0.0.1::80 --entrypoint /bin/sh "$image" -c 'mkdir -p /var/www/html/audit_probe && printf session-secret > /var/www/html/audit_probe/sess_probe && exec apache2ctl -D FOREGROUND')"
+          host_port="$(docker port "$container_id" 80/tcp | awk -F: '{print $NF}')"
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail "http://127.0.0.1:$host_port/manifest.json" >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent "http://127.0.0.1:$host_port/manifest.json" >/dev/null
+          curl --fail --silent "http://127.0.0.1:$host_port/assets/css/app.css" >/dev/null
+          session_status="$(curl --silent --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:$host_port/audit_probe/sess_probe")"
+          test "$session_status" = 403
+          for path in /.env.example /config/ /includes/ /tests/ /docs/ /scripts/ /temp_excel/ /.sessions/ /migrate.php; do
+            status="$(curl --silent --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:$host_port$path")"
+            test "$status" = 403
+          done
