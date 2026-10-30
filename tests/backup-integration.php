@@ -325,15 +325,24 @@ if (@symlink($insideWebroot,$directory.'/webroot-link')) {
         bkCheck(!file_exists($insideWebroot.DIRECTORY_SEPARATOR.$linkedWebrootChild),'Rejected symlink path is not created');
     } finally { unlink($directory.'/webroot-link'); }
 }
-putenv('BACKUP_STORAGE_PATH='.$directory.'/configured-storage');
-$configuredStorage=resolveTempDir();
-bkCheck(is_dir($configuredStorage),'A configured private backup folder can be created');
-bkCheck(realpath($configuredStorage)===realpath($directory.'/configured-storage'),'Configured backup path resolves to its canonical private directory');
-if (DIRECTORY_SEPARATOR !== '\\') bkCheck((fileperms($configuredStorage)&0777)===0700,'Configured backup directory permissions are restricted to owner');
-file_put_contents($directory.'/not-a-directory','fixture');
-putenv('BACKUP_STORAGE_PATH='.$directory.'/not-a-directory');
-try { resolveTempDir(); throw new LogicException('Unavailable persistent storage silently fell back'); }
-catch (RuntimeException $error) { bkCheck(true,'Unavailable configured storage fails clearly instead of falling back to ephemeral storage'); }
+$configuredStoragePath=rtrim(sys_get_temp_dir(),'/\\').DIRECTORY_SEPARATOR.'tahsin_backup_configured_'.bin2hex(random_bytes(5));
+try {
+    bkCheck(!backupPathIsInsideWebroot($configuredStoragePath),'OS temporary fixture is outside webroot');
+    putenv('BACKUP_STORAGE_PATH='.$configuredStoragePath);
+    $configuredStorage=resolveTempDir();
+    bkCheck(is_dir($configuredStorage),'A configured private backup folder can be created');
+    bkCheck(realpath($configuredStorage)===realpath($configuredStoragePath),'Configured backup path resolves to its canonical private directory');
+    if (DIRECTORY_SEPARATOR !== '\\') bkCheck((fileperms($configuredStorage)&0777)===0700,'Configured backup directory permissions are restricted to owner');
+} finally { if (is_dir($configuredStoragePath)) rmdir($configuredStoragePath); }
+$unavailablePath=rtrim(sys_get_temp_dir(),'/\\').DIRECTORY_SEPARATOR.'tahsin_backup_file_'.bin2hex(random_bytes(5));
+$unavailableHandle=fopen($unavailablePath,'x');
+if ($unavailableHandle===false) throw new RuntimeException('Could not create unique unavailable-storage fixture');
+fwrite($unavailableHandle,'fixture'); fclose($unavailableHandle);
+try {
+    putenv('BACKUP_STORAGE_PATH='.$unavailablePath);
+    try { resolveTempDir(); throw new LogicException('Unavailable persistent storage silently fell back'); }
+    catch (RuntimeException $error) { bkCheck(str_contains($error->getMessage(),'belum dapat ditulis'),'Unavailable configured storage fails clearly instead of falling back to ephemeral storage'); }
+} finally { if (is_file($unavailablePath)) unlink($unavailablePath); }
 if ($previousStorage===false) putenv('BACKUP_STORAGE_PATH'); else putenv('BACKUP_STORAGE_PATH='.$previousStorage);
 file_put_contents($directory.'/results.json',json_encode(['passed'=>true,'checks'=>$checks,'source'=>$database,'restored'=>$restoredDatabase,'php'=>PHP_VERSION,'peak_memory_bytes'=>memory_get_peak_usage(true),'tables'=>count($tables),'source_baseline'=>$recoveryBaseline,'fresh_recovery'=>$freshRecovery,'final'=>bkSnapshot($target)],JSON_PRETTY_PRINT));
 echo "PASS $checks backup/recovery assertions\nBACKUP_EVIDENCE=$directory\n";
