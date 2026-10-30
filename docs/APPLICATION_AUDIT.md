@@ -682,6 +682,8 @@ termasuk suite integrasi PHP, roster Data Induk, dan pemeriksaan HTTP keamanan.
   kompatibilitas yang sama dengan formulir presensi; dashboard guru juga
   mengikuti pola tersebut. Fixture HTTP menyiapkan tabel pengumuman yang
   dibutuhkan dashboard.
+- Perbaikan pada `d20119d` lulus penuh pada CI `41008666763` dan `41008673243`,
+  termasuk suite integrasi MariaDB sintetis dan seluruh tes HTTP.
 - Tidak ada migrasi atau penulisan ke basis data produksi dalam proses audit
   ini; pemulihan backup produksi belum diverifikasi.
 
