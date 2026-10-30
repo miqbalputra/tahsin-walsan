@@ -1003,4 +1003,6 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   hash service worker yang belum diperbarui; build penuh kini menghasilkan hash
   CSS dan cache yang konsisten. Perubahan hanya menyentuh markup dan aset web;
   tidak ada koneksi, migrasi, impor, atau penulisan ke database. Audit
-  visual/perangkat dan penerimaan alur halaman lain masih belum lengkap.
+  visual/perangkat dan penerimaan alur halaman lain masih belum lengkap. CI
+  setelah perbaikan pada commit `8a4933b` lulus pada run `41020964435` dan
+  `41020969170`.
