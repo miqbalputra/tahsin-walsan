@@ -307,8 +307,28 @@ $before['no_key_probe']=bkSnapshot($target)['no_key_probe'];
 bkCheck((int)$target->query('SELECT @@FOREIGN_KEY_CHECKS')->fetchColumn()===1,'Foreign key checks stay enabled throughout recovery');
 bkCheck(!$target->inTransaction() && !$pdo->inTransaction(),'No transaction is left open');
 $previousStorage=getenv('BACKUP_STORAGE_PATH');
+$insideWebroot=dirname(__DIR__);
+putenv('BACKUP_STORAGE_PATH='.$insideWebroot);
+try { resolveTempDir(); throw new LogicException('Backup path inside webroot was accepted'); }
+catch (RuntimeException $error) { bkCheck(str_contains($error->getMessage(),'luar webroot'),'Explicit backup path at the webroot is rejected'); }
+$webrootChild=$insideWebroot.DIRECTORY_SEPARATOR.'backup-path-audit-'.bin2hex(random_bytes(5));
+putenv('BACKUP_STORAGE_PATH='.$webrootChild);
+try { resolveTempDir(); throw new LogicException('New backup path inside webroot was accepted'); }
+catch (RuntimeException $error) { bkCheck(str_contains($error->getMessage(),'luar webroot'),'New explicit backup directory inside webroot is rejected'); }
+bkCheck(!file_exists($webrootChild),'Rejected webroot backup path is not created');
+if (@symlink($insideWebroot,$directory.'/webroot-link')) {
+    try {
+        putenv('BACKUP_STORAGE_PATH='.$directory.'/webroot-link/backup-child');
+        try { resolveTempDir(); throw new LogicException('Symlink into webroot was accepted'); }
+        catch (RuntimeException $error) { bkCheck(str_contains($error->getMessage(),'luar webroot'),'Symlinked backup path resolving into webroot is rejected'); }
+        bkCheck(!file_exists($insideWebroot.DIRECTORY_SEPARATOR.'backup-child'),'Rejected symlink path is not created');
+    } finally { unlink($directory.'/webroot-link'); }
+}
 putenv('BACKUP_STORAGE_PATH='.$directory.'/configured-storage');
-bkCheck(is_dir(resolveTempDir()),'A configured private backup folder can be created');
+$configuredStorage=resolveTempDir();
+bkCheck(is_dir($configuredStorage),'A configured private backup folder can be created');
+bkCheck(realpath($configuredStorage)===realpath($directory.'/configured-storage'),'Configured backup path resolves to its canonical private directory');
+if (DIRECTORY_SEPARATOR !== '\\') bkCheck((fileperms($configuredStorage)&0777)===0700,'Configured backup directory permissions are restricted to owner');
 file_put_contents($directory.'/not-a-directory','fixture');
 putenv('BACKUP_STORAGE_PATH='.$directory.'/not-a-directory');
 try { resolveTempDir(); throw new LogicException('Unavailable persistent storage silently fell back'); }

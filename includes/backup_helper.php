@@ -109,11 +109,24 @@ function resolveTempDir(): string
     if ($configured !== '') {
         $normalized = rtrim(str_replace('\\', '/', $configured), '/');
         if ($normalized === '' || preg_match('/^[A-Za-z]:$/D', $normalized)
+            || str_contains($normalized, "\0")
             || !(str_starts_with($normalized, '/') || preg_match('~^[A-Za-z]:/~', $normalized))) {
             throw new RuntimeException('BACKUP_STORAGE_PATH harus menunjuk folder cadangan tersendiri dengan alamat absolut.');
         }
+        if (backupPathIsInsideWebroot($normalized)) {
+            throw new RuntimeException('BACKUP_STORAGE_PATH harus berada di luar webroot agar arsip cadangan tidak dapat diakses sebagai berkas web.');
+        }
         if (!is_dir($normalized)) @mkdir($normalized, 0700, true);
-        if (is_dir($normalized) && is_writable($normalized)) return $normalized;
+        $resolved = realpath($normalized);
+        if ($resolved !== false && is_dir($resolved) && is_writable($resolved)) {
+            if (backupPathIsInsideWebroot($resolved)) {
+                throw new RuntimeException('BACKUP_STORAGE_PATH harus berada di luar webroot agar arsip cadangan tidak dapat diakses sebagai berkas web.');
+            }
+            if (DIRECTORY_SEPARATOR !== '\\' && (!@chmod($resolved, 0700) || (fileperms($resolved) & 0777) !== 0700)) {
+                throw new RuntimeException('Izin folder cadangan harus privat (0700). Periksa pemilik dan izin folder.');
+            }
+            return $resolved;
+        }
         throw new RuntimeException('Folder cadangan yang dikonfigurasi belum dapat ditulis.');
     }
     $candidates = [
@@ -126,6 +139,71 @@ function resolveTempDir(): string
         if (is_dir($c) && is_writable($c)) { return $c; }
     }
     throw new RuntimeException('Penyimpanan cadangan belum tersedia. Hubungi pengelola untuk memeriksa ruang disk dan izin folder.');
+}
+
+/** Normalize an absolute path without requiring its final directory to exist. */
+function backupNormalizeAbsolutePath(string $path): ?string
+{
+    $path = str_replace('\\', '/', $path);
+    if (preg_match('/^([A-Za-z]:)\/(.*)$/D', $path, $match)) {
+        $prefix = strtoupper($match[1]) . '/';
+        $path = $match[2];
+    } elseif (str_starts_with($path, '/')) {
+        $prefix = '/';
+        $path = ltrim($path, '/');
+    } else {
+        return null;
+    }
+
+    $segments = [];
+    foreach (explode('/', $path) as $segment) {
+        if ($segment === '' || $segment === '.') continue;
+        if ($segment === '..') {
+            if ($segments) array_pop($segments);
+            continue;
+        }
+        $segments[] = $segment;
+    }
+    return $prefix . implode('/', $segments);
+}
+
+/** Resolve existing symlink ancestors before checking a possibly new path. */
+function backupCanonicalProspectivePath(string $path): ?string
+{
+    $normalized = backupNormalizeAbsolutePath($path);
+    if ($normalized === null) return null;
+    $probe = $normalized;
+    $suffix = [];
+    while (!file_exists($probe) && !is_link($probe)) {
+        $parent = backupNormalizeAbsolutePath(dirname($probe));
+        $segment = basename($probe);
+        if ($parent === null || $parent === $probe || $segment === '' || $segment === '.' || $segment === '..') return null;
+        array_unshift($suffix, $segment);
+        $probe = $parent;
+    }
+    $realBase = realpath($probe);
+    if ($realBase === false) return null;
+    $base = backupNormalizeAbsolutePath($realBase);
+    if ($base === null) return null;
+    return backupNormalizeAbsolutePath($base . ($suffix ? '/' . implode('/', $suffix) : ''));
+}
+
+/** Explicit backup storage must not resolve into the application document root. */
+function backupPathIsInsideWebroot(string $path): bool
+{
+    $webroot = realpath(dirname(__DIR__));
+    $candidate = backupCanonicalProspectivePath($path);
+    $root = $webroot === false ? null : backupNormalizeAbsolutePath($webroot);
+    if ($root === null || $candidate === null) {
+        throw new RuntimeException('Lokasi BACKUP_STORAGE_PATH tidak dapat diverifikasi. Periksa alamat folder dan izin filesystem.');
+    }
+    if (DIRECTORY_SEPARATOR === '\\') {
+        $root = strtolower($root);
+        $candidate = strtolower($candidate);
+    }
+    $root = rtrim($root, '/');
+    if ($root === '') return str_starts_with($candidate, '/');
+    return $candidate === $root || str_starts_with($candidate, $root . '/');
 }
 
 function safeFilename($name): ?string

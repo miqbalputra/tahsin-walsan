@@ -29,14 +29,18 @@ dan penggantian koneksi setelah hasilnya diperiksa oleh pengelola.
 ## Penyimpanan dan batas
 
 `BACKUP_STORAGE_PATH` dapat menunjuk folder absolut khusus cadangan pada
-volume persisten. Folder harus dapat ditulis oleh proses PHP. Jika opsi ini
-diisi tetapi tidak tersedia, operasi berhenti; aplikasi tidak beralih diam-diam
-ke penyimpanan sementara.
+volume persisten **di luar webroot**. Aplikasi menolak path yang berada atau
+melalui symlink yang mengarah ke webroot, lalu membatasi izin folder Unix ke
+pemilik (`0700`). Folder harus dapat ditulis oleh proses PHP. Jika opsi ini
+diisi tetapi tidak tersedia atau tidak dapat diverifikasi, operasi berhenti;
+aplikasi tidak beralih diam-diam ke penyimpanan sementara. Berkas ZIP dibuat
+dengan izin privat (`0600`).
 
 Jika opsi kosong, instalasi lama tetap memakai `temp_excel/` apabila dapat
-ditulis, lalu folder OS sementara khusus aplikasi sebagai fallback. Kedua
-lokasi tersebut dapat hilang ketika container diganti. Unduh salinan ke
-penyimpanan terpisah sebelum redeploy atau penggantian server.
+ditulis, lalu folder OS sementara khusus aplikasi sebagai fallback. `temp_excel/`
+memiliki aturan penolakan HTTP untuk mempertahankan arsip lama tanpa memindahkan
+atau menghapusnya. Kedua lokasi fallback dapat hilang ketika container diganti.
+Unduh salinan ke penyimpanan terpisah sebelum redeploy atau penggantian server.
 
 `BACKUP_MAX_UPLOAD_MB` membatasi ukuran unggahan (1–512 MB; default kode
 100 MB). Batas `upload_max_filesize` dan `post_max_size` PHP juga berlaku.

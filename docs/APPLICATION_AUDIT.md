@@ -1006,3 +1006,22 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   visual/perangkat dan penerimaan alur halaman lain masih belum lengkap. CI
   setelah perbaikan pada commit `8a4933b` lulus pada run `41020964435` dan
   `41020969170`.
+
+## Pembatasan lokasi penyimpanan backup — 30 Oktober 2026
+
+- Temuan: dokumentasi mewajibkan `BACKUP_STORAGE_PATH` berada di luar webroot,
+  tetapi helper sebelumnya menerima folder di dalamnya. Jika aturan penolakan
+  HTTP tidak berlaku pada suatu hosting atau alias, ZIP backup dapat terekspos
+  tanpa autentikasi aplikasi.
+- Konfigurasi eksplisit kini ditolak bila path berada di dalam webroot, melewati
+  `..`, atau memiliki symlink ancestor yang menuju webroot. Pemeriksaan dilakukan
+  sebelum membuat folder dan diulang sesudah path di-resolve. Folder Unix yang
+  diterima dibatasi ke mode `0700`; ZIP tetap dibuat dengan mode `0600`.
+- Fallback historis `temp_excel/` tidak dipindahkan, dibersihkan, atau dinonaktifkan;
+  aksesnya tetap bergantung pada aturan penolakan HTTP yang sudah ada. Arsip lama
+  dan database tidak disentuh. Konfigurasi lokal saat audit memakai fallback ini,
+  bukan `BACKUP_STORAGE_PATH` eksplisit.
+- Lint PHP serta pemeriksaan path webroot, traversal, symlink, path luar, dan
+  mode direktori lulus lokal. Regresi integrasi backup juga mencakup path baru
+  di webroot tanpa membuat folder; eksekusi suite database menunggu CI karena
+  MariaDB fixture lokal tidak aktif.
