@@ -796,4 +796,5 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   --check` lulus lokal. CI `41010648851` menemukan bahwa HTTP response masih 200
   walau tabel tidak berubah: halaman sudah mengirimkan layout sebelum status 422
   ditetapkan. Validasi kini berjalan sebelum layout dirender; CI setelah koreksi
-  masih menunggu. Tidak ada migrasi atau penulisan ke database produksi.
+  `41010970463` lulus penuh, termasuk fixture MariaDB dan semua suite HTTP.
+  Tidak ada migrasi atau penulisan ke database produksi.
