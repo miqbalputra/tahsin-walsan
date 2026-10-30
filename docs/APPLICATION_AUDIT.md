@@ -1110,4 +1110,5 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   arsip tanpa primary key ditandai dan memerlukan tinjauan.
 - Regresi membandingkan pratinjau, pemulihan ke tabel kosong, pelestarian isi
   tabel yang sudah berisi, serta pemulihan ulang tanpa duplikasi. Hasil CI
-  untuk perubahan ini dicatat setelah verifikasi.
+  lulus pada commit 8971c3d (run 41028951148). Fixture memakai database
+  sintetis dan tidak mengakses database produksi.
