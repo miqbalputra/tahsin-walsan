@@ -161,7 +161,8 @@ function purgeBackupArchives(string $dir, string $prefix, int $maxAgeDays, int $
     $removed = 0;
     foreach ($files as $name => $mtime) {
         $position++;
-        if ($position <= $keep && ($maxAgeDays <= 0 || $mtime > $cutoff)) continue;
+        if ($position <= $keep) continue;
+        if ($maxAgeDays > 0 && $mtime > $cutoff) continue;
         if (@unlink($dir . '/' . $name)) $removed++;
     }
     return $removed;

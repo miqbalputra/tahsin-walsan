@@ -90,6 +90,35 @@ $directory = __DIR__ . '/../.sessions/audit-20261023/backup-' . getmypid() . '-'
 mkdir($directory,0700,true);
 $checks = 0;
 function bkCheck(bool $condition,string $message): void { global $checks; if (!$condition) throw new RuntimeException($message . ' ' . ($GLOBALS['backup_test_last_error'] ?? '')); $checks++; }
+function bkCreateRetentionFixtures(string $directory,array $agesInDays): void {
+    mkdir($directory,0700,true);
+    foreach ($agesInDays as $index=>$ageInDays) {
+        $path=$directory.'/backup_pre_restore_fixture'.$index.'.zip';
+        file_put_contents($path,'synthetic backup fixture '.$index);
+        touch($path,time()-$ageInDays*86400);
+    }
+}
+function bkRetentionFiles(string $directory): array {
+    $files=array_values(array_filter(scandir($directory) ?: [],static fn($name)=>str_ends_with($name,'.zip')));
+    sort($files,SORT_STRING);
+    return $files;
+}
+$freshRetentionDirectory=$directory.'/retention-fresh';
+bkCreateRetentionFixtures($freshRetentionDirectory,[0,1,2,3,4]);
+bkCheck(purgeBackupArchives($freshRetentionDirectory,'backup_pre_restore',7,3)===0,'Recent pre-restore backups outside keep count are preserved');
+bkCheck(count(bkRetentionFiles($freshRetentionDirectory))===5,'Recent pre-restore backup files remain present after age-based retention');
+$staleRetentionDirectory=$directory.'/retention-stale';
+bkCreateRetentionFixtures($staleRetentionDirectory,[0,1,8,10,20]);
+bkCheck(purgeBackupArchives($staleRetentionDirectory,'backup_pre_restore',7,3)===2,'Only stale pre-restore backups outside keep count are removed');
+bkCheck(bkRetentionFiles($staleRetentionDirectory)===[
+    'backup_pre_restore_fixture0.zip','backup_pre_restore_fixture1.zip','backup_pre_restore_fixture2.zip',
+],'Newest three pre-restore backups remain even when the third is older than the age limit');
+$countRetentionDirectory=$directory.'/retention-count';
+bkCreateRetentionFixtures($countRetentionDirectory,[0,1,2,3,4]);
+bkCheck(purgeBackupArchives($countRetentionDirectory,'backup_pre_restore',0,3)===2,'Count-only retention removes archives beyond keep count');
+bkCheck(bkRetentionFiles($countRetentionDirectory)===[
+    'backup_pre_restore_fixture0.zip','backup_pre_restore_fixture1.zip','backup_pre_restore_fixture2.zip',
+],'Count-only retention preserves the newest three backups');
 function bkSnapshot(PDO $connection): array {
     $result=[];
     foreach (discoverBackupTables($connection) as $table) {

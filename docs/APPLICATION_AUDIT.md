@@ -859,3 +859,16 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
 - CI `41012684184` berhenti di PHP integration suites sebelum suite HTTP.
   Tidak ada penghapusan baris pengumuman, migrasi, atau perubahan database
   produksi.
+
+## Retensi backup pemulihan — 30 Oktober 2026
+
+- Temuan: retensi backup pre-restore menghapus semua arsip di luar jumlah
+  `$keep`, termasuk backup yang masih baru, dan bisa menghapus arsip lama yang
+  termasuk tiga backup terbaru. Ini berisiko mengurangi pilihan pemulihan tepat
+  setelah restore.
+- Retensi kini selalu mempertahankan `$keep` arsip terbaru. Dengan batas umur,
+  hanya arsip yang lebih tua dari batas dan berada di luar jumlah itu yang
+  dihapus. `maxAgeDays = 0` tetap menggunakan retensi berdasarkan jumlah saja.
+- Fixture backup sintetis mencakup lima arsip baru, arsip tua di luar batas,
+  arsip tua yang masih termasuk tiga terbaru, dan mode berbasis jumlah. Tidak
+  ada file atau arsip pada folder backup aplikasi yang disentuh.
