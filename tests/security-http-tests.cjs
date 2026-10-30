@@ -60,6 +60,12 @@ function domainDigest() {
   assert.equal(result.status,0,result.stderr);
   return result.stdout;
 }
+function announcementRows() {
+  const code = '$p=new PDO("mysql:host=127.0.0.1;port=13317;dbname='+database+';charset=utf8mb4","root","tahsin_local_test",[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);echo json_encode($p->query("SELECT * FROM pengumuman ORDER BY id")->fetchAll(PDO::FETCH_ASSOC));';
+  const result = spawnSync(php,[...dbArgs,'-r',code],{cwd:root,encoding:'utf8',windowsHide:true});
+  assert.equal(result.status,0,result.stderr);
+  return JSON.parse(result.stdout);
+}
 async function previewBackup(jar, token, bytes) {
   const body = new FormData();
   body.set('csrf_token',token); body.set('action','preview');
@@ -103,6 +109,19 @@ const importGroup = body => body.match(/name="targets\[([a-f0-9]{64})\]"/)?.[1];
   check(rateBlocked.status===200 && rateBlocked.body.includes('Terlalu banyak percobaan login gagal'),'Login endpoint enforces its configured attempt limit');
   localSql("DELETE FROM login_attempts WHERE ip_address='127.0.0.1'");
   const admin = await login('audit_admin');
+  localSql("INSERT INTO pengumuman(id,judul,isi,is_aktif) VALUES(50001,'Pengumuman Lama Uji','Isi lama tetap sama  \n',1)");
+  const announcementsBefore=announcementRows();
+  const announcementPage=await req('/pengumuman.php',admin);
+  const announcementToken=csrf(announcementPage.body);
+  const legacyAnnouncementDelete=await req('/pengumuman.php',admin,{csrf_token:announcementToken,action:'delete',id:'50001'});
+  const announcementsArchived=announcementRows();
+  const archivedAnnouncement=announcementsArchived.find(row=>Number(row.id)===50001);
+  check(announcementPage.status===200 && legacyAnnouncementDelete.status===302 && announcementsArchived.length===announcementsBefore.length && archivedAnnouncement?.judul==='Pengumuman Lama Uji' && archivedAnnouncement?.isi==='Isi lama tetap sama  \n' && Number(archivedAnnouncement?.is_aktif)===0,'Legacy announcement delete requests archive the notice and preserve its exact content');
+  const beforeMalformedAnnouncement=JSON.stringify(announcementRows());
+  const malformedAnnouncementId=await req('/pengumuman.php',admin,{csrf_token:announcementToken,action:'delete','id[]':'50001'});
+  check(malformedAnnouncementId.status===422 && JSON.stringify(announcementRows())===beforeMalformedAnnouncement,'Malformed announcement IDs are rejected before changing archived content');
+  const malformedAnnouncementText=await req('/pengumuman.php',admin,{csrf_token:announcementToken,action:'save','judul[]':'Judul','isi':'Isi'});
+  check(malformedAnnouncementText.status===422 && JSON.stringify(announcementRows())===beforeMalformedAnnouncement,'Malformed announcement text cannot insert a partial notice');
   const dataIndukPage = await req('/data-induk.php',admin);
   const dataIndukToken = csrf(dataIndukPage.body);
   check(Boolean(dataIndukToken),'Data Induk page issues a CSRF token for admin actions');

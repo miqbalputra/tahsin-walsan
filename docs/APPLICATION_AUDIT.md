@@ -837,3 +837,20 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   `41011240257` lulus pada checkpoint kode sebelumnya. Ulangi verifikasi penuh
   setelah kegagalan CI sebelumnya didiagnosis.
 - Tidak ada migrasi, deployment, atau koneksi/perubahan ke database produksi.
+
+## Pelestarian pengumuman lama — 30 Oktober 2026
+
+- Temuan: aksi `delete` menghapus pengumuman secara permanen, meskipun fitur
+  arsip status sudah tersedia. Aksi kompatibilitas tersebut kini mengarsipkan
+  dengan `is_aktif = 0`; isi dan tanggal pengumuman tetap utuh. Tombol hapus
+  permanen dihilangkan dari halaman.
+- Simpan judul/isi memvalidasi tipe, UTF-8, dan ukuran sebelum `INSERT`. ID dan
+  status toggle juga divalidasi sebelum `UPDATE`. Semua perubahan memakai
+  redirect setelah POST agar refresh tidak mengirim formulir lagi.
+- Suite HTTP membuktikan isi persis pengumuman sintetis tetap ada setelah aksi
+  `delete`, dan input ID/teks array ditolak tanpa perubahan. Sintaks PHP dan
+  JavaScript serta regresi lokal pelaporan 172 assertion lulus. Suite HTTP
+  menunggu CI karena langkah PHP integration sebelumnya gagal lebih awal.
+- CI `41012425535` juga berhenti di PHP integration suites; penyebab belum
+  diketahui. Tidak ada penghapusan baris pengumuman, migrasi, atau perubahan
+  database produksi.
