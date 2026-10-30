@@ -145,9 +145,9 @@ $ustadz_list = $pdo->query("SELECT id, nama_lengkap FROM users WHERE role = 'ust
 
                 <div class="flex items-center justify-between mt-6 pt-4 border-t border-slate-50">
                     <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                        <?php echo $h['total_member']; ?> Wali Santri
+                        <?php echo (int) $h['total_member']; ?> Wali Santri
                     </span>
-                    <a href="halaqoh-members.php?id=<?php echo $h['id']; ?>"
+                    <a href="halaqoh-members.php?id=<?php echo (int) $h['id']; ?>"
                         class="text-sm text-blue-600 font-bold hover:underline">Kelola Anggota &rarr;</a>
                 </div>
             </div>

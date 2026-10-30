@@ -138,7 +138,7 @@ require_once 'includes/sidebar.php';
                                         onsubmit="return confirm('Hapus akun pengguna ini? Pastikan akun sudah tidak digunakan. Pengampu halaqoh harus dialihkan terlebih dahulu.')">
                                         <?php csrfField(); ?>
                                         <input type="hidden" name="action" value="delete">
-                                        <input type="hidden" name="id" value="<?php echo $user['id']; ?>">
+                                        <input type="hidden" name="id" value="<?= (int) $user['id'] ?>">
                                         <button type="submit"
                                             class="text-red-600 hover:bg-red-600 hover:text-white font-bold text-[10px] uppercase transition bg-red-50 px-3 py-1.5 rounded-xl border border-red-100">
                                             Hapus

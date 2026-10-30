@@ -240,7 +240,7 @@ $latestAnnounce = $stmtAnnounce->fetch();
                         <h4 class="font-bold text-slate-800 mb-1"><?php echo htmlspecialchars($h['nama_halaqoh']); ?></h4>
                         <div class="flex justify-between items-center">
                             <span
-                                class="text-[10px] font-bold text-slate-400 uppercase tracking-widest"><?php echo $h['total_member']; ?>
+                                class="text-[10px] font-bold text-slate-400 uppercase tracking-widest"><?php echo (int) $h['total_member']; ?>
                                 Wali Santri</span>
                             <a href="input-presensi.php?id=<?php echo (int) $h['id']; ?>"
                                 class="text-[10px] font-black text-blue-600 uppercase hover:underline">Isi Presensi</a>
