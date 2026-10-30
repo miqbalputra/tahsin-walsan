@@ -995,8 +995,12 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   untuk teks normal.
 - Teks informatif dan placeholder halaman masuk digelapkan ke slate-600
   (7,58:1 terhadap putih); ikon dekoratif tidak diubah. CSS dibangun ulang dari
-  sumber lokal agar halaman memakai kelas yang sama saat dilayani.
+  sumber lokal agar halaman memakai kelas yang sama saat dilayani. Build penuh
+  juga memperbarui hash CSS pada daftar cache `sw.js`.
 - `php -l login.php` dan `php tests/asset-tests.php` lulus (19 assertion).
-  Perubahan ini hanya menyentuh markup dan stylesheet; tidak ada koneksi,
-  migrasi, impor, atau penulisan ke database. Audit visual/perangkat dan
-  penerimaan alur halaman lain masih belum lengkap.
+  `node tests/service-worker-tests.cjs` lulus 57 assertion. Dua build penuh
+  berturut-turut menghasilkan aset identik. CI pada commit `921f002` mendeteksi
+  hash service worker yang belum diperbarui; build penuh kini menghasilkan hash
+  CSS dan cache yang konsisten. Perubahan hanya menyentuh markup dan aset web;
+  tidak ada koneksi, migrasi, impor, atau penulisan ke database. Audit
+  visual/perangkat dan penerimaan alur halaman lain masih belum lengkap.
