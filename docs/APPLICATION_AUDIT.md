@@ -1230,3 +1230,11 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   perilaku aplikasi: nilainya informasi dan tidak mengecualikan arsip alumni.
 - Migrasi ini belum dijalankan pada database apa pun. Pemeriksaan sintaks dan
   CI untuk perubahan ini belum dicatat.
+
+## Regresi batas autentikasi Hermes — 30 Oktober 2026
+
+- Suite HTTP kini mengirim sepuluh permintaan dengan key salah dan memastikan
+  semuanya ditolak sebagai 401; permintaan kesebelas dalam jendela lima menit
+  harus mendapat 429. Permintaan memakai fixture loopback dan tidak mencapai
+  koneksi database API.
+- Pemeriksaan syntax JavaScript dan hasil CI untuk regresi ini belum dicatat.

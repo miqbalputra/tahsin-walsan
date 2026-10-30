@@ -625,6 +625,12 @@ require 'includes/participant_merge_helper.php'; participantMergeApplyMigration(
   check(apiArrayDate.status===400,'Array date filters are rejected without PHP type errors');
   const apiQuery = await req('/api/hermes.php?action=status&api_key=audit-fixture-key');
   check(apiQuery.status===401,'Valid API key in the query string is no longer accepted');
+  for (let attempt=1; attempt<=8; attempt++) {
+    const failedAuth = await fetch(base+'/api/hermes.php?action=status',{headers:{'X-API-Key':'wrong-audit-key'}});
+    check(failedAuth.status===401,`Hermes failed API key attempt ${attempt+2} remains unauthorized below the threshold`);
+  }
+  const rateLimitedAuth = await fetch(base+'/api/hermes.php?action=status',{headers:{'X-API-Key':'wrong-audit-key'}});
+  check(rateLimitedAuth.status===429,'Hermes throttles the eleventh failed API key attempt within five minutes');
   const apiHeader = await fetch(base+'/api/hermes.php?action=users',{headers:{'X-API-Key':'audit-fixture-key'}});
   check(apiHeader.status===200 && !(apiHeader.headers.get('access-control-allow-origin')),'Header API key still works and CORS stays closed by default');
   const apiSchema = await fetch(base+'/api/hermes.php?action=schema',{headers:{'X-API-Key':'audit-fixture-key'}});
