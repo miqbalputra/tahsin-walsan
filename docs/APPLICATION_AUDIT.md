@@ -793,5 +793,7 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   riwayat sync, dan konflik sebelum/sesudah scope salah. Tes HTTP juga mencakup
   scope array/hilang dan ID konflik array. Database seluruh tes tetap sintetis.
 - Lint PHP untuk tiga file dan pemeriksaan sintaks JavaScript serta `git diff
-  --check` lulus lokal. CI untuk batch ini belum berjalan; tidak ada migrasi,
-  koneksi atau penulisan ke basis data produksi.
+  --check` lulus lokal. CI `41010648851` menemukan bahwa HTTP response masih 200
+  walau tabel tidak berubah: halaman sudah mengirimkan layout sebelum status 422
+  ditetapkan. Validasi kini berjalan sebelum layout dirender; CI setelah koreksi
+  masih menunggu. Tidak ada migrasi atau penulisan ke database produksi.

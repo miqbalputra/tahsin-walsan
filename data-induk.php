@@ -1,9 +1,7 @@
 <?php
 $pageTitle = 'Status Data Induk';
-require_once 'includes/header.php';
-require_once 'includes/sidebar.php';
-require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
+require_once 'config/database.php';
 require_once 'includes/data_induk_helper.php';
 checkRole(['admin']);
 
@@ -57,6 +55,8 @@ try {
 }
 $config = dataIndukConfig();
 $isStale = $state && $state['last_success_at'] && strtotime($state['last_success_at']) < time() - ($config['stale_minutes'] * 60);
+require_once 'includes/header.php';
+require_once 'includes/sidebar.php';
 ?>
 <div class="mb-8 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
     <div><h2 class="text-3xl font-black text-slate-800">Status Data Induk</h2><p class="text-slate-500">Snapshot identitas lokal untuk Presensi Tahsin Bapak.</p></div>

@@ -110,7 +110,7 @@ const importGroup = body => body.match(/name="targets\[([a-f0-9]{64})\]"/)?.[1];
   const arrayScope = await req('/data-induk.php',admin,{csrf_token:dataIndukToken,action:'sync','scope[]':'roster'});
   const arrayScopeDataPreserved = domainDigest()===beforeInvalidDataInduk;
   check(arrayScope.status===422 && arrayScopeDataPreserved,
-    `An array sync scope is rejected before any domain data changes (HTTP ${arrayScope.status}, data_preserved=${arrayScopeDataPreserved}, body=${arrayScope.body.slice(-180).replace(/\s+/g,' ')})`);
+    `An array sync scope is rejected before any domain data changes (HTTP ${arrayScope.status}, data_preserved=${arrayScopeDataPreserved})`);
   const missingScope = await req('/data-induk.php',admin,{csrf_token:dataIndukToken,action:'sync'});
   check(missingScope.status===422 && domainDigest()===beforeInvalidDataInduk,
     'A missing sync scope cannot silently request a full synchronization');
