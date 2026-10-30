@@ -179,7 +179,7 @@ $ustadz_list = $pdo->query("SELECT id, nama_lengkap FROM users WHERE role = 'ust
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
                             <option value="">-- Pilih Pengajar --</option>
                             <?php foreach ($ustadz_list as $u): ?>
-                                <option value="<?php echo $u['id']; ?>">
+                                <option value="<?php echo (int) $u['id']; ?>">
                                     <?php echo htmlspecialchars($u['nama_lengkap']); ?>
                                 </option>
                             <?php endforeach; ?>

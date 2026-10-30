@@ -63,7 +63,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     if ($action === 'bulk_archive') {
-        $ids = array_values(array_unique(array_filter(array_map('intval', $_POST['wali_ids'] ?? []), fn($x) => $x > 0)));
+        try {
+            $ids = alumniArchiveSubmittedIds($_POST['wali_ids'] ?? null);
+        } catch (InvalidArgumentException $failure) {
+            appRequestError(422, 'Pilihan wali tidak valid', $failure->getMessage());
+        }
         if (!$ids) {
             redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode('Tidak ada wali yang dipilih.'));
         }
@@ -288,9 +292,10 @@ if (($_GET['export'] ?? '') === 'alumni-archive-state') {
     exit;
 }
 
-// JSON untuk Alpine
-$naikValidIdsJson = json_encode($naikValidIds);
-$kandidatIdsJson = json_encode(array_map(fn($k) => (int) $k['id'], $kandidatArsip));
+// Data JSON yang ditanam pada script mengikuti aturan escaping konteks JavaScript.
+$jsonScriptFlags = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR;
+$naikValidIdsJson = json_encode(array_map('intval', $naikValidIds), $jsonScriptFlags);
+$kandidatIdsJson = json_encode(array_map(static fn($k) => (int) $k['id'], $kandidatArsip), $jsonScriptFlags);
 
 // Sekarang boleh output HTML
 require_once 'includes/header.php';
@@ -380,7 +385,7 @@ require_once 'includes/sidebar.php';
                     <select name="halaqoh" class="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
                         <option value="">Semua Halaqoh</option>
                         <?php foreach ($daftar_halaqoh as $hq): ?>
-                            <option value="<?php echo $hq['id']; ?>" <?php echo $halaqoh_filter == $hq['id'] ? 'selected' : ''; ?>>
+                            <option value="<?php echo (int) $hq['id']; ?>" <?php echo $halaqoh_filter == $hq['id'] ? 'selected' : ''; ?>>
                                 <?php echo htmlspecialchars($hq['nama_halaqoh']); ?> (<?php echo htmlspecialchars($hq['nama_ustadz']); ?>)
                             </option>
                         <?php endforeach; ?>
@@ -456,7 +461,7 @@ require_once 'includes/sidebar.php';
                             <tr class="<?php echo $r['next_ok'] ? 'hover:bg-slate-50' : 'bg-slate-50/60'; ?> transition">
                                 <td class="px-4 py-3 align-middle">
                                     <?php if ($r['next_ok']): ?>
-                                        <input type="checkbox" value="<?php echo $r['id']; ?>" x-model="selectedNaik"
+                                        <input type="checkbox" value="<?php echo (int) $r['id']; ?>" x-model="selectedNaik"
                                             class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                                     <?php else: ?>
                                         <span class="text-slate-300">—</span>
@@ -644,7 +649,7 @@ require_once 'includes/sidebar.php';
                         <?php foreach ($kandidatArsip as $k): ?>
                             <tr class="hover:bg-slate-50 transition">
                                 <td class="px-4 py-3 align-middle">
-                                    <input type="checkbox" value="<?php echo $k['id']; ?>" x-model="selectedArsip"
+                                    <input type="checkbox" value="<?php echo (int) $k['id']; ?>" x-model="selectedArsip"
                                         class="rounded border-slate-300 text-red-600 focus:ring-red-500">
                                 </td>
                                 <td class="px-4 py-3 font-semibold text-slate-800 align-middle"><?php echo htmlspecialchars($k['nama_bapak']); ?></td>
@@ -734,7 +739,7 @@ require_once 'includes/sidebar.php';
                                         <form method="POST" action="" onsubmit="return confirm('Aktifkan kembali wali ini? Ia akan muncul kembali di form presensi ustadz.')">
                                             <?php csrfField(); ?>
                                             <input type="hidden" name="action" value="unarchive">
-                                            <input type="hidden" name="wali_id" value="<?php echo $t['id']; ?>">
+                                            <input type="hidden" name="wali_id" value="<?= (int) $t['id'] ?>">
                                             <button type="submit" class="text-blue-600 hover:bg-blue-600 hover:text-white font-bold text-[10px] uppercase transition bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
                                                 Aktifkan Kembali
                                             </button>

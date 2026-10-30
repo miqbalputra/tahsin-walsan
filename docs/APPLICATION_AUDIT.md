@@ -687,6 +687,21 @@ termasuk suite integrasi PHP, roster Data Induk, dan pemeriksaan HTTP keamanan.
 - Tidak ada migrasi atau penulisan ke basis data produksi dalam proses audit
   ini; pemulihan backup produksi belum diverifikasi.
 
+## Validasi arsip alumni dan output Naik Kelas — 30 Oktober 2026
+
+- Audit request menemukan `wali_ids` pada aksi arsip alumni langsung dikirim ke
+  `array_map()`. Nilai teks atau array bertingkat dapat menyebabkan TypeError
+  sebelum transaksi dimulai. Kini hanya daftar ID positif yang valid diterima;
+  format rusak mendapat HTTP 422 sebelum operasi data, dan batch dibatasi
+  maksimal 1.000 wali.
+- ID dari basis data yang ditanam ke formulir Naik Kelas dicast sebagai angka.
+  Daftar ID pada blok JSON script memakai flag `JSON_HEX_*` dan kegagalan encode
+  tidak disembunyikan.
+- Regresi HTTP mengirim payload scalar dan array bertingkat, lalu membandingkan
+  hash tabel wali, anak, halaqoh, membership, dan presensi sebelum/sesudah.
+  Pemeriksaan lokal lulus untuk lint PHP, 48 tes rapor, 204 tes tahsin/reminder,
+  dan 78 tes HTTP migrasi. CI fixture MariaDB masih menunggu untuk batch ini.
+
 ## Menjalankan pemeriksaan lokal
 
 Database uji harus berjalan hanya pada `127.0.0.1:13317`, dengan akun fixture

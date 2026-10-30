@@ -1,5 +1,30 @@
 <?php
 require_once __DIR__ . '/family_helper.php';
+
+/** Parse the checkbox values submitted by the alumni archive form. */
+function alumniArchiveSubmittedIds($values): array
+{
+    if ($values === null) return [];
+    if (!is_array($values) || !array_is_list($values)) {
+        throw new InvalidArgumentException('Daftar wali tidak valid. Pilih ulang wali yang akan diarsipkan.');
+    }
+    if (count($values) > 1000) throw new InvalidArgumentException('Pilih maksimal 1.000 wali dalam satu proses. Bagi pilihan menjadi beberapa kali.');
+
+    $ids = [];
+    foreach ($values as $value) {
+        if (!is_string($value) || !preg_match('/^[1-9][0-9]*$/D', $value)) {
+            throw new InvalidArgumentException('Daftar wali tidak valid. Pilih ulang wali yang akan diarsipkan.');
+        }
+        $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($id === false) {
+            throw new InvalidArgumentException('Daftar wali tidak valid. Pilih ulang wali yang akan diarsipkan.');
+        }
+        $ids[(int) $id] = (int) $id;
+    }
+
+    return array_values($ids);
+}
+
 /**
  * Aturan lifecycle wali alumni.
  *
