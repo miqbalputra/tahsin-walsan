@@ -95,6 +95,9 @@ jobs:
       - name: Security HTTP suite
         run: node tests/security-http-tests.cjs
 
+      - name: Migration HTTP isolation suite
+        run: node tests/migration-http-tests.cjs
+
       - name: Attendance recovery HTTP suite
         run: node tests/attendance-history-http-tests.cjs
 

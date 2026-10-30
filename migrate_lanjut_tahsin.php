@@ -6,9 +6,10 @@
  * tetapi bapak masih mau ikut tahsin. Wali ber-flag ini dikecualikan dari daftar
  * kandidat arsip otomatis di halaman naik-kelas.php.
  *
- * Jalankan sekali: php migrate_lanjut_tahsin.php  (atau buka via browser).
+ * Jalankan melalui CLI: php migrate_lanjut_tahsin.php.
  * Idempoten: aman dijalankan berulang (cek kolom dulu sebelum ALTER).
  */
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once 'config/database.php';
 
 try {

@@ -1,10 +1,7 @@
 <?php
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once __DIR__ . '/config/database.php';
-if (PHP_SAPI !== 'cli') {
-    require_once __DIR__ . '/includes/auth_helper.php';
-    checkRole(['admin']);
-}
-$apply = in_array('--apply', $_SERVER['argv'] ?? [], true) || (($_GET['apply'] ?? '') === '1') || getenv('APPLY_MIGRATIONS') === '1';
+$apply = in_array('--apply', $argv, true) || getenv('APPLY_MIGRATIONS') === '1';
 $sql = [
     "ALTER TABLE wali_santri ADD COLUMN data_induk_guardian_id VARCHAR(36) NULL, ADD UNIQUE KEY uq_wali_data_induk_guardian (data_induk_guardian_id), ADD KEY idx_wali_data_induk_guardian (data_induk_guardian_id)",
     "ALTER TABLE santri_detail ADD COLUMN data_induk_student_id VARCHAR(36) NULL, ADD COLUMN data_induk_enrollment_id VARCHAR(36) NULL, ADD COLUMN data_induk_class_id VARCHAR(36) NULL, ADD COLUMN status_roster ENUM('active','archived') NOT NULL DEFAULT 'active', ADD UNIQUE KEY uq_santri_data_induk_student (data_induk_student_id), ADD KEY idx_santri_data_induk_student (data_induk_student_id)",

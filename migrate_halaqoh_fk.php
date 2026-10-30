@@ -3,6 +3,7 @@
  * Migration: Ubah FK presensi.halaqoh_id agar nullable dan ON DELETE SET NULL
  * Tujuan: Agar saat halaqoh dihapus, data capaian (presensi) tetap tersimpan
  */
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once 'config/database.php';
 
 try {

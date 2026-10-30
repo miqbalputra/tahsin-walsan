@@ -600,6 +600,23 @@ PHP tidak mengganti prototipe tersebut.
   penerimaan end-to-end tersendiri; kode keduanya kini memakai penjaga ID yang
   sama. Audit fitur dan pemulihan backup produksi masih terbuka.
 
+## Penutupan akses HTTP skrip migrasi — 30 Oktober 2026
+
+- Temuan: sebagian migrasi lama hanya dilindungi aturan `.htaccess`, beberapa
+  dapat dipanggil oleh admin melalui web, dan sejumlah skrip menghapus berkas
+  migrasinya sendiri setelah dijalankan. Konfigurasi web yang tidak membaca
+  `.htaccess` dapat menjalankan DDL melalui permintaan HTTP.
+- Semua 19 skrip `migrate*.php` kini menolak SAPI web sebelum membuka koneksi
+  database. Mode apply untuk migrasi Data Induk dan indeks hanya menerima CLI
+  (`--apply` atau environment yang didokumentasikan); migrasi login-attempt
+  tidak lagi meminta penghapusan berkas sumber.
+- Uji HTTP langsung memakai PHP built-in server tanpa router aplikasi maupun
+  `.htaccess`: 78 pemeriksaan pada GET dan POST untuk seluruh 19 skrip lulus.
+  Uji ini tidak membuka koneksi database. Lint 11 berkas PHP yang berubah dan
+  `git diff --check` lulus.
+- Perubahan ini melindungi skema dari permintaan web; migrasi tetap perlu
+  dijalankan eksplisit lewat CLI setelah backup dan pemeriksaan staging.
+
 ## Menjalankan pemeriksaan lokal
 
 Database uji harus berjalan hanya pada `127.0.0.1:13317`, dengan akun fixture
@@ -627,6 +644,7 @@ php -d extension=pdo_mysql -d memory_limit=256M tests/achievement-integration.ph
 node tests/achievement-http-tests.cjs
 php -d extension=pdo_mysql -d memory_limit=256M tests/participant-merge-integration.php
 node tests/security-http-tests.cjs
+node tests/migration-http-tests.cjs
 node tests/service-worker-tests.cjs
 node tests/n8n-reminder-workflow.cjs
 php -d extension=pdo_mysql tests/tahsin-mysql-integration.php
