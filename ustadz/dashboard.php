@@ -18,15 +18,16 @@ $stmtHCount = $pdo->prepare("SELECT COUNT(*) FROM halaqoh WHERE ustadz_id = ?");
 $stmtHCount->execute([$ustadz_id]);
 $myHalaqohCount = $stmtHCount->fetchColumn();
 
+$activeMembershipCondition = attendanceActiveMembershipCondition($pdo, 'hm');
 $stmtMCount = $pdo->prepare("SELECT COUNT(hm.id) FROM halaqoh_members hm 
                            JOIN halaqoh h ON hm.halaqoh_id = h.id
                            JOIN wali_santri w ON w.id = hm.wali_santri_id
-                           WHERE h.ustadz_id = ? AND hm.archived_at IS NULL AND w.status_aktif = 1");
+                           WHERE h.ustadz_id = ?{$activeMembershipCondition} AND w.status_aktif = 1");
 $stmtMCount->execute([$ustadz_id]);
 $myMembersCount = $stmtMCount->fetchColumn();
 
 // 2. My Halaqoh Detailed List
-        $stmtHList = $pdo->prepare("SELECT h.*, (SELECT COUNT(*) FROM halaqoh_members WHERE halaqoh_id = h.id AND archived_at IS NULL) as total_member
+        $stmtHList = $pdo->prepare("SELECT h.*, (SELECT COUNT(*) FROM halaqoh_members hm WHERE hm.halaqoh_id = h.id{$activeMembershipCondition}) as total_member
                            FROM halaqoh h WHERE h.ustadz_id = ? ORDER BY h.nama_halaqoh");
 $stmtHList->execute([$ustadz_id]);
 $myHalaqohList = $stmtHList->fetchAll();

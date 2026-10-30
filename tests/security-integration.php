@@ -18,7 +18,8 @@ $pdo->exec("CREATE DATABASE `$database` CHARACTER SET utf8mb4 COLLATE utf8mb4_un
 $pdo->exec("USE `$database`");
 $pdo->exec(file_get_contents(__DIR__ . '/fixtures/tahsin-schema.sql'));
 $pdo->exec("CREATE TABLE activity_logs (id INT AUTO_INCREMENT PRIMARY KEY,user_id INT,username VARCHAR(50),action VARCHAR(100),description TEXT,ip_address VARCHAR(45),created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE login_attempts (id INT AUTO_INCREMENT PRIMARY KEY,ip_address VARCHAR(45),username VARCHAR(50),attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+CREATE TABLE login_attempts (id INT AUTO_INCREMENT PRIMARY KEY,ip_address VARCHAR(45),username VARCHAR(50),attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE pengumuman (id INT AUTO_INCREMENT PRIMARY KEY,judul VARCHAR(255),isi TEXT,is_aktif TINYINT DEFAULT 1,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
 $pdo->exec("CREATE TABLE holidays(id INT AUTO_INCREMENT PRIMARY KEY,tanggal DATE NOT NULL UNIQUE,keterangan VARCHAR(255),created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB");
 $insert = $pdo->prepare('INSERT INTO users(id,username,password,nama_lengkap,role) VALUES(?,?,?,?,?)');
 foreach ([[1,'audit_admin','Admin Uji','admin'],[2,'audit_pj','PJ Uji','pj_tahfidz'],[3,'audit_teacher','Guru Uji','ustadz'],[4,'audit_reader','Kepala Sekolah Uji','kepsek']] as [$id,$username,$name,$role]) {

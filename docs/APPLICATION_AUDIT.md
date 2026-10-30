@@ -677,6 +677,11 @@ termasuk suite integrasi PHP, roster Data Induk, dan pemeriksaan HTTP keamanan.
   integrasi PHP/MariaDB, lalu gagal pada suite HTTP keamanan. Log rinci GitHub
   memerlukan hak admin repository dan tidak dapat dibaca dari sesi ini; tes
   kini menerbitkan nama assertion gagal sebagai anotasi untuk diagnosis ulang.
+- Kegagalan menunjukkan daftar laporan guru mengembalikan pesan error pada
+  skema lama tanpa kolom arsip keanggotaan. Filter kini memakai pemeriksaan
+  kompatibilitas yang sama dengan formulir presensi; dashboard guru juga
+  mengikuti pola tersebut. Fixture HTTP menyiapkan tabel pengumuman yang
+  dibutuhkan dashboard.
 - Tidak ada migrasi atau penulisan ke basis data produksi dalam proses audit
   ini; pemulihan backup produksi belum diverifikasi.
 

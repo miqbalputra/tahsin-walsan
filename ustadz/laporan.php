@@ -2,6 +2,7 @@
 require_once '../config/database.php';
 require_once '../includes/auth_helper.php';
 require_once '../includes/report_helper.php';
+require_once '../includes/attendance_helper.php';
 
 // Must be at the very top
 checkRole(['ustadz']);
@@ -22,6 +23,7 @@ $halaqoh_id = $filters['halaqoh_id'];
 $wali_santri_id = $filters['wali_santri_id'];
 $kelas_filter = $filters['kelas'];
 $search = $filters['search'];
+$activeMembershipCondition = attendanceActiveMembershipCondition($pdo, 'hm');
 
 try {
     $totalResults = countPresensiReport($pdo, $filters, 'ustadz', $ustadz_id);
@@ -39,11 +41,11 @@ try {
     $stmtH->execute([$ustadz_id]);
     $halaqohs = $stmtH->fetchAll();
 
-    $stmtW = $pdo->prepare("SELECT DISTINCT w.id, w.nama_bapak FROM wali_santri w JOIN halaqoh_members hm ON w.id = hm.wali_santri_id JOIN halaqoh h ON hm.halaqoh_id = h.id WHERE h.ustadz_id = ? AND hm.archived_at IS NULL AND w.status_aktif = 1 ORDER BY w.nama_bapak");
+    $stmtW = $pdo->prepare("SELECT DISTINCT w.id, w.nama_bapak FROM wali_santri w JOIN halaqoh_members hm ON w.id = hm.wali_santri_id JOIN halaqoh h ON hm.halaqoh_id = h.id WHERE h.ustadz_id = ?{$activeMembershipCondition} AND w.status_aktif = 1 ORDER BY w.nama_bapak");
     $stmtW->execute([$ustadz_id]);
     $all_wali = $stmtW->fetchAll();
 
-    $stmtK = $pdo->prepare("SELECT DISTINCT s.kelas FROM {$childTable} s JOIN halaqoh_members hm ON s.wali_santri_id = hm.wali_santri_id JOIN halaqoh h ON hm.halaqoh_id = h.id WHERE h.ustadz_id = ? AND hm.archived_at IS NULL AND s.kelas IS NOT NULL AND s.kelas != '' ORDER BY s.kelas");
+    $stmtK = $pdo->prepare("SELECT DISTINCT s.kelas FROM {$childTable} s JOIN halaqoh_members hm ON s.wali_santri_id = hm.wali_santri_id JOIN halaqoh h ON hm.halaqoh_id = h.id WHERE h.ustadz_id = ?{$activeMembershipCondition} AND s.kelas IS NOT NULL AND s.kelas != '' ORDER BY s.kelas");
     $stmtK->execute([$ustadz_id]);
     $daftar_kelas = $stmtK->fetchAll(PDO::FETCH_COLUMN);
 } catch (Exception $e) {
