@@ -30,7 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } elseif ($action === 'delete') {
             $id = userRequestId($_POST, true);
-            deleteManagedUser($pdo, (int) $_SESSION['user_id'], $id);
+            $confirmed = appRequestString($_POST, 'confirmed', '0') === '1';
+            deleteManagedUser($pdo, (int) $_SESSION['user_id'], $id, $confirmed);
             addLog($pdo, 'DELETE_USER', 'id=' . $id);
             $message = 'Pengguna berhasil dihapus.';
         } else {
@@ -134,11 +135,14 @@ require_once 'includes/sidebar.php';
                                     Edit
                                 </button>
                                 <?php if ($user['id'] != $_SESSION['user_id']): ?>
-                                    <form method="POST" action="" class="inline-flex"
-                                        onsubmit="return confirm('Hapus akun pengguna ini? Pastikan akun sudah tidak digunakan. Pengampu halaqoh harus dialihkan terlebih dahulu.')">
+                                    <form method="POST" action="" class="inline-flex items-center gap-2">
                                         <?php csrfField(); ?>
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="id" value="<?= (int) $user['id'] ?>">
+                                        <label class="inline-flex items-center gap-1 text-[10px] text-slate-500">
+                                            <input type="checkbox" name="confirmed" value="1" required class="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500">
+                                            <span>Setuju hapus permanen</span>
+                                        </label>
                                         <button type="submit"
                                             class="text-red-600 hover:bg-red-600 hover:text-white font-bold text-[10px] uppercase transition bg-red-50 px-3 py-1.5 rounded-xl border border-red-100">
                                             Hapus

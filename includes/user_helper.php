@@ -114,7 +114,7 @@ function saveManagedUser(PDO $pdo, int $actorId, array $input): int
     }
 }
 
-function deleteManagedUser(PDO $pdo, int $actorId, int $id): void
+function deleteManagedUser(PDO $pdo, int $actorId, int $id, bool $confirmed = false): void
 {
     if ($id === $actorId) throw new UserManagementException('Akun yang sedang Anda gunakan tidak dapat dihapus.');
     $ownsTransaction = !$pdo->inTransaction();
@@ -137,6 +137,7 @@ function deleteManagedUser(PDO $pdo, int $actorId, int $id): void
         if ((int) $groups->fetchColumn() > 0) {
             throw new UserManagementException('Pengguna masih mengampu halaqoh. Alihkan pengampu halaqoh terlebih dahulu agar riwayat tetap terhubung.');
         }
+        if (!$confirmed) throw new UserManagementException('Centang konfirmasi setelah memastikan akun ini memang perlu dihapus.');
         $pdo->prepare('DELETE FROM users WHERE id=?')->execute([$id]);
         if ($ownsTransaction) $pdo->commit();
     } catch (Throwable $error) {

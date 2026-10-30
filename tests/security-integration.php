@@ -107,6 +107,8 @@ secCheck($pdo->query("SELECT nama_lengkap FROM users WHERE id=$newId")->fetchCol
 foreach (listManagedUsers($pdo) as $publicUser) {
     secCheck(!array_key_exists('password',$publicUser),'Public projection contains no password hash');
 }
+secReject(fn()=>deleteManagedUser($pdo,1,$newId,false),'Account deletion requires explicit confirmation');
+secCheck((int)$pdo->query("SELECT COUNT(*) FROM users WHERE id=$newId")->fetchColumn()===1,'Unconfirmed account deletion preserves the existing user row');
 $_SESSION=['user_id'=>3,'role'=>'admin','username'=>'forged'];
 secCheck(refreshAuthenticatedSession($pdo) && $_SESSION['role']==='ustadz','Role is refreshed from the database');
 $pdo->exec("UPDATE users SET role='kepsek' WHERE id=3");
@@ -116,7 +118,7 @@ secCheck(!refreshAuthenticatedSession($pdo),'Password change invalidates the old
 $pdo->exec("UPDATE users SET role='ustadz' WHERE id=3");
 $_SESSION=['user_id'=>$newId];
 secCheck(refreshAuthenticatedSession($pdo),'Valid legacy session adopts a fingerprint');
-deleteManagedUser($pdo,1,$newId);
+deleteManagedUser($pdo,1,$newId,true);
 secCheck(!refreshAuthenticatedSession($pdo),'Deleted account cannot keep using its session');
 $_SESSION=['user_id'=>['invalid']];
 secCheck(!refreshAuthenticatedSession($pdo),'Malformed session identity is rejected');

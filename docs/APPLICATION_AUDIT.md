@@ -1192,3 +1192,15 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   Coolify dan instalasi menjelaskan pengaturan tersebut.
 - Perubahan tidak membuka koneksi ke database saat diedit. Pemeriksaan sintaks
   dan CI untuk perubahan ini belum dicatat.
+
+## Konfirmasi penghapusan akun — 30 Oktober 2026
+
+- Temuan: daftar pengguna hanya meminta konfirmasi JavaScript. Request langsung
+  yang memiliki CSRF valid dapat melewati dialog dan menghapus akun.
+- Form kini meminta centang persetujuan yang diperiksa ulang oleh server
+  sebelum menghapus. Pemeriksaan pengampu halaqoh dan perlindungan admin
+  terakhir tetap dijalankan terlebih dahulu; data halaqoh terkait tetap utuh.
+- Fixture keamanan kini memastikan penghapusan tanpa persetujuan ditolak dan
+  baris akun tetap ada.
+- Tidak ada akun yang dihapus dalam audit. Pemeriksaan sintaks dan CI untuk
+  perubahan ini belum dicatat.
