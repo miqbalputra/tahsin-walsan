@@ -1298,7 +1298,7 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   nyata, konfigurasi Apache cPanel, atau kesehatan database aplikasi aktif;
   tidak ada rilis/deployment produksi dalam audit ini.
 
-## Regression ekspor spreadsheet — 30 Oktober 2026
+## Regresi ekspor spreadsheet — 30 Oktober 2026
 
 - Review menemukan helper proteksi formula XLS/CSV belum diuji langsung.
   Renderer HTML Excel kini memakai helper bersama yang dapat diuji tanpa
@@ -1309,4 +1309,7 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
 - Regresi yang berkaitan juga lulus: 172 tes Tahsin, 48 tes rapor, 13 tes
   impor CSV lama, serta lint tiga berkas PHP. Perubahan hanya pada formatter,
   ekspor dan workflow; tidak mengubah database, skema, atau data lama.
-- CI setelah penambahan tes khusus ini menunggu hasil push.
+- Commit `53d635ecf7a2eb475d629ba4bafcc940661a7cc5` lulus seluruh workflow
+  [CI run 41037559490](https://github.com/miqbalputra/tahsin-walsan/actions/runs/41037559490),
+  termasuk tes helper spreadsheet, MariaDB, HTTP keamanan/pemulihan, dan smoke
+  test image Apache.
