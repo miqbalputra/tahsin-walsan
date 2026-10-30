@@ -119,6 +119,15 @@ bkCheck(purgeBackupArchives($countRetentionDirectory,'backup_pre_restore',0,3)==
 bkCheck(bkRetentionFiles($countRetentionDirectory)===[
     'backup_pre_restore_fixture0.zip','backup_pre_restore_fixture1.zip','backup_pre_restore_fixture2.zip',
 ],'Count-only retention preserves the newest three backups');
+$stagingDirectory=$directory.'/staging-cleanup'; mkdir($stagingDirectory,0700,true);
+$staleStaging=$stagingDirectory.'/.tahsin-backup-partial_'.str_repeat('a',32);
+$freshStaging=$stagingDirectory.'/.tahsin-backup-partial_'.str_repeat('b',32);
+$keptBackup=$stagingDirectory.'/backup_auto_fixture.zip';
+file_put_contents($staleStaging,'interrupted synthetic archive'); touch($staleStaging,time()-25*3600);
+file_put_contents($freshStaging,'active synthetic archive'); touch($freshStaging,time()-2*3600);
+file_put_contents($keptBackup,'valid synthetic backup'); touch($keptBackup,time()-25*3600);
+bkCheck(purgeBackupStagingFiles($stagingDirectory)===1,'Only abandoned backup staging files older than one day are removed');
+bkCheck(!file_exists($staleStaging) && is_file($freshStaging) && is_file($keptBackup),'Staging cleanup preserves recent work and every published backup');
 function bkSnapshot(PDO $connection): array {
     $result=[];
     foreach (discoverBackupTables($connection) as $table) {
@@ -159,10 +168,14 @@ $recoveryBaseline=$before;
 bkCheck(count(array_filter($before,static fn($table)=>$table['rows']===0))===0,'Every base table has synthetic content, including family links, drafts, revisions, decisions and logs');
 $export=createBackupZip($pdo,$directory.'/original.zip',$tables,'\\N');
 bkCheck($export['ok'],'Full backup export succeeds');
+bkCheck(!(glob($directory.'/.tahsin-backup-partial_*') ?: []),'Successful backup publication leaves no staging file');
 $originalArchiveHash=hash_file('sha256',$directory.'/original.zip');
 bkCheck(!createBackupZip($pdo,$directory.'/original.zip',$tables,'\\N')['ok'],'Export refuses to overwrite an existing backup archive');
 bkCheck(hash_file('sha256',$directory.'/original.zip')===$originalArchiveHash,'Rejected overwrite keeps the previous archive byte-for-byte intact');
 bkCheck(bkSnapshot($pdo)===$before,'Export preserves every source table');
+$failedExportPath=$directory.'/failed-export.zip';
+$failedExport=createBackupZip($pdo,$failedExportPath,['missing_backup_fixture_table'],'\\N');
+bkCheck(!$failedExport['ok'] && !file_exists($failedExportPath) && !(glob($directory.'/.tahsin-backup-partial_*') ?: []),'Failed backup generation cleans staging and never publishes a final archive');
 $preview=analyzeRestoreZip($pdo,$directory.'/original.zip',$tables,'\\N');
 bkCheck($preview['error']===null && !$preview['legacy'],'New backup passes strict preview');
 bkCheck(count($export['counts'])===count($tables),'Every base table is included');

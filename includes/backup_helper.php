@@ -255,6 +255,21 @@ function purgeSafetyBackups(string $dir, int $maxAgeDays = 7, int $keep = 3): vo
     purgeBackupArchives($dir, 'backup_pre_restore', $maxAgeDays, $keep);
 }
 
+/** Remove only abandoned, unpublished backup staging files after one day. */
+function purgeBackupStagingFiles(string $dir, int $maxAgeHours = 24): int
+{
+    if (!is_dir($dir) || $maxAgeHours < 1) return 0;
+    $cutoff = time() - $maxAgeHours * 3600;
+    $removed = 0;
+    foreach (scandir($dir) ?: [] as $name) {
+        if (!preg_match('/^\.tahsin-backup-partial_[a-f0-9]{32}$/D', $name)) continue;
+        $path = $dir . DIRECTORY_SEPARATOR . $name;
+        $mtime = @filemtime($path);
+        if (!is_link($path) && is_file($path) && $mtime !== false && $mtime <= $cutoff && @unlink($path)) $removed++;
+    }
+    return $removed;
+}
+
 /**
  * Bangun ZIP backup lengkap di $zipPath dengan snapshot konsisten dan
  * checksum per tabel. CSV ditulis ke file sementara agar tidak memuat satu
@@ -265,11 +280,16 @@ function purgeSafetyBackups(string $dir, int $maxAgeDays = 7, int $keep = 3): vo
  */
 function createBackupZip(PDO $pdo, string $zipPath, array $tables, string $nullToken, bool $maskPasswords = false): array
 {
-    if (!is_dir(dirname($zipPath))) {
-        mkdir(dirname($zipPath), 0755, true);
+    $directory = dirname($zipPath);
+    if (!is_dir($directory)) @mkdir($directory, 0700, true);
+    purgeBackupStagingFiles($directory);
+    if (file_exists($zipPath) || is_link($zipPath)) {
+        return ['ok' => false, 'error' => 'Berkas cadangan baru belum dapat dibuat. Gunakan nama baru dan periksa ruang penyimpanan. Cadangan yang sudah ada tidak ditimpa.'];
     }
+    $stagingPath = $directory . DIRECTORY_SEPARATOR . '.tahsin-backup-partial_' . bin2hex(random_bytes(16));
     $zip = new ZipArchive();
-    if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::EXCL) !== true) {
+    if ($zip->open($stagingPath, ZipArchive::CREATE | ZipArchive::EXCL) !== true) {
+        if (is_file($stagingPath) && !is_link($stagingPath)) @unlink($stagingPath);
         return ['ok' => false, 'error' => 'Berkas cadangan baru belum dapat dibuat. Gunakan nama baru dan periksa ruang penyimpanan. Cadangan yang sudah ada tidak ditimpa.'];
     }
     $counts = [];
@@ -358,10 +378,19 @@ function createBackupZip(PDO $pdo, string $zipPath, array $tables, string $nullT
         $pdo->commit();
         $inTransaction = false;
 
-        if (!is_file($zipPath) || filesize($zipPath) === 0) {
+        if (!is_file($stagingPath) || filesize($stagingPath) === 0) {
             throw new RuntimeException('File ZIP kosong setelah ditulis.');
         }
-        @chmod($zipPath, 0600);
+        if (!@chmod($stagingPath, 0600)
+            || (DIRECTORY_SEPARATOR !== '\\' && (fileperms($stagingPath) & 0777) !== 0600)) {
+            throw new RuntimeException('Izin file cadangan harus privat (0600). Periksa pemilik dan izin folder.');
+        }
+        // Publish only the completed ZIP. A process interrupted before this
+        // rename leaves a hidden staging file, never a corrupt final archive.
+        if (file_exists($zipPath) || is_link($zipPath) || !@rename($stagingPath, $zipPath)) {
+            throw new RuntimeException('Cadangan selesai ditulis tetapi belum dapat dipublikasikan tanpa menimpa berkas lain.');
+        }
+        $stagingPath = null;
 
         return ['ok' => true, 'counts' => $counts, 'checksums' => $checksums];
     } catch (Throwable $e) {
@@ -369,7 +398,7 @@ function createBackupZip(PDO $pdo, string $zipPath, array $tables, string $nullT
             try { $pdo->rollBack(); } catch (Throwable $ignored) {}
         }
         try { $zip->close(); } catch (Throwable $ignored) {}
-        if (is_file($zipPath)) @unlink($zipPath);
+        if ($stagingPath !== null && is_file($stagingPath) && !is_link($stagingPath)) @unlink($stagingPath);
         if (function_exists('reportApplicationError')) reportApplicationError($e, 'backup-export');
         return ['ok' => false, 'error' => $e instanceof InvalidArgumentException ? $e->getMessage() : 'Backup gagal dibuat. Periksa log aplikasi dan ruang disk.'];
     } finally {

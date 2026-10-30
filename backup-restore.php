@@ -31,6 +31,7 @@ $MAX_UPLOAD   = $MAX_UPLOAD_MB * 1024 * 1024;
 try {
     $TEMP_DIR = resolveTempDir();
     purgeSafetyBackups($TEMP_DIR);
+    purgeBackupStagingFiles($TEMP_DIR);
     $BACKUP_TABLES = discoverBackupTables($pdo);
 } catch (Throwable $failure) {
     reportApplicationError($failure, 'backup-initialization');

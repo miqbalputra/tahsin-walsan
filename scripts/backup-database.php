@@ -48,6 +48,7 @@ function backupAutoRecordFailure(array $status, ?string $dir): void
 
 try {
     $dir = resolveTempDir();
+    purgeBackupStagingFiles($dir);
     $probe = new PDO(
         sprintf('mysql:host=%s;port=%s;dbname=%s;charset=%s',
             getenv('DB_HOST') ?: 'localhost',
