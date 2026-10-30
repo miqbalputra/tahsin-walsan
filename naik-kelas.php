@@ -97,44 +97,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'unarchive') {
-        $wid = (int) ($_POST['wali_id'] ?? 0);
-        if ($wid > 0) {
-            try {
-                $pdo->beginTransaction();
-                if (!waliHasActiveSchoolChild($pdo, $wid)) {
-                    throw new RuntimeException('Wali belum memiliki anak aktif. Kembalikan kelas anak terlebih dahulu.');
-                }
-                $stmt = $pdo->prepare("UPDATE wali_santri SET status_aktif = 1 WHERE id = ? AND status_aktif = 0");
-                $stmt->execute([$wid]);
-                addLog($pdo, 'UNARCHIVE_WALI', "Aktifkan kembali wali: $wid; membership halaqoh lama tidak dipulihkan otomatis");
-                $pdo->commit();
-                redirectTo('naik-kelas.php?tab=arsip&msg=' . rawurlencode('Wali berhasil diaktifkan kembali. Silakan tetapkan halaqoh bila diperlukan.'));
-            } catch (RuntimeException $e) {
-                if ($pdo->inTransaction()) {
-                    $pdo->rollBack();
-                }
-                redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode($e->getMessage()));
-            } catch (Throwable $e) {
-                if ($pdo->inTransaction()) {
-                    $pdo->rollBack();
-                }
-                reportApplicationError($e, 'naik-kelas-aktifkan-wali');
-                redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode('Aktivasi wali belum tersimpan. Coba lagi atau hubungi pengelola.'));
-            }
+        try {
+            $wid = filter_var(appRequestString($_POST, 'wali_id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($wid === false) throw new InvalidArgumentException('ID wali tidak valid.');
+        } catch (InvalidArgumentException $failure) {
+            appRequestError(422, 'Wali belum diaktifkan', $failure->getMessage());
         }
-        redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode('ID wali tidak valid.'));
+        try {
+            $pdo->beginTransaction();
+            if (!waliHasActiveSchoolChild($pdo, $wid)) {
+                throw new RuntimeException('Wali belum memiliki anak aktif. Kembalikan kelas anak terlebih dahulu.');
+            }
+            $stmt = $pdo->prepare("UPDATE wali_santri SET status_aktif = 1 WHERE id = ? AND status_aktif = 0");
+            $stmt->execute([$wid]);
+            addLog($pdo, 'UNARCHIVE_WALI', "Aktifkan kembali wali: $wid; membership halaqoh lama tidak dipulihkan otomatis");
+            $pdo->commit();
+            redirectTo('naik-kelas.php?tab=arsip&msg=' . rawurlencode('Wali berhasil diaktifkan kembali. Silakan tetapkan halaqoh bila diperlukan.'));
+        } catch (RuntimeException $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode($e->getMessage()));
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            reportApplicationError($e, 'naik-kelas-aktifkan-wali');
+            redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode('Aktivasi wali belum tersimpan. Coba lagi atau hubungi pengelola.'));
+        }
     }
 
     if ($action === 'set_lanjut_tahsin') {
-        $wid = (int) ($_POST['wali_id'] ?? 0);
-        $val = ((int) ($_POST['value'] ?? 0)) ? 1 : 0;
-        if ($wid > 0) {
+        try {
+            $wid = filter_var(appRequestString($_POST, 'wali_id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($wid === false) throw new InvalidArgumentException('ID wali tidak valid.');
+            $rawValue = appRequestString($_POST, 'value');
+            if (!in_array($rawValue, ['0', '1'], true)) throw new InvalidArgumentException('Nilai catatan lanjut tahsin tidak valid.');
+            $val = (int) $rawValue;
+        } catch (InvalidArgumentException $failure) {
+            appRequestError(422, 'Catatan belum disimpan', $failure->getMessage());
+        }
+        try {
+            $pdo->beginTransaction();
             $pdo->prepare("UPDATE wali_santri SET lanjut_tahsin = ? WHERE id = ?")->execute([$val, $wid]);
             addLog($pdo, 'TOGGLE_LANJUT_TAHSIN', "Wali $wid lanjut_tahsin=$val");
+            $pdo->commit();
             $label = $val ? 'Catatan lanjut tahsin disimpan, tetapi tidak mencegah arsip otomatis.' : 'Catatan lanjut tahsin dibatalkan.';
             redirectTo('naik-kelas.php?tab=arsip&msg=' . rawurlencode($label));
+        } catch (Throwable $failure) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            reportApplicationError($failure, 'naik-kelas-lanjut-tahsin');
+            appRequestError(503, 'Catatan belum tersimpan', 'Perubahan belum dapat dipastikan. Periksa kembali catatan wali sebelum mencoba lagi.');
         }
-        redirectTo('naik-kelas.php?tab=arsip&err=' . rawurlencode('ID wali tidak valid.'));
     }
 
     redirectTo('naik-kelas.php');
