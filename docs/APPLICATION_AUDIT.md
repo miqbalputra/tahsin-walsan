@@ -798,3 +798,22 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   ditetapkan. Validasi kini berjalan sebelum layout dirender; CI setelah koreksi
   `41010970463` lulus penuh, termasuk fixture MariaDB dan semua suite HTTP.
   Tidak ada migrasi atau penulisan ke database produksi.
+
+## Pengamanan migrasi foreign key halaqoh — 30 Oktober 2026
+
+- Audit migrasi menemukan DDL yang dibungkus transaksi biasa, padahal MySQL
+  melakukan implicit commit untuk `ALTER TABLE`. Jika langkah berikutnya gagal,
+  `ROLLBACK` tidak menjamin foreign key lama kembali. Migrasi juga selalu
+  menghapus lalu menambahkan constraint dengan nama tetap, sehingga pengulangan
+  bisa gagal setelah sebagian perubahan skema berjalan.
+- Migrasi kini dry-run secara default dan hanya menerapkan perubahan dengan
+  `--apply`. Ia memeriksa engine/tipe kolom serta orphan lebih dulu, mempertahankan
+  tipe, default, dan komentar kolom, lalu memakai satu `ALTER TABLE`; tidak ada
+  penulisan atau penghapusan baris presensi. Constraint yang sudah benar menjadi
+  no-op.
+- Fixture baru membandingkan seluruh isi presensi sebelum/sesudah migrasi,
+  pengulangan, penghapusan halaqoh (baris presensi bertahan dengan relasi `NULL`),
+  dan penolakan orphan tanpa perubahan skema/data. Suite CI untuk fixture ini
+  ditambahkan; hasil CI masih menunggu.
+- Migrasi tidak dijalankan pada database produksi; hasilnya hanya diverifikasi
+  pada basis kode dan lint lokal.

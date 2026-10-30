@@ -69,6 +69,7 @@ jobs:
           php tests/tahsin-reminder-tests.php
           php tests/api-rate-limit-tests.php
           php -d memory_limit=256M tests/attendance-history-integration.php
+          php tests/halaqoh-fk-migration-integration.php
           php -d memory_limit=256M tests/attendance-form-integration.php
           php tests/security-integration.php
           php tests/backup-integration.php
