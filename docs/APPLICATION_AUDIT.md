@@ -1166,3 +1166,13 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
 - Fixture recovery membuat arsip lama dengan satu kolom identitas yang hilang,
   lalu memeriksa bahwa restore menolak tautan anak dan mempertahankan identitas
   induk tujuan. Hasil CI belum dicatat.
+
+## Percobaan autentikasi API Hermes — 30 Oktober 2026
+
+- Temuan: API Hermes membatasi permintaan setelah API key benar, sehingga
+  percobaan menebak key yang salah tidak memakai penghitung rate limit.
+- API kini membatasi 10 kegagalan autentikasi per IP dalam lima menit.
+  Penghitung yang tidak tersedia menghasilkan 503 agar batas ini tidak gagal
+  terbuka; permintaan sah tetap memakai batas 120 per menit.
+- Perubahan hanya memakai penghitung file privat dan tidak menyentuh tabel
+  aplikasi atau data lama. Hasil pemeriksaan otomatis/CI belum dicatat.

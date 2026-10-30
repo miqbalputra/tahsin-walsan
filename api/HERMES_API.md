@@ -367,7 +367,8 @@ Atau gunakan `N8N_API_KEY` yang sudah ada sebagai fallback.
 - **CORS** hanya mengizinkan origin pada `HERMES_ALLOWED_ORIGINS`; tanpa env
   tersebut, API tidak mengirim header CORS.
 - Method: **GET** (dan POST untuk kompatibilitas)
-- Rate limit: **120 request per menit per IP**. Jika penyimpanan penghitung
-  tidak tersedia, API menolak request dengan status 503; ini membantu membatasi
-  abuse aplikasi dan bukan perlindungan DDoS tingkat infrastruktur.
+- Rate limit: **120 request terautentikasi per menit per IP** dan **10 percobaan
+  API key gagal per lima menit per IP**. Jika penyimpanan penghitung tidak
+  tersedia, API menolak request dengan status 503; ini membantu membatasi
+  penyalahgunaan aplikasi dan bukan perlindungan DDoS tingkat infrastruktur.
 - Password user **tidak pernah** diekspos di response

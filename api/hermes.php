@@ -135,6 +135,13 @@ function authenticate()
     $key = $headers['x-api-key'] ?? '';
 
     if (!is_string($key) || $key === '' || !hash_equals(HERMES_API_KEY, $key)) {
+        $failedAttemptLimit = apiRateLimitAllow('hermes-auth-failure', 10, 300);
+        if ($failedAttemptLimit === null) {
+            jsonError(503, 'Pembatasan percobaan autentikasi belum tersedia. Coba lagi sebentar.');
+        }
+        if (!$failedAttemptLimit) {
+            jsonError(429, 'Terlalu banyak percobaan autentikasi. Tunggu lima menit lalu coba lagi.');
+        }
         jsonError(401, 'Unauthorized. Provide the API key via the X-API-Key request header.');
     }
     $rateLimit = apiRateLimitAllow('hermes', 120, 60);
