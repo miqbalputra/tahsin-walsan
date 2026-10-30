@@ -44,8 +44,10 @@ function halaqohFkMigrationPlan(PDO $pdo): array
     }
 
     $orphans = (int) $pdo->query('SELECT COUNT(*) FROM presensi p LEFT JOIN halaqoh h ON h.id=p.halaqoh_id WHERE p.halaqoh_id IS NOT NULL AND h.id IS NULL')->fetchColumn();
-    $constraintName = $foreignKey['CONSTRAINT_NAME'] ?? null;
-    if ($constraintName === null) {
+    $existingConstraintName = $foreignKey['CONSTRAINT_NAME'] ?? null;
+    $needsChange = $column['IS_NULLABLE'] !== 'YES' || !$foreignKey || $foreignKey['DELETE_RULE'] !== 'SET NULL';
+    $constraintName = $existingConstraintName;
+    if ($needsChange) {
         $baseName = 'fk_presensi_halaqoh_set_null';
         $constraintName = $baseName;
         for ($suffix = 2; ; $suffix++) {
@@ -56,11 +58,11 @@ function halaqohFkMigrationPlan(PDO $pdo): array
             if ($suffix > 20) throw new RuntimeException('Nama constraint untuk relasi presensi tidak tersedia.');
         }
     }
-    $needsChange = $column['IS_NULLABLE'] !== 'YES' || !$foreignKey || $foreignKey['DELETE_RULE'] !== 'SET NULL';
     return [
         'needs_change' => $needsChange,
         'nullable' => $column['IS_NULLABLE'] === 'YES',
         'constraint_name' => $constraintName,
+        'existing_constraint_name' => $existingConstraintName,
         'delete_rule' => $foreignKey['DELETE_RULE'] ?? null,
         'orphan_count' => $orphans,
         'column' => $column,
@@ -84,7 +86,7 @@ function halaqohFkMigrationApply(PDO $pdo): array
     $constraint = '`' . str_replace('`', '``', $plan['constraint_name']) . '`';
     $clauses = [];
     if ($plan['delete_rule'] !== null) {
-        $oldConstraint = '`' . str_replace('`', '``', $plan['constraint_name']) . '`';
+        $oldConstraint = '`' . str_replace('`', '``', $plan['existing_constraint_name']) . '`';
         $clauses[] = 'DROP FOREIGN KEY ' . $oldConstraint;
     }
     $clauses[] = 'MODIFY COLUMN ' . $definition;

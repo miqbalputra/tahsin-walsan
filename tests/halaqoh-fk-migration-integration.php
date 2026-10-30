@@ -37,9 +37,11 @@ function hfConstraint(PDO $pdo): array
 $before = hfRows($pdo);
 $plan = halaqohFkMigrationPlan($pdo);
 hfCheck($plan['needs_change'] && !$plan['nullable'] && $plan['delete_rule'] === 'CASCADE', 'Legacy schema is identified without mutating it');
+hfCheck($plan['existing_constraint_name'] === 'fk_presensi_halaqoh_legacy'
+    && $plan['constraint_name'] !== 'fk_presensi_halaqoh_legacy', 'Migration plans a fresh constraint name to avoid MariaDB duplicate-name DDL errors');
 hfCheck(hfRows($pdo) === $before && hfConstraint($pdo)['DELETE_RULE'] === 'CASCADE', 'Planning preserves every old attendance row and existing foreign key');
 $applied = halaqohFkMigrationApply($pdo);
-hfCheck($applied['changed'] && $applied['constraint_name'] === 'fk_presensi_halaqoh_legacy', 'Migration updates the existing relation in one idempotent ALTER');
+hfCheck($applied['changed'] && $applied['constraint_name'] === $plan['constraint_name'], 'Migration replaces the existing relation in one idempotent ALTER');
 hfCheck(hfRows($pdo) === $before, 'Migration preserves all attendance identities and field values');
 $ready = halaqohFkMigrationPlan($pdo);
 hfCheck(!$ready['needs_change'] && $ready['nullable'] && $ready['delete_rule'] === 'SET NULL', 'Post-migration schema keeps deleted group references recoverable as NULL');

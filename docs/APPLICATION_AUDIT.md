@@ -815,6 +815,11 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   pengulangan, penghapusan halaqoh (baris presensi bertahan dengan relasi `NULL`),
   dan penolakan orphan tanpa perubahan skema/data. Suite CI untuk fixture ini
   ditambahkan. Uji khusus lulus pada MariaDB lokal 12.3.3 dengan 9 assertion.
+- Run CI `41015284933` mengungkap MariaDB runner menolak penggantian constraint
+  dengan nama yang sama dalam satu `ALTER TABLE` (`errno 121`). Migrasi kini
+  merencanakan nama constraint baru yang unik dan tetap menyelesaikan drop,
+  perubahan nullable, serta penambahan foreign key dalam satu DDL. Regresi
+  memeriksa nama lama dan baru sebelum eksekusi.
 - Run `41011240257` ternyata memakai commit `fb420cc`, sebelum migrasi ini
   ditambahkan, sehingga tidak menjadi bukti untuk migrasi. Run berikutnya
   `41011633058`, `41012425535`, dan `41012684184` berhenti pada langkah PHP
