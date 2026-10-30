@@ -673,9 +673,12 @@ termasuk suite integrasi PHP, roster Data Induk, dan pemeriksaan HTTP keamanan.
 - Regresi HTTP menambah muatan XSS sintetis untuk laporan/riwayat guru, profil
   guru, dan halaman cetak PDF. Perubahan ini hanya memengaruhi cara HTML
   ditampilkan; tidak mengubah baris atau isi basis data.
-- Batch lanjutan ini masih menunggu hasil CI. Tidak ada migrasi atau penulisan
-  ke basis data produksi dalam proses audit ini; pemulihan backup produksi
-  belum diverifikasi.
+- CI `41007867963` dan `41007871806` lulus lint, build aset, PHPUnit, serta
+  integrasi PHP/MariaDB, lalu gagal pada suite HTTP keamanan. Log rinci GitHub
+  memerlukan hak admin repository dan tidak dapat dibaca dari sesi ini; tes
+  kini menerbitkan nama assertion gagal sebagai anotasi untuk diagnosis ulang.
+- Tidak ada migrasi atau penulisan ke basis data produksi dalam proses audit
+  ini; pemulihan backup produksi belum diverifikasi.
 
 ## Menjalankan pemeriksaan lokal
 

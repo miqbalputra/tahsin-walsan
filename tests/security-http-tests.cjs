@@ -26,7 +26,13 @@ const server = spawn(php, [...dbArgs,'-d','display_errors=0','-S',`127.0.0.1:${p
 let serverErrors = '';
 server.stderr.on('data', bytes => { serverErrors += bytes.toString(); });
 let checks = 0;
-function check(condition, message) { assert.ok(condition,message); checks++; }
+function check(condition, message) {
+  if (!condition) {
+    const annotation = String(message).replace(/%/g,'%25').replace(/\r/g,'%0D').replace(/\n/g,'%0A');
+    process.stdout.write(`::error title=Security HTTP assertion::${annotation}\n`);
+  }
+  assert.ok(condition,message); checks++;
+}
 async function req(route, jar, body) {
   const response = await fetch(base+route, {redirect:'manual', method:body ? 'POST':'GET',
     headers: {...(jar?.cookie ? {Cookie:jar.cookie}:{}), ...(body ? {'Content-Type':'application/x-www-form-urlencoded'}:{})},
