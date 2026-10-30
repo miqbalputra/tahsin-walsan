@@ -91,6 +91,18 @@ async function previewBackup(jar, token, bytes) {
   const response = await fetch(base+'/backup-restore.php',{method:'POST',redirect:'manual',headers:{Cookie:jar.cookie},body});
   return {status:response.status,body:await response.text()};
 }
+function backupWithInjectedAdmin(bytes) {
+  const archivePath=path.join(backupDirectory,`privilege-probe-${process.pid}-${crypto.randomBytes(4).toString('hex')}.zip`);
+  fs.writeFileSync(archivePath,bytes,{mode:0o600});
+  const helperPath=path.join(root,'includes','backup_helper.php').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  const archivePathB64=Buffer.from(archivePath).toString('base64');
+  const program=`require '${helperPath}'; $path=base64_decode('${archivePathB64}'); $zip=new ZipArchive(); if($zip->open($path)!==true) throw new RuntimeException('Could not open synthetic ZIP'); $raw=$zip->getFromName('users.csv'); if(!is_string($raw)) throw new RuntimeException('Missing users.csv'); $in=fopen('php://temp','w+b'); fwrite($in,$raw); rewind($in); $records=iterator_to_array(backupCsvRows($in,3),false); fclose($in); $header=array_shift($records); if(!is_array($header)||!isset($records[0])) throw new RuntimeException('Missing synthetic user row'); $user=array_combine($header,$records[0]); $user['id']='900001'; $user['username']='injected_admin_${process.pid}'; $user['password']=password_hash('Synthetic-Admin-Probe-2026',PASSWORD_DEFAULT); $user['nama_lengkap']='Synthetic Restore Probe'; $user['role']='admin'; $records[]=array_map(static fn($column)=>$user[$column],$header); $out=fopen('php://temp','w+b'); fputcsv($out,$header,',','"',''); foreach($records as $record) fputcsv($out,$record,',','"',''); rewind($out); $csv=stream_get_contents($out); fclose($out); $manifest=json_decode($zip->getFromName('manifest.json'),true,64,JSON_THROW_ON_ERROR); $manifest['tables']['users']=count($records); $manifest['checksums']['users']=hash('sha256',$csv); $zip->deleteName('users.csv'); $zip->deleteName('manifest.json'); if(!$zip->addFromString('users.csv',$csv)||!$zip->addFromString('manifest.json',json_encode($manifest,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR))) throw new RuntimeException('Could not write synthetic ZIP entries'); if(!$zip->close()) throw new RuntimeException('Could not finalize synthetic ZIP');`;
+  try {
+    const result=spawnSync(php,[...dbArgs,'-r',program],{cwd:root,encoding:'utf8',windowsHide:true});
+    assert.equal(result.status,0,result.stderr||result.stdout);
+    return fs.readFileSync(archivePath);
+  } finally { fs.rmSync(archivePath,{force:true}); }
+}
 async function previewParticipants(jar, token, csv) {
   const body=new FormData(); body.set('csrf_token',token); body.set('action','preview');
   body.set('file_csv',new Blob([csv],{type:'text/csv'}),'import-<img src=x onerror=alert(5)>.csv');
@@ -268,15 +280,20 @@ const importGroup = body => body.match(/name="targets\[([a-f0-9]{64})\]"/)?.[1];
   const exported = await fetch(base+'/backup-restore.php?export=1',{headers:{Cookie:admin.cookie},redirect:'manual'});
   const backupBytes = Buffer.from(await exported.arrayBuffer());
   check(exported.status===200 && /application\/zip/.test(exported.headers.get('content-type')) && backupBytes.subarray(0,2).toString()==='PK','Authenticated export returns a nonempty ZIP download');
+  const injectedAdminBackup = backupWithInjectedAdmin(backupBytes);
+  const adminPreviewPage = await req('/backup-restore.php',admin);
+  const validInjectedPreview = await previewBackup(admin,csrf(adminPreviewPage.body),injectedAdminBackup);
+  check(validInjectedPreview.status===200 && validInjectedPreview.body.includes('Data belum dipulihkan'),'Synthetic archive with a valid new admin row passes format preview without changing data');
   const pjBackupPage = await req('/backup-restore.php',pj);
   check(pjBackupPage.status===200 && pjBackupPage.body.includes('hanya tersedia untuk admin') && !pjBackupPage.body.includes('id="restore-upload"'),'PJ can export a masked backup but is not offered preview or restore controls');
   const usersBeforePjBackup = localRows('SELECT id,username,password,nama_lengkap,role FROM users ORDER BY id');
   const domainBeforePjBackup = domainDigest();
-  const pjPreviewAttempt = await previewBackup(pj,csrf(pjBackupPage.body),backupBytes);
+  const beforePjUploads = new Set(fs.readdirSync(backupDirectory));
+  const pjPreviewAttempt = await previewBackup(pj,csrf(pjBackupPage.body),injectedAdminBackup);
   check(pjPreviewAttempt.status===403 && pjPreviewAttempt.body.includes('hanya dapat dijalankan oleh admin'),'PJ cannot upload an archive that could add privileged user rows');
   const pjRestoreAttempt = await req('/backup-restore.php',pj,{csrf_token:csrf(pjBackupPage.body),action:'restore',restore_token:'a'.repeat(64),confirm_text:'RESTORE'});
   check(pjRestoreAttempt.status===403,'Direct PJ restore POST is denied before touching restore data');
-  check(JSON.stringify(localRows('SELECT id,username,password,nama_lengkap,role FROM users ORDER BY id'))===JSON.stringify(usersBeforePjBackup) && domainDigest()===domainBeforePjBackup,'Rejected PJ backup operations preserve account and attendance data byte-for-byte');
+  check(JSON.stringify(localRows('SELECT id,username,password,nama_lengkap,role FROM users ORDER BY id'))===JSON.stringify(usersBeforePjBackup) && domainDigest()===domainBeforePjBackup && !fs.readdirSync(backupDirectory).some(name=>name.startsWith('restore_')&&!beforePjUploads.has(name)),'Rejected PJ backup operations preserve account, attendance, and restore-storage state');
   const beforeUploads = new Set(fs.readdirSync(backupDirectory));
   const backupPreview = await previewBackup(admin,backupCsrf,backupBytes);
   check(backupPreview.status===200 && backupPreview.body.includes('for="restore-confirm"') && backupPreview.body.includes('Data belum dipulihkan'),'Uploaded ZIP is validated before an accessible inline confirmation is shown');
