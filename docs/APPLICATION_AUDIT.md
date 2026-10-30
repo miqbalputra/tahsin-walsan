@@ -814,10 +814,15 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
 - Fixture baru membandingkan seluruh isi presensi sebelum/sesudah migrasi,
   pengulangan, penghapusan halaqoh (baris presensi bertahan dengan relasi `NULL`),
   dan penolakan orphan tanpa perubahan skema/data. Suite CI untuk fixture ini
-  ditambahkan dan lulus pada workflow `41011240257`, termasuk seluruh suite
-  integrasi MariaDB dan HTTP.
-- Migrasi tidak dijalankan pada database produksi; hasilnya hanya diverifikasi
-  pada basis kode dan lint lokal.
+  ditambahkan. Uji khusus lulus pada MariaDB lokal 12.3.3 dengan 9 assertion.
+- Run `41011240257` ternyata memakai commit `fb420cc`, sebelum migrasi ini
+  ditambahkan, sehingga tidak menjadi bukti untuk migrasi. Run berikutnya
+  `41011633058`, `41012425535`, dan `41012684184` berhenti pada langkah PHP
+  integration suites; penyebab di runner CI belum diketahui. Seluruh perintah
+  pada langkah itu lulus lokal pada fixture MariaDB 12.3.3. Suite HTTP terkait
+  juga lulus lokal, tetapi CI tetap harus diperiksa pada runner-nya.
+- Migrasi tidak dijalankan pada database produksi; seluruh uji memakai
+  database sintetis terisolasi.
 
 ## Validasi mutasi wali dan verifikasi presensi — 30 Oktober 2026
 
@@ -829,13 +834,13 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   tanggal sesi kanonis, sidik sumber 64 karakter, dan alasan sebelum memanggil
   transaksi penyimpanan. Nilai array atau ID di luar rentang mendapat status
   HTTP 422 tanpa dipaksa menjadi nilai lain.
-- Regresi lokal: lint PHP untuk helper, halaman, dan suite lulus; 172 assertion
-  pelaporan Tahsin lulus. Suite HTTP membandingkan hash data sebelum/sesudah
-  permintaan rusak untuk kedua jalur, tetapi belum terkonfirmasi lewat CI.
-- CI `41011947429` berhenti pada langkah PHP integration suites sebelum
-  menjalankan suite HTTP; penyebab kegagalan belum diketahui. Hasil lama
-  `41011240257` lulus pada checkpoint kode sebelumnya. Ulangi verifikasi penuh
-  setelah kegagalan CI sebelumnya didiagnosis.
+- Regresi lokal: lint PHP untuk helper/halaman, 172 assertion pelaporan Tahsin,
+  dan suite HTTP keamanan 226 assertion lulus. Suite HTTP mengirim ID wali dan
+  catatan berbentuk array lalu membandingkan hash isi tabel sebelum/sesudah.
+- Seluruh rangkaian PHP integration pada workflow lulus lokal pada MariaDB
+  12.3.3; CI `41012684184` masih berhenti pada langkah tersebut sebelum suite
+  HTTP berjalan. Run hijau `41011240257` berasal dari commit lama sebelum batch
+  ini. Diagnosis lintas-runner CI masih diperlukan.
 - Tidak ada migrasi, deployment, atau koneksi/perubahan ke database produksi.
 
 ## Pelestarian pengumuman lama — 30 Oktober 2026
@@ -849,8 +854,8 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   redirect setelah POST agar refresh tidak mengirim formulir lagi.
 - Suite HTTP membuktikan isi persis pengumuman sintetis tetap ada setelah aksi
   `delete`, dan input ID/teks array ditolak tanpa perubahan. Sintaks PHP dan
-  JavaScript serta regresi lokal pelaporan 172 assertion lulus. Suite HTTP
-  menunggu CI karena langkah PHP integration sebelumnya gagal lebih awal.
-- CI `41012425535` juga berhenti di PHP integration suites; penyebab belum
-  diketahui. Tidak ada penghapusan baris pengumuman, migrasi, atau perubahan
-  database produksi.
+  JavaScript lulus. Suite HTTP keamanan 226 assertion juga lulus lokal dengan
+  fixture; termasuk pelestarian pengumuman, wali, anak, membership, dan presensi.
+- CI `41012684184` berhenti di PHP integration suites sebelum suite HTTP.
+  Tidak ada penghapusan baris pengumuman, migrasi, atau perubahan database
+  produksi.

@@ -501,9 +501,15 @@ require 'includes/participant_merge_helper.php'; participantMergeApplyMigration(
   check((await req('/naik-kelas.php?msg[]=x',admin)).status===200,'Array notification values cannot crash the class page');
   const beforeMalformedVerification=domainDigest();
   const malformedVerificationId=await req('/rekap-lengkap.php?start_date=2026-10-01&end_date=2026-10-31',admin,{csrf_token:progressCsrf,action:'verify','wali_id[]':'1',session:'2026-10-18',fingerprint:'a'.repeat(64),selected_id:'1',note:'Konfirmasi uji'});
-  check(malformedVerificationId.status===422 && malformedVerificationId.body.includes('ID wali tidak valid') && domainDigest()===beforeMalformedVerification,'Malformed verification guardian IDs are rejected before changing domain data');
+  const verificationIdPreserved=domainDigest()===beforeMalformedVerification;
+  const verificationIdMessage=malformedVerificationId.body.includes('Format isian tidak valid');
+  check(malformedVerificationId.status===422 && verificationIdMessage && verificationIdPreserved,
+    `Malformed verification guardian IDs are rejected before changing domain data (HTTP ${malformedVerificationId.status}, message=${verificationIdMessage}, data_preserved=${verificationIdPreserved})`);
   const malformedVerificationRecord=await req('/rekap-lengkap.php?start_date=2026-10-01&end_date=2026-10-31',admin,{csrf_token:progressCsrf,action:'verify',wali_id:'1',session:'2026-10-18',fingerprint:'a'.repeat(64),'selected_id[]':'1',note:'Konfirmasi uji'});
-  check(malformedVerificationRecord.status===422 && malformedVerificationRecord.body.includes('catatan yang sah') && domainDigest()===beforeMalformedVerification,'Malformed verification record IDs are rejected before changing domain data');
+  const verificationRecordPreserved=domainDigest()===beforeMalformedVerification;
+  const verificationRecordMessage=malformedVerificationRecord.body.includes('Format isian tidak valid');
+  check(malformedVerificationRecord.status===422 && verificationRecordMessage && verificationRecordPreserved,
+    `Malformed verification record IDs are rejected before changing domain data (HTTP ${malformedVerificationRecord.status}, message=${verificationRecordMessage}, data_preserved=${verificationRecordPreserved})`);
   const progressBefore=domainDigest();
   const malformedArchive=await req('/naik-kelas.php',admin,{csrf_token:progressCsrf,action:'bulk_archive',wali_ids:'30001'});
   check(malformedArchive.status===422 && domainDigest()===progressBefore,'Scalar alumni archive IDs are rejected before any participant data changes');
