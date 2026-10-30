@@ -15,13 +15,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit('CSRF token tidak valid.');
     }
     try {
-        if (($_POST['action'] ?? '') === 'sync') {
-            $stats = dataIndukSync($pdo, (string) ($_POST['scope'] ?? 'all'));
+        $action = appRequestString($_POST, 'action');
+        if ($action === 'sync') {
+            $stats = dataIndukSync($pdo, appRequestString($_POST, 'scope'));
             $message = 'Sinkronisasi selesai: ' . json_encode($stats, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-        } elseif (($_POST['action'] ?? '') === 'conflict') {
-            dataIndukResolveConflict($pdo, (int) ($_POST['conflict_id'] ?? 0), (string) ($_POST['decision'] ?? 'ignore'));
+        } elseif ($action === 'conflict') {
+            $conflictId = filter_var(appRequestString($_POST, 'conflict_id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($conflictId === false) {
+                throw new InvalidArgumentException('ID konflik tidak valid. Data belum berubah.');
+            }
+            dataIndukResolveConflict($pdo, $conflictId, appRequestString($_POST, 'decision'));
             $message = 'Konflik telah diproses. Jalankan sync kembali untuk mengambil profil pusat terbaru.';
+        } else {
+            throw new InvalidArgumentException('Aksi Data Induk tidak valid. Data belum berubah.');
         }
+    } catch (InvalidArgumentException $exception) {
+        http_response_code(422);
+        $error = $exception->getMessage();
     } catch (Throwable $exception) {
         reportApplicationError($exception, 'data-induk-admin');
         $error = $exception instanceof DataIndukException ? $exception->getMessage() : 'Operasi gagal. Periksa konfigurasi dan log server.';

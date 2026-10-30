@@ -103,6 +103,19 @@ const importGroup = body => body.match(/name="targets\[([a-f0-9]{64})\]"/)?.[1];
   check(rateBlocked.status===200 && rateBlocked.body.includes('Terlalu banyak percobaan login gagal'),'Login endpoint enforces its configured attempt limit');
   localSql("DELETE FROM login_attempts WHERE ip_address='127.0.0.1'");
   const admin = await login('audit_admin');
+  const dataIndukPage = await req('/data-induk.php',admin);
+  const dataIndukToken = csrf(dataIndukPage.body);
+  check(Boolean(dataIndukToken),'Data Induk page issues a CSRF token for admin actions');
+  const beforeInvalidDataInduk = domainDigest();
+  const arrayScope = await req('/data-induk.php',admin,{csrf_token:dataIndukToken,action:'sync','scope[]':'roster'});
+  check(arrayScope.status===422 && arrayScope.body.includes('Format isian tidak valid') && domainDigest()===beforeInvalidDataInduk,
+    'An array sync scope is rejected before any domain data changes');
+  const missingScope = await req('/data-induk.php',admin,{csrf_token:dataIndukToken,action:'sync'});
+  check(missingScope.status===422 && domainDigest()===beforeInvalidDataInduk,
+    'A missing sync scope cannot silently request a full synchronization');
+  const arrayConflictId = await req('/data-induk.php',admin,{csrf_token:dataIndukToken,action:'conflict','conflict_id[]':'1',decision:'approve'});
+  check(arrayConflictId.status===422 && arrayConflictId.body.includes('Format isian tidak valid') && domainDigest()===beforeInvalidDataInduk,
+    'An array conflict ID is rejected before resolving or mutating any data');
   const users = await req('/users.php',admin);
   check(users.status===200 && !/\$2[aby]\$\d\d\$/.test(users.body),'User management HTML contains no password hashes');
   check(users.body.includes('role="dialog"') && users.body.includes('for="user-role"'),'User form has labelled controls and dialog semantics');

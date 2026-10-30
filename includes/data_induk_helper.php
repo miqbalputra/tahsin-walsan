@@ -639,11 +639,13 @@ function dataIndukSyncTeachers(PDO $pdo): array
 
 function dataIndukSync(PDO $pdo, string $scope = 'all'): array
 {
+    if (!in_array($scope, ['all', 'references', 'roster', 'teachers', 'changes'], true)) {
+        throw new InvalidArgumentException('Ruang lingkup sinkronisasi tidak valid. Data belum berubah.');
+    }
     dataIndukRequireSchema($pdo);
     if (!dataIndukIsConfigured()) {
         throw new DataIndukException('DATA_INDUK_ENABLED atau secret Data Induk belum lengkap.');
     }
-    $scope = in_array($scope, ['all', 'references', 'roster', 'teachers', 'changes'], true) ? $scope : 'all';
     // MariaDB advisory lock is connection-bound and prevents scheduler/manual
     // jobs from applying the same snapshot concurrently.
     $lockName = 'presensi_tahsin_data_induk_sync';

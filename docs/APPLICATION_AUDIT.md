@@ -777,3 +777,21 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
    dan kemudahan pemakaian, termasuk layar kecil dan keadaan offline.
 5. Lakukan audit penerimaan seluruh baris cakupan sebelum rilis, kemudian
    verifikasi runtime dan data aplikasi aktif.
+
+## Validasi scope sinkronisasi Data Induk — 30 Oktober 2026
+
+- Audit menemukan scope yang salah pada sinkronisasi Data Induk diam-diam
+  diperluas menjadi `all`. Salah ketik atau input form berbentuk array dapat
+  memicu sinkronisasi penuh. Scope kini harus cocok persis dengan salah satu
+  pilihan yang didukung dan diperiksa sebelum skema, konfigurasi, lock, atau
+  catatan sinkronisasi disentuh.
+- Halaman admin tidak lagi mengubah field menjadi string/angka sebelum validasi.
+  Scope yang hilang atau berbentuk array, ID konflik yang bukan angka positif,
+  dan aksi tidak dikenal ditolak dengan HTTP 422. Konflik tidak dibuka sebagai
+  transaksi untuk permintaan yang formatnya tidak valid.
+- Regresi membandingkan hash peserta, anak, keanggotaan, presensi, status sync,
+  riwayat sync, dan konflik sebelum/sesudah scope salah. Tes HTTP juga mencakup
+  scope array/hilang dan ID konflik array. Database seluruh tes tetap sintetis.
+- Lint PHP untuk tiga file dan pemeriksaan sintaks JavaScript serta `git diff
+  --check` lulus lokal. CI untuk batch ini belum berjalan; tidak ada migrasi,
+  koneksi atau penulisan ke basis data produksi.

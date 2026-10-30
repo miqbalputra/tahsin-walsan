@@ -16,7 +16,11 @@ $pdo->exec(file_get_contents(__DIR__ . '/fixtures/tahsin-schema.sql'));
 $pdo->exec("ALTER TABLE halaqoh_members ADD archived_at DATETIME NULL, ADD archive_reason VARCHAR(50) NULL;
 ALTER TABLE wali_santri ADD data_induk_guardian_id VARCHAR(36) NULL;
 ALTER TABLE santri_detail ADD data_induk_student_id VARCHAR(36) NULL, ADD data_induk_enrollment_id VARCHAR(36) NULL, ADD data_induk_class_id VARCHAR(36) NULL, ADD status_roster ENUM('active','archived') NOT NULL DEFAULT 'active';
+ALTER TABLE users ADD data_induk_teacher_id VARCHAR(36) NULL, ADD data_induk_active TINYINT(1) NOT NULL DEFAULT 1;
 CREATE TABLE data_induk_references (master_id VARCHAR(36) PRIMARY KEY, reference_type VARCHAR(30) NOT NULL, reference_name VARCHAR(255) NULL) ENGINE=InnoDB;
+CREATE TABLE data_induk_sync_state (id TINYINT PRIMARY KEY, change_cursor VARCHAR(64) NOT NULL DEFAULT '0', last_success_at DATETIME NULL, last_error_at DATETIME NULL, last_error TEXT NULL) ENGINE=InnoDB;
+INSERT INTO data_induk_sync_state (id) VALUES (1);
+CREATE TABLE data_induk_sync_runs (id BIGINT AUTO_INCREMENT PRIMARY KEY, scope VARCHAR(30) NOT NULL, status VARCHAR(20) NOT NULL, started_at DATETIME NOT NULL, finished_at DATETIME NULL, stats_json LONGTEXT NULL, error_message TEXT NULL) ENGINE=InnoDB;
 CREATE TABLE data_induk_sync_conflicts (id BIGINT AUTO_INCREMENT PRIMARY KEY, entity_type VARCHAR(30) NOT NULL, master_id VARCHAR(36) NOT NULL, local_id INT NULL, reason VARCHAR(255) NOT NULL, payload_json LONGTEXT NULL, status ENUM('pending','approved','ignored') NOT NULL DEFAULT 'pending', created_at DATETIME NOT NULL, resolved_at DATETIME NULL, resolved_by INT NULL) ENGINE=InnoDB;
 INSERT INTO users(id,username,password,nama_lengkap,role) VALUES(1,'sync_teacher','synthetic','Guru Uji','ustadz');
 INSERT INTO halaqoh(id,nama_halaqoh,ustadz_id) VALUES(1,'Halaqoh Uji',1);
@@ -50,7 +54,7 @@ function diSyncReject(callable $fn, string $message): Throwable
 function diSyncBaseDigest(PDO $pdo): string
 {
     $data = [];
-    foreach (['wali_santri','santri_detail','halaqoh_members','presensi','data_induk_sync_conflicts'] as $table) {
+    foreach (['wali_santri','santri_detail','halaqoh_members','presensi','data_induk_sync_state','data_induk_sync_runs','data_induk_sync_conflicts'] as $table) {
         $data[$table] = $pdo->query("SELECT * FROM `$table` ORDER BY 1")->fetchAll(PDO::FETCH_ASSOC);
     }
     return hash('sha256', serialize($data));
@@ -62,6 +66,9 @@ function diSyncRun(PDO $pdo, string $scenario): array
 }
 
 $baseline = diSyncBaseDigest($pdo);
+$invalidScope = diSyncReject(fn() => dataIndukSync($pdo, 'typo'), 'An unknown sync scope is rejected instead of expanding to a full sync');
+diSyncCheck($invalidScope instanceof InvalidArgumentException, 'An unknown scope is rejected as invalid input before configuration or sync work');
+diSyncCheck(hash_equals($baseline, diSyncBaseDigest($pdo)), 'An unknown sync scope leaves participant data, sync state, run history, and conflicts unchanged');
 diSyncReject(fn() => diSyncRun($pdo, 'invalid-status'), 'Unknown central status cannot archive existing children');
 diSyncCheck(hash_equals($baseline, diSyncBaseDigest($pdo)), 'Invalid central status leaves every local participant and history row unchanged');
 diSyncReject(fn() => diSyncRun($pdo, 'unknown-class'), 'Unknown class reference cannot clear the saved class');
