@@ -660,6 +660,23 @@ PHP tidak mengganti prototipe tersebut.
   pencocokan wali unik dan ambigu; CI ulang diperlukan untuk memastikan suite
   Data Induk lulus bersama regresi rendering baru.
 
+CI ulang `41007338210` dan `41007344208` pada commit `c5c97e3` kemudian lulus,
+termasuk suite integrasi PHP, roster Data Induk, dan pemeriksaan HTTP keamanan.
+
+## Escape output halaman guru dan cetak PDF — 30 Oktober 2026
+
+- Audit lanjutan menemukan nilai basis data dan nama profil yang dicetak tanpa
+  encoding di dashboard guru, daftar laporan, riwayat presensi, dan tampilan
+  cetak PDF. Nilai-nilai itu kini di-escape; ID angka dicast, query tautan
+  disusun dengan `http_build_query()`, dan tautan WhatsApp memakai nomor yang
+  hanya berisi digit serta `rel="noopener noreferrer"`.
+- Regresi HTTP menambah muatan XSS sintetis untuk laporan/riwayat guru, profil
+  guru, dan halaman cetak PDF. Perubahan ini hanya memengaruhi cara HTML
+  ditampilkan; tidak mengubah baris atau isi basis data.
+- Batch lanjutan ini masih menunggu hasil CI. Tidak ada migrasi atau penulisan
+  ke basis data produksi dalam proses audit ini; pemulihan backup produksi
+  belum diverifikasi.
+
 ## Menjalankan pemeriksaan lokal
 
 Database uji harus berjalan hanya pada `127.0.0.1:13317`, dengan akun fixture

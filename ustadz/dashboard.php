@@ -79,7 +79,7 @@ $latestAnnounce = $stmtAnnounce->fetch();
     <div class="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
         <div class="text-center md:text-left">
             <h3 class="text-2xl font-black mb-2 tracking-tight">Ahlan wa Sahlan, Ustadz
-                <?php echo explode(' ', $_SESSION['nama_lengkap'])[0]; ?>! 👋</h3>
+                <?php echo appEscape(explode(' ', (string) ($_SESSION['nama_lengkap'] ?? ''))[0] ?? ''); ?>! 👋</h3>
             <p class="text-blue-100 text-sm opacity-90 leading-relaxed max-w-lg">
                 Semoga Allah memberkahi waktu pengajaran Anda. Pantau perkembangan halaqoh dan pastikan presensi terisi
                 tepat waktu.
@@ -208,7 +208,7 @@ $latestAnnounce = $stmtAnnounce->fetch();
                         class="flex items-center gap-4 p-4 rounded-2xl border border-slate-50 hover:bg-slate-50 transition group">
                         <div
                             class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm group-hover:bg-blue-600 group-hover:text-white transition-all">
-                            <?php echo $act['status']; ?>
+                            <?php echo appEscape($act['status']); ?>
                         </div>
                         <div class="flex-1">
                             <div class="flex justify-between items-center mb-0.5">
@@ -241,7 +241,7 @@ $latestAnnounce = $stmtAnnounce->fetch();
                             <span
                                 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest"><?php echo $h['total_member']; ?>
                                 Wali Santri</span>
-                            <a href="input-presensi.php?id=<?php echo $h['id']; ?>"
+                            <a href="input-presensi.php?id=<?php echo (int) $h['id']; ?>"
                                 class="text-[10px] font-black text-blue-600 uppercase hover:underline">Isi Presensi</a>
                         </div>
                     </div>

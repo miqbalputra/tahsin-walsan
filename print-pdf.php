@@ -41,7 +41,7 @@ $filter_kelas = $kelas_filter ?: "Semua Kelas";
 <head>
     <meta charset="UTF-8">
     <title>Laporan Presensi Tahsin -
-        <?php echo $filter_halaqoh; ?>
+        <?php echo appEscape($filter_halaqoh); ?>
     </title>
     <style>
         body {
@@ -258,10 +258,10 @@ $filter_kelas = $kelas_filter ?: "Semua Kelas";
                     <td>
                         <?php if ($row['status'] === 'H'): ?>
                             <span style="color: #2563eb; font-weight: 600;">
-                                <?php echo $row['jenis_materi']; ?>
+                                <?php echo appEscape($row['jenis_materi']); ?>
                             </span>:
-                            <?php echo ($row['jenis_materi'] === 'Iqro') ? "Jilid " . $row['jilid'] : htmlspecialchars($row['nama_surat']); ?>
-                            (<?php echo $row['jenis_materi'] === 'Al Quran' ? 'Ayat' : 'Hal'; ?>         <?php echo $row['halaman']; ?>)
+                            <?php echo $row['jenis_materi'] === 'Iqro' ? 'Jilid ' . (int) $row['jilid'] : appEscape($row['nama_surat']); ?>
+                            (<?php echo $row['jenis_materi'] === 'Al Quran' ? 'Ayat' : 'Hal'; ?>         <?php echo appEscape($row['halaman']); ?>)
                         <?php elseif ($row['alasan']): ?>
                             <span style="color: #94a3b8; font-style: italic;">Keterangan:
                                 <?php echo htmlspecialchars($row['alasan']); ?>
@@ -272,7 +272,7 @@ $filter_kelas = $kelas_filter ?: "Semua Kelas";
                     </td>
                     <td
                         style="text-align: center; font-weight: 700; color: <?php echo $row['hasil_talaqqi'] === 'Lulus' ? '#10b981' : '#f87171'; ?>">
-                        <?php echo $row['hasil_talaqqi'] ? strtoupper($row['hasil_talaqqi']) : '-'; ?>
+                        <?php echo $row['hasil_talaqqi'] ? appEscape(strtoupper($row['hasil_talaqqi'])) : '-'; ?>
                     </td>
                 </tr>
             <?php endforeach; ?>
@@ -284,10 +284,10 @@ $filter_kelas = $kelas_filter ?: "Semua Kelas";
             <p>Dicetak oleh:</p>
             <div class="signature-space"></div>
             <p><strong>
-                    <?php echo $_SESSION['nama_lengkap']; ?>
+                    <?php echo appEscape($_SESSION['nama_lengkap'] ?? ''); ?>
                 </strong></p>
             <p style="margin-top: -10px; color: #64748b;">(
-                <?php echo ucfirst($_SESSION['role']); ?>)
+                <?php echo appEscape(ucfirst((string) ($_SESSION['role'] ?? ''))); ?>)
             </p>
         </div>
     </div>

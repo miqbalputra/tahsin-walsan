@@ -71,12 +71,12 @@ require_once '../includes/sidebar.php';
     <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
         <div>
             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Dari Tanggal</label>
-            <input type="date" name="start_date" value="<?php echo $start_date; ?>"
+            <input type="date" name="start_date" value="<?= appEscape($start_date) ?>"
                 class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition text-sm">
         </div>
         <div>
             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Sampai Tanggal</label>
-            <input type="date" name="end_date" value="<?php echo $end_date; ?>"
+            <input type="date" name="end_date" value="<?= appEscape($end_date) ?>"
                 class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition text-sm">
         </div>
         <div>
@@ -85,8 +85,8 @@ require_once '../includes/sidebar.php';
                 class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition text-sm">
                 <option value="">Semua Halaqoh</option>
                 <?php foreach ($halaqohs as $h): ?>
-                    <option value="<?php echo $h['id']; ?>" <?php echo $halaqoh_id == $h['id'] ? 'selected' : ''; ?>>
-                        <?php echo htmlspecialchars($h['nama_halaqoh']); ?>
+                    <option value="<?= (int) $h['id'] ?>" <?php echo $halaqoh_id == $h['id'] ? 'selected' : ''; ?>>
+                        <?= appEscape($h['nama_halaqoh']) ?>
                     </option>
                 <?php endforeach; ?>
             </select>
@@ -158,20 +158,20 @@ require_once '../includes/sidebar.php';
                                     'A' => 'bg-red-100 text-red-700',
                                 };
                                 ?>">
-                                <?php echo $row['status']; ?>
+                                <?php echo appEscape($row['status']); ?>
                             </span>
                         </td>
                         <td class="px-6 py-4 text-slate-600 align-middle">
                             <?php if ($row['status'] === 'H'): ?>
                                 <span class="font-bold text-blue-600">
-                                    <?php echo $row['jenis_materi']; ?>
+                                    <?php echo appEscape($row['jenis_materi']); ?>
                                 </span>:
                                 <span class="text-slate-700">
-                                    <?php echo ($row['jenis_materi'] === 'Iqro') ? "Jilid " . $row['jilid'] : htmlspecialchars($row['nama_surat']); ?>
+                                    <?php echo $row['jenis_materi'] === 'Iqro' ? 'Jilid ' . (int) $row['jilid'] : appEscape($row['nama_surat']); ?>
                                 </span>
                                 <span
                                     class="text-[10px] bg-slate-100 text-slate-500 font-bold px-1.5 py-0.5 rounded-md ml-1 italic">
-                                    <?php echo ($row['jenis_materi'] === 'Al Quran' ? 'Ayat ' : 'Hal ') . $row['halaman']; ?>
+                                    <?php echo ($row['jenis_materi'] === 'Al Quran' ? 'Ayat ' : 'Hal ') . appEscape($row['halaman']); ?>
                                 </span>
                             <?php elseif ($row['alasan']): ?>
                                 <span
@@ -185,7 +185,7 @@ require_once '../includes/sidebar.php';
                                 <span
                                     class="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider
                                     <?php echo $row['hasil_talaqqi'] === 'Lulus' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'; ?>">
-                                    <?php echo $row['hasil_talaqqi']; ?>
+                                    <?php echo appEscape($row['hasil_talaqqi']); ?>
                                 </span>
                             <?php else: ?>
                                 <span class="text-slate-300">-</span>
@@ -195,10 +195,13 @@ require_once '../includes/sidebar.php';
                             <div class="flex justify-end items-center gap-2">
                                 <?php if ($row['status'] === 'H' && !empty($row['no_hp'])):
                                     $wa_msg = "Alhamdulillah Pak " . $row['nama_bapak'] . ", hari ini telah hadir Tahsin. \n\n*Detail Pencapaian*: \n- Materi: " . $row['jenis_materi'] . " " . ($row['jenis_materi'] === 'Iqro' ? 'Jilid ' . $row['jilid'] : $row['nama_surat']) . " \n- " . ($row['jenis_materi'] === 'Al Quran' ? 'Ayat' : 'Halaman') . ": " . $row['halaman'] . " \n- Hasil: *" . ($row['hasil_talaqqi'] ?? '-') . "* \n\nSemangat terus Pak, baarokallaahu fiikum.";
-                                    $wa_phone = preg_replace('/^0/', '62', $row['no_hp']);
-                                    $wa_url = "https://wa.me/" . $wa_phone . "?text=" . urlencode($wa_msg);
+                                    $wa_phone = preg_replace('/\D/', '', (string) $row['no_hp']);
+                                    if (str_starts_with($wa_phone, '0')) {
+                                        $wa_phone = '62' . substr($wa_phone, 1);
+                                    }
+                                    $wa_url = "https://wa.me/" . $wa_phone . "?text=" . rawurlencode($wa_msg);
                                     ?>
-                                    <a href="<?php echo $wa_url; ?>" target="_blank"
+                                    <a href="<?= appEscape($wa_url) ?>" target="_blank" rel="noopener noreferrer"
                                         class="text-emerald-600 hover:bg-emerald-600 hover:text-white font-bold text-[10px] uppercase transition bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100 flex items-center gap-1.5 shadow-sm">
                                         <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                                             <path
@@ -207,7 +210,7 @@ require_once '../includes/sidebar.php';
                                         Kirim WA
                                     </a>
                                 <?php endif; ?>
-                                <a href="form-presensi.php?id=<?php echo $row['halaqoh_id']; ?>&tanggal=<?php echo $row['tanggal']; ?>"
+                                <a href="<?= appEscape('form-presensi.php?' . http_build_query(['id'=>(int) $row['halaqoh_id'],'tanggal'=>$row['tanggal']])) ?>"
                                     class="text-blue-600 hover:bg-blue-600 hover:text-white font-bold text-[10px] uppercase transition bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
                                     Edit
                                 </a>
@@ -215,8 +218,8 @@ require_once '../includes/sidebar.php';
                                     class="inline-flex">
                                     <?php csrfField(); ?>
                                     <input type="hidden" name="action" value="delete">
-                                    <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
-                                    <input type="hidden" name="record_fingerprint" value="<?= attendanceHistoryHash(attendanceHistoryDecode($row['saved_snapshot'])) ?>">
+                                    <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
+                                    <input type="hidden" name="record_fingerprint" value="<?= appEscape(attendanceHistoryHash(attendanceHistoryDecode($row['saved_snapshot']))) ?>">
                                     <button type="submit" <?= !$historyReady ? 'disabled' : '' ?>
                                         class="text-red-600 hover:bg-red-600 hover:text-white font-bold text-[10px] uppercase transition bg-red-50 px-3 py-1.5 rounded-xl border border-red-100">
                                         Hapus
