@@ -1126,6 +1126,8 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   selalu memakai InnoDB; migrasi tidak menghapus baris atau menimpa nilai lama.
 - Fixture MariaDB kini menguji penolakan duplikasi sebelum DDL, penyelesaian
   migrasi parsial, pengulangan tanpa perubahan, benturan nama indeks, dan hash
-  nilai lama. Lint PHP lokal lulus. Runner lokal tidak memiliki driver
-  `pdo_mysql`, jadi bukti integrasi menunggu CI; tidak ada akses atau penulisan
-  database produksi.
+  nilai lama. Lint PHP lokal lulus. Seluruh CI lulus pada commit `9833905`
+  (run `41031053699`), termasuk suite MariaDB, keamanan HTTP, dan smoke test
+  image Apache. Runner lokal tidak memiliki driver `pdo_mysql`; fixture CI
+  menggunakan database sintetis. Tidak ada akses atau penulisan database
+  produksi.
