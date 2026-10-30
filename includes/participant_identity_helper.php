@@ -34,3 +34,13 @@ function participantAssertAvailableId(PDO $pdo, int $id): void
         if ($error->getCode()!=='42S02') throw $error;
     }
 }
+
+/** Capture every new local guardian ID through one transactional alias guard. */
+function participantCaptureInsertedId(PDO $pdo): int
+{
+    if (!$pdo->inTransaction()) throw new LogicException('Pemeriksaan ID peserta baru harus berada di dalam transaksi.');
+    $id = (int) $pdo->lastInsertId();
+    if ($id < 1) throw new RuntimeException('Database tidak memberikan ID peserta baru yang valid.');
+    participantAssertAvailableId($pdo, $id);
+    return $id;
+}

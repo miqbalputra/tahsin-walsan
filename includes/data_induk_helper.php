@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/database_helper.php';
+require_once __DIR__ . '/participant_identity_helper.php';
 /**
  * Read-model integration for Data Induk Yayasan.
  * This file deliberately contains no page-load synchronization: remote calls are
@@ -362,7 +363,7 @@ function dataIndukSyncRoster(PDO $pdo): array
                 $isArchived = empty($guardian['archivedAt']) ? 0 : 1;
                 $insert = $pdo->prepare('INSERT INTO wali_santri (nama_bapak,no_hp,alamat,kategori,status_aktif,data_induk_guardian_id) VALUES (?,?,?,?,?,?)');
                 $insert->execute([$guardian['fullName'] ?? 'Tanpa Nama', $guardian['phone'] ?? null, $guardian['address'] ?? null, 'reguler', $isArchived ? 0 : 1, $masterId]);
-                $guardianIds[$masterId] = (int) $pdo->lastInsertId();
+                $guardianIds[$masterId] = participantCaptureInsertedId($pdo);
                 $affectedWaliIds[$guardianIds[$masterId]] = true;
             } else {
                 // A current Data Induk snapshot must not silently reactivate a local manual archive.

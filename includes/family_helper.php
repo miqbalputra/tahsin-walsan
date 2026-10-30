@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/participant_identity_helper.php';
 /** Stable family identities, separate from attendance and future Data Induk UUIDs. */
 function familySchemaReady(PDO $pdo): bool
 {
@@ -261,7 +262,7 @@ function familyImportApply(PDO $pdo, array $data, array $choices = []): array
             $waliId = $plan['guardians'][$id]['target_id'];
             if (!$waliId) {
                 $insertWali->execute([$g['name'], $g['phone'], $g['address'], 'reguler', $g['active'] && $g['account_active'] && isset($activeChildren[$id]) ? 1 : 0]);
-                $waliId = (int) $pdo->lastInsertId();
+                $waliId = participantCaptureInsertedId($pdo);
             }
             $upsertGuardian->execute([$source, (string) $id, $waliId, $g['type'], $g['name'], $g['phone'], $g['address'], (int) $g['active'], (int) $g['account_active'], $date]);
             $getGuardian->execute([$source, (string) $id]); $guardianIds[$id] = $getGuardian->fetch(PDO::FETCH_ASSOC);

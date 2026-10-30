@@ -281,8 +281,7 @@ function participantApply(PDO $pdo, int $actorId, string $action, ?int $id, arra
             if ($id === null) {
                 $columns = implode(',', array_keys($values)); $placeholders = implode(',', array_fill(0, count($values), '?'));
                 $pdo->prepare("INSERT INTO wali_santri($columns) VALUES($placeholders)")->execute(array_values($values));
-                $id = (int) $pdo->lastInsertId();
-                participantAssertAvailableId($pdo,$id);
+                $id = participantCaptureInsertedId($pdo);
             } else {
                 $changed = array_filter($values, static fn($value,$column) => $before['parent'][$column] !== $value, ARRAY_FILTER_USE_BOTH);
                 if ($changed) {

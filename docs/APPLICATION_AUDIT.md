@@ -580,7 +580,25 @@ PHP tidak mengganti prototipe tersebut.
 - Menunggu CI commit `d83dcde` selesai untuk memastikan pola kegagalan sebelum
   perbaikan, lalu validasi ulang suite dengan fixture database lokal baru:
   20 pemeriksaan integrasi dan 13 pemeriksaan HTTP lulus. Status CI untuk
-  perbaikan ini masih menunggu push berikutnya.
+  perbaikan commit `37a98ed` lulus pada event push dan pull request.
+
+## Perlindungan ID peserta hasil penggabungan — 30 Oktober 2026
+
+- Temuan: sesudah dua wali digabung, ID sumber disimpan sebagai alias ke wali
+  yang dipertahankan. Pemeriksaan agar ID alias tidak digunakan ulang sudah
+  ada pada formulir admin dan impor peserta baru, tetapi belum pada impor
+  keluarga, sinkronisasi roster Data Induk, dan impor santri lama. Reset
+  penghitung ID setelah pemulihan dapat membuat wali baru memakai ID alias.
+- Pemeriksaan ID baru kini dipusatkan pada helper yang mensyaratkan transaksi.
+  Semua jalur pembuatan wali menggunakan helper itu; benturan membatalkan
+  transaksi lengkap dan penyimpanan ulang memperoleh ID berikutnya.
+- Uji sintetis memaksa `AUTO_INCREMENT` menabrak alias. Impor keluarga
+  membatalkan seluruh baris keluarga dan mencoba ulang dengan ID baru. Regresi
+  lulus: 46 keluarga, 48 pengelolaan peserta, 76 impor peserta, dan 47
+  penggabungan peserta. Database produksi tidak diakses.
+- Sinkronisasi Data Induk dan halaman impor santri lama masih memerlukan
+  penerimaan end-to-end tersendiri; kode keduanya kini memakai penjaga ID yang
+  sama. Audit fitur dan pemulihan backup produksi masih terbuka.
 
 ## Menjalankan pemeriksaan lokal
 

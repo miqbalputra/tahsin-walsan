@@ -459,7 +459,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // ambil nama_bapak & no_hp dari baris pertama grup
                 $firstRow = $rows[$fam['rows'][0]];
                 $stmtInsertWali->execute([$firstRow['nama_bapak'], $firstRow['no_hp']]);
-                $waliId = (int) $pdo->lastInsertId();
+                $waliId = participantCaptureInsertedId($pdo);
                 $affectedWaliIds[] = $waliId;
                 $newWali++;
                 foreach ($fam['rows'] as $idx) {

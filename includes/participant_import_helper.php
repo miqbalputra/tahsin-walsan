@@ -192,8 +192,7 @@ function participantImportApply(PDO $pdo, int $actorId, array $plan, array $choi
                 }
                 $insert=$pdo->prepare('INSERT INTO wali_santri(nama_bapak,no_hp,alamat,kategori,tempat_tahsin,ustadz_luar) VALUES(?,?,?,?,?,?)');
                 $insert->execute(array_map(static fn($column)=>$profile[$column],['nama_bapak','no_hp','alamat','kategori','tempat_tahsin','ustadz_luar']));
-                $waliId=(int)$pdo->lastInsertId(); $summary['created_wali']++;
-                participantAssertAvailableId($pdo,$waliId);
+                $waliId=participantCaptureInsertedId($pdo); $summary['created_wali']++;
             } else {
                 $waliId=filter_var($target,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
                 $candidate=$group['candidates'][$waliId]??null;
