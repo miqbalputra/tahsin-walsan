@@ -1149,3 +1149,6 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   menolak permintaan tanpa konfirmasi. Regresi HTTP memastikan data tidak
   berubah pada permintaan tanpa konfirmasi dan snapshot dibuat pada pembersihan
   yang disetujui.
+- Seluruh workflow CI lulus pada commit `646ddf2` (run `41032419036`), termasuk
+  regresi riwayat presensi, matriks keamanan HTTP, suite MariaDB, dan smoke test
+  image Apache. Data produksi tidak diakses.
