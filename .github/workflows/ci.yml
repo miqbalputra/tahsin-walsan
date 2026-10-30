@@ -34,6 +34,9 @@ jobs:
       - name: Environment file parser checks
         run: php tests/env-loader-tests.php
 
+      - name: Private import storage checks
+        run: php tests/import-storage-tests.php
+
       - name: Rebuild and verify public assets
         run: |
           npm ci --no-audit --no-fund

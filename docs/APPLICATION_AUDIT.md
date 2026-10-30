@@ -55,6 +55,9 @@ PHP tidak mengganti prototipe tersebut.
 8. README meminta membuat `.env`, tetapi PHP sebelumnya hanya membaca
    environment proses. Instalasi manual berisiko memakai nilai default
    `localhost`/`root` kosong atau gagal menyambung ke database yang dimaksud.
+9. Import santri lama dapat menaruh CSV wali dan anak di `temp_excel/` dalam
+   webroot bila direktori aplikasi writable. Privasi unggahan bergantung pada
+   aturan Apache/router yang menolak akses ke direktori tersebut.
 
 ## Dasar keselamatan dan baseline
 
@@ -895,12 +898,27 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   tersambung ke database produksi karena konfigurasi lokal tersembunyi.
   Docker menjalankan aplikasi dengan environment runtime, tanpa menyalin `.env`
   ke image. Akses HTTP langsung ke `.env` diuji pada router lokal.
-- Parser mendukung format yang dipakai `.env.example`, memeriksa baris rusak dan
+- Parser mendukung format yang dipakai `.env.example`, BOM UTF-8, memeriksa baris rusak dan
   ukuran berkas, serta gagal tertutup daripada beralih diam-diam ke kredensial
-  default. Uji lokal parser lulus 17 assertion; suite HTTP lulus 227 assertion,
-  termasuk pemuatan nilai uji dan HTTP 403 untuk akses langsung ke `/.env`.
-  Lint PHP, sintaks Node, dan `git diff --check` juga lulus.
+  default. Kontrol pemilihan file hanya dapat diberikan lewat environment
+  proses. Versi yang diuji CI lulus 17 assertion parser; penambahan BOM dan
+  guard kontrol kemudian lulus 19 assertion lokal.
 - Workflow CI `41016782262` pada commit `425a160` lulus seluruh rangkaian PHP
-  dan Node, termasuk parser `.env`, 227 pemeriksaan HTTP keamanan, pemulihan
-  presensi dan keanggotaan. Tidak ada koneksi atau perubahan pada database
-  produksi.
+  dan Node, termasuk pemuatan `.env` pada HTTP, 227 pemeriksaan HTTP keamanan,
+  pemulihan presensi dan keanggotaan. Perubahan parser terbaru menunggu CI.
+  Tidak ada koneksi atau perubahan pada database produksi.
+
+## Penyimpanan privat unggahan impor santri lama — 30 Oktober 2026
+
+- Temuan: upload CSV memuat nama wali, nomor HP dan data anak. Saat
+  `temp_excel/` writable, berkas sementara sebelumnya disimpan di dalam
+  webroot dan hanya terlindungi oleh aturan akses HTTP.
+- Import kini memilih direktori sistem sementara atau direktori sesi yang
+  berada di luar webroot. Jika tidak ada lokasi privat yang writable, upload
+  gagal dengan pesan yang ada; tidak ada fallback ke folder publik. Unggahan
+  lama yang sudah tersimpan di sesi tetap dapat diselesaikan atau dibatalkan.
+- Uji lokal lulus 6 assertion: webroot dan subdirektorinya ditolak, kandidat
+  privat dipilih, dan berkas sementara dibuat dengan izin privat pada sistem
+  POSIX. Lint halaman impor juga lulus; verifikasi CI masih menunggu.
+- Tidak ada file unggahan lama, data peserta, atau database produksi yang
+  diubah.

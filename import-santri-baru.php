@@ -19,6 +19,7 @@ require_once 'includes/auth_helper.php';
 require_once 'includes/alumni_archive_helper.php';
 require_once 'includes/database_helper.php';
 require_once 'includes/participant_identity_helper.php';
+require_once 'includes/import_storage_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
@@ -93,31 +94,6 @@ function activeSourceFile(): string
     }
     $default = __DIR__ . '/data_santri_baru.csv';
     return is_file($default) ? $default : '';
-}
-
-/**
- * Pilih direktori penyimpanan upload yang writable.
- * Pada deployment Coolify, root aplikasi bisa read-only; karena itu gunakan
- * fallback di direktori temporary container bila temp_excel tidak writable.
- */
-function resolveImportTempDir(): string
-{
-    $candidates = [
-        __DIR__ . '/temp_excel',
-        rtrim(sys_get_temp_dir(), '/\\') . '/tahsin_import',
-        sys_get_temp_dir(),
-    ];
-
-    foreach ($candidates as $candidate) {
-        if (!is_dir($candidate) && !@mkdir($candidate, 0750, true) && !is_dir($candidate)) {
-            continue;
-        }
-        if (is_dir($candidate) && is_writable($candidate)) {
-            return $candidate;
-        }
-    }
-
-    return '';
 }
 
 /**

@@ -11,7 +11,7 @@ function envCheck(bool $condition, string $message): void
 }
 function envReject(callable $call, string $message): void
 {
-    try { $call(); } catch (RuntimeException) { envCheck(true, $message); return; }
+    try { $call(); } catch (RuntimeException | InvalidArgumentException) { envCheck(true, $message); return; }
     throw new RuntimeException($message);
 }
 
@@ -42,6 +42,8 @@ envCheck($values['DUPLICATE'] === 'last', 'Last duplicate key wins within the fi
 envReject(fn() => appParseEnvironment("INVALID LINE\n"), 'Malformed lines fail closed');
 envReject(fn() => appParseEnvironment("BROKEN=\"unterminated\n"), 'Unterminated quotes fail closed');
 envReject(fn() => appParseEnvironment(str_repeat('X', 65537)), 'Oversized files fail closed');
+envCheck(appParseEnvironment("\xEF\xBB\xBFDB_HOST=mysql\n")['DB_HOST'] === 'mysql', 'UTF-8 BOM is accepted at the start of a file');
+envReject(fn() => appApplyEnvironment(['APP_ENV_FILE' => '/unexpected']), 'Bootstrap path cannot be redirected from inside the selected file');
 
 $suffix = strtoupper(bin2hex(random_bytes(6)));
 $existingName = 'TAHSIN_ENV_EXISTING_' . $suffix;

@@ -6,6 +6,7 @@ function appParseEnvironment(string $contents): array
     if (strlen($contents) > 65536) {
         throw new RuntimeException('Berkas environment melebihi batas 64 KiB.');
     }
+    if (str_starts_with($contents, "\xEF\xBB\xBF")) $contents = substr($contents, 3);
 
     $values = [];
     foreach (preg_split('/\r\n|\n|\r/', $contents) as $lineNumber => $line) {
@@ -64,6 +65,9 @@ function appApplyEnvironment(array $values): array
         if (!is_string($name) || !preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/D', $name)
             || !is_string($value) || str_contains($value, "\0")) {
             throw new InvalidArgumentException('Nama atau nilai environment tidak valid.');
+        }
+        if (in_array($name, ['APP_ENV_FILE', 'APP_LOAD_ENV_FILE'], true)) {
+            throw new InvalidArgumentException("{$name} harus disediakan oleh environment proses.");
         }
     }
     $loaded = [];
