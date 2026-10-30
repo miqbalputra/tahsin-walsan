@@ -938,6 +938,8 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   commit tersebut lulus.
 - Tidak ada file unggahan lama, data peserta, atau database produksi yang
   diubah.
+- Perubahan generator storage dan perlindungan file privat juga tercakup pada CI
+  terbaru untuk commit b30d350: run 41019923645 dan 41019931129 lulus.
 
 ## Validasi CSV impor santri lama — 30 Oktober 2026
 
@@ -958,6 +960,8 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   memakai database fixture lokal sementara. CI `41018496452` dan
   `41018506045` pada commit `714b9bf` juga lulus.
 - Tidak ada impor atau perubahan database produksi.
+- Setelah enam pemeriksaan HTTP untuk artefak SQL/kredensial ditambahkan, CI pada
+  commit b30d350 (run 41019923645 dan 41019931129) lulus semua suite.
 
 ## Pengamanan generator SQL lama — 30 Oktober 2026
 
@@ -979,6 +983,6 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   generator dan helper. Uji memastikan tanpa persetujuan skrip berhenti sebelum
   memuat XLSX atau membuat output; output helper dibatasi ke direktori luar
   webroot. Sumber Excel, SQL impor, dan database tidak dibuka atau diubah. CI
-  akan memeriksa perubahan ini pada push berikutnya.
+  run 41019923645 dan 41019931129 pada commit b30d350 juga lulus.
 - Gate ini membatasi generator penggantian ke sandbox; generator tersebut tetap
   bersifat destruktif dan tidak boleh dipakai untuk database operasional.
