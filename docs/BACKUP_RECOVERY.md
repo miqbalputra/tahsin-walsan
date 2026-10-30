@@ -108,6 +108,29 @@ memerlukan salinan serta volume penyimpanan sendiri.
 
 ## Bukti uji yang dapat diulang
 
+Jika jurnal versi presensi dipasang, jalankan kembali
+`attendanceHistoryApplyMigration()` atau `migrate_attendance_history.php --apply`
+setelah semua migrasi lainnya pada database hasil pemulihan. Jurnal dan
+instance key dipertahankan. Lihat [ATTENDANCE_RECOVERY.md](ATTENDANCE_RECOVERY.md)
+untuk pemulihan satu versi catatan dan pembatasan identitas.
+
+Editor capaian menyimpan versi sebelum/sesudah baseline dan sumber sesi pada
+`participant_changes`. Snapshot ini ikut backup penuh; fixture pemulihan juga
+membuat perubahan capaian nyata sebelum perbandingan hash. Lihat
+[ACHIEVEMENT_EDITING.md](ACHIEVEMENT_EDITING.md) untuk akses dan koreksi baseline.
+
+Jika formulir kompatibilitas memakai jurnal pengiriman, backup juga mencakup
+`presensi_form_operations`. Setelah restore dan migrasi jurnal versi,
+jalankan `attendanceFormApplyMigration()` untuk memeriksa struktur receipt.
+Fixture pemulihan mengisi jurnal ini melalui simpan presensi yang nyata.
+Lihat [ATTENDANCE_FORMS.md](ATTENDANCE_FORMS.md).
+
+Pengelolaan anggota menambah aksi ke jurnal `participant_changes` yang sama.
+Snapshot sumber sekolah, relasi dan histori roster ikut arsip JSON lengkap.
+Fixture pemulihan juga menguji penambahan anggota Program Ibu yang nyata;
+tidak ada pemindahan ID/presensi otomatis saat jurnal dipulihkan. Lihat
+[MEMBERSHIPS.md](MEMBERSHIPS.md).
+
 ```powershell
 php -d extension=pdo_mysql tests/backup-integration.php
 node tests/security-http-tests.cjs

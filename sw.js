@@ -1,8 +1,8 @@
 const CACHE_PREFIX = `tahsin-presensi-${encodeURIComponent(self.registration.scope)}-`;
 // BEGIN GENERATED PUBLIC ASSETS
-const PUBLIC_ASSET_VERSION = "44d3e97c7340a1d2";
+const PUBLIC_ASSET_VERSION = "eb18416b5907fd9b";
 const STATIC_ASSETS = [
-    "assets/css/app.css?v=5bfd9e6d7ba349c2",
+    "assets/css/app.css?v=d6eb666da9e7922d",
     "assets/css/tahsin-activity.css?v=3fd65226e8215002",
     "assets/css/tahsin-autosave.css?v=0228532e6972dab7",
     "assets/css/tahsin-report.css?v=d6db93cf914955ca",
@@ -11,6 +11,7 @@ const STATIC_ASSETS = [
     "assets/js/print-report.js?v=573723755a6f2ad8",
     "assets/js/tahsin-activity.js?v=0425f406c973069f",
     "assets/js/tahsin-autosave.js?v=81493e1e7c32d728",
+    "assets/js/tahsin-legacy.js?v=a0ba9848d36106ff",
     "assets/js/tahsin-report.js?v=264955016236a6e1",
     "icon-512.png?v=8aaefc5f757ae42d",
     "manifest.json?v=fce5fe820db3349c"

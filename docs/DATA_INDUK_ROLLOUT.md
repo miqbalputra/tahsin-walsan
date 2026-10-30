@@ -9,6 +9,12 @@
    php migrate_data_induk.php
    ```
 
+   Sinkronisasi arsip memerlukan kolom histori keanggotaan dari migrasi
+   reporting. Periksa dry-run `php migrate_tahsin_reporting.php`, lalu setelah
+   backup dapat dipulihkan pada staging, terapkan migrasi itu lebih dahulu
+   dengan `APPLY_MIGRATIONS=1 php migrate_tahsin_reporting.php`. Migrasi ini
+   additive; jangan melewati validasi backup/staging.
+
 2. Setelah duplikasi presensi sudah nol, terapkan migrasi sekali:
 
    ```sh
@@ -43,3 +49,18 @@
 6. Sesudah deploy image baru, gunakan health check `/health.php`. Untuk deploy
    file langsung pada Apache lama, restart PHP/Apache; konfigurasi OPCache juga
    memeriksa perubahan file setiap dua detik.
+
+## Arsip dan pelestarian data
+
+- Arsip wali mengubah `status_aktif` dan menutup keanggotaan aktif dengan
+  `archived_at` serta alasan. Arsip anak mengubah `status_roster`; keanggotaan
+  hanya ditutup jika tidak ada anak lain yang masih sekolah atau kelasnya
+  belum diketahui.
+- Sinkronisasi menolak berjalan sebelum kolom arsip tersedia. Perubahan status
+  dan penutupan roster berlangsung dalam transaksi pada tabel InnoDB.
+- Baris wali, anak, `halaqoh_members`, presensi, draft, serta histori roster
+  tidak dihapus. Interval histori ditutup oleh trigger; catatan presensi lama
+  tetap dapat dibaca.
+- Snapshot Data Induk yang aktif tidak otomatis mengaktifkan kembali wali
+  yang sudah diarsipkan secara lokal. Penempatan yang sudah diarsipkan perlu
+  ditinjau dan diaktifkan secara eksplisit oleh admin.

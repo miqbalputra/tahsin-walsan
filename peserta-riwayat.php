@@ -4,6 +4,8 @@ require_once __DIR__ . '/includes/auth_helper.php';
 require_once __DIR__ . '/includes/participant_merge_helper.php';
 require_once __DIR__ . '/includes/participant_import_view.php';
 require_once __DIR__ . '/includes/participant_merge_view.php';
+require_once __DIR__ . '/includes/achievement_history_view.php';
+require_once __DIR__ . '/includes/membership_history_view.php';
 checkRole(['admin', 'pj_tahfidz']);
 $record = null;
 $records = [];
@@ -34,6 +36,15 @@ try {
         $change=['before'=>$record['before'],'after_parent'=>$record['after']['parent']??null,'after_children'=>$record['after']['children']??null];
         participantImportValidateChanges([$change]);
         $snapshots=[$record['before'],$record['after']];
+        if (in_array($record['action'],['membership_add','membership_remove'],true)) {
+            $membershipSchoolBefore=membershipHistorySchool($record['before']);
+            $membershipSchoolAfter=membershipHistorySchool($record['after']);
+            $change['children_label']='Anak lokal';
+        }
+        if (in_array($record['action'], ['achievement', 'baseline'], true)) {
+            $achievementBefore = achievementHistorySnapshot($record['before']);
+            $achievementAfter = achievementHistorySnapshot($record['after']);
+        }
         if ($record['action']==='merge') {
             $source=$record['before']['merge_source']??null;
             if (!is_array($source)) throw new RuntimeException('Snapshot sumber penggabungan tidak valid.');
@@ -85,13 +96,19 @@ require __DIR__ . '/includes/header.php'; require __DIR__ . '/includes/sidebar.p
 <div class="max-w-4xl mx-auto">
     <a href="peserta.php" class="inline-block underline text-blue-700 py-3">Kembali ke daftar peserta</a>
     <h1 class="text-2xl font-bold mb-4">Riwayat perubahan peserta<?= $id!==null?' · ID '.$id:'' ?></h1>
-    <p class="text-slate-600 mb-5">Riwayat ini berisi perubahan melalui formulir dan penggabungan peserta sejak jurnal dipasang. Data lama sebelum pemasangan jurnal dan perubahan melalui fitur lain memiliki pencatatan masing-masing.</p>
+    <p class="text-slate-600 mb-5">Riwayat ini berisi perubahan melalui formulir, penggabungan peserta, perubahan kelas, editor capaian, dan pengelolaan anggota halaqoh sejak jurnal dipasang. Data lama sebelum pemasangan jurnal dan perubahan melalui fitur lain memiliki pencatatan masing-masing.</p>
     <?php if (!$ready): ?><p>Jurnal perubahan belum disiapkan oleh pengelola.</p>
     <?php elseif ($record): ?>
-        <p class="mb-4"><?= appEscape($record['created_at']) ?> · <?= appEscape($record['actor_name']) ?> · <?= $record['action']==='merge'?'Gabung peserta':($record['action']==='archive'?'Arsipkan peserta':'Simpan peserta') ?></p>
+        <p class="mb-4"><?= appEscape($record['created_at']) ?> · <?= appEscape($record['actor_name']) ?> · <?= appEscape(participantActionLabel($record['action'])) ?></p>
         <?php if ($record['action']==='merge'): ?><p role="status" class="bg-blue-50 text-blue-800 rounded-xl p-4 mb-5">Penggabungan tersimpan. Pada operasi ini, ID sumber <?= (int)$record['before']['merge_source']['parent']['id'] ?> digabung ke ID <?= (int)$record['after']['parent']['id'] ?>. Draft hasil penggabungan perlu ditinjau ulang. Versi asal tersedia di bawah. <?php if ($record['wali_id']!==null): ?><a class="underline" href="peserta-form.php?id=<?= (int)$record['wali_id'] ?>">Lihat data peserta saat ini (ID <?= (int)$record['wali_id'] ?>)</a><?php endif; ?></p><?php endif; ?>
         <?php if ($record['action']==='merge'): ?><ul class="list-disc pl-5 mb-5"><?php foreach (['children_moved'=>'anak dipindahkan dengan ID lama','attendance_moved'=>'catatan presensi dipindahkan','memberships_moved'=>'keanggotaan sumber dipertahankan sebagai aktif/arsip','drafts_review'=>'draft perlu ditinjau ulang'] as $counter=>$label): ?><li><?= (int)$mergeResult[$counter] ?> <?= $label ?></li><?php endforeach; ?></ul><?php endif; ?>
         <?php participantImportRenderChange($change, 'perubahan'); ?>
+        <?php if (isset($membershipSchoolBefore,$membershipSchoolAfter)): ?><div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5"><?php membershipHistoryRenderSchool($membershipSchoolBefore,'Sumber sekolah sebelum perubahan'); membershipHistoryRenderSchool($membershipSchoolAfter,'Sumber sekolah sesudah perubahan'); ?></div><?php endif; ?>
+        <?php if (isset($achievementBefore, $achievementAfter)): ?>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+                <?php achievementHistoryRender($achievementBefore, 'Capaian sebelum perubahan'); achievementHistoryRender($achievementAfter, 'Capaian sesudah perubahan'); ?>
+            </div>
+        <?php endif; ?>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <?php foreach (['Sebelum perubahan'=>$record['before'],'Sesudah perubahan'=>$record['after']] as $label=>$snapshot): ?>
                 <section class="bg-white rounded-xl border border-slate-200 p-4"><h2 class="font-bold mb-3">Keanggotaan — <?= $label ?></h2>
@@ -103,7 +120,7 @@ require __DIR__ . '/includes/header.php'; require __DIR__ . '/includes/sidebar.p
         <a class="inline-block underline text-blue-700 py-4" href="?download=<?= appEscape($record['operation_id']) ?>">Unduh salinan rincian (berisi data pribadi)</a>
     <?php elseif (!$records): ?><p>Belum ada perubahan yang tercatat pada jurnal ini.</p>
     <?php else: ?>
-        <ul class="space-y-3"><?php foreach ($records as $row): ?><li class="border border-slate-200 rounded-xl p-4 bg-white"><a class="underline text-blue-700" href="?operation=<?= appEscape($row['operation_id']) ?>"><?= appEscape($row['created_at']) ?> — ID peserta <?= (int)$row['wali_id'] ?></a><p><?= appEscape($row['actor_name']) ?> · <?= $row['action']==='merge'?'Gabung peserta':($row['action']==='archive'?'Arsipkan peserta':'Simpan peserta') ?></p></li><?php endforeach; ?></ul>
+        <ul class="space-y-3"><?php foreach ($records as $row): ?><li class="border border-slate-200 rounded-xl p-4 bg-white"><a class="underline text-blue-700" href="?operation=<?= appEscape($row['operation_id']) ?>"><?= appEscape($row['created_at']) ?> — ID peserta <?= (int)$row['wali_id'] ?></a><p><?= appEscape($row['actor_name']) ?> · <?= appEscape(participantActionLabel($row['action'])) ?></p></li><?php endforeach; ?></ul>
         <nav aria-label="Halaman riwayat peserta" class="flex gap-4 py-5"><p>Halaman <?= $page ?> dari <?= $pages ?></p><?php if ($page>1): ?><a class="underline text-blue-700" href="?page=<?= $page-1 ?><?= $id!==null?'&amp;id='.$id:'' ?>">Sebelumnya</a><?php endif; ?><?php if ($page<$pages): ?><a class="underline text-blue-700" href="?page=<?= $page+1 ?><?= $id!==null?'&amp;id='.$id:'' ?>">Berikutnya</a><?php endif; ?></nav>
     <?php endif; ?>
 </div>

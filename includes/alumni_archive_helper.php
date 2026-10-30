@@ -29,12 +29,16 @@ function waliHasActiveSchoolChild(PDO $pdo, int $waliId): bool
         $stmt->execute([$waliId]);
         return (bool) $stmt->fetchColumn();
     }
+    $dataIndukActive = familyDataIndukRosterColumnsReady($pdo)
+        ? " AND (data_induk_student_id IS NULL OR status_roster='active')"
+        : '';
     $stmt = $pdo->prepare("
         SELECT 1
         FROM santri_detail
         WHERE wali_santri_id = ?
           AND TRIM(COALESCE(kelas, '')) <> ''
           AND LOWER(TRIM(kelas)) <> 'lulus'
+          {$dataIndukActive}
         LIMIT 1
     ");
     $stmt->execute([$waliId]);

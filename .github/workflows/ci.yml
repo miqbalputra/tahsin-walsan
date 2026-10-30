@@ -59,10 +59,15 @@ jobs:
           php tests/rapor-tests.php
           php tests/tahsin-reminder-tests.php
           php tests/api-rate-limit-tests.php
+          php -d memory_limit=256M tests/attendance-history-integration.php
+          php -d memory_limit=256M tests/attendance-form-integration.php
           php tests/security-integration.php
           php tests/backup-integration.php
           php -d memory_limit=256M tests/participant-import-integration.php
           php -d memory_limit=256M tests/participant-management-integration.php
+          php -d memory_limit=256M tests/membership-integration.php
+          php -d memory_limit=256M tests/student-progress-integration.php
+          php -d memory_limit=256M tests/achievement-integration.php
           php -d memory_limit=256M tests/participant-merge-integration.php
           php -d memory_limit=256M tests/family-integration.php
 
@@ -71,11 +76,24 @@ jobs:
           set -e
           php tests/asset-tests.php
           node tests/autosave-storage-tests.cjs
+          node tests/legacy-attendance-queue-tests.cjs
           node tests/service-worker-tests.cjs
           node tests/n8n-reminder-workflow.cjs
 
       - name: Security HTTP suite
         run: node tests/security-http-tests.cjs
+
+      - name: Attendance recovery HTTP suite
+        run: node tests/attendance-history-http-tests.cjs
+
+      - name: Achievement HTTP suite
+        run: node tests/achievement-http-tests.cjs
+
+      - name: Legacy attendance HTTP suite
+        run: node tests/legacy-attendance-http-tests.cjs
+
+      - name: Membership HTTP suite
+        run: node tests/membership-http-tests.cjs
 
       - name: Weekly reminder HTTP checks
         run: |

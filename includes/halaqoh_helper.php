@@ -4,6 +4,13 @@ require_once __DIR__ . '/autosave_helper.php';
 
 final class HalaqohManagementException extends RuntimeException {}
 
+/** Program identity exists independently of the optional autosave runtime. */
+function halaqohProgramColumnReady(PDO $pdo): bool
+{
+    try { $pdo->query('SELECT program_code FROM halaqoh LIMIT 0'); return true; }
+    catch (PDOException $error) { if ($error->getCode()==='42S22') return false; throw $error; }
+}
+
 function halaqohRequestId(array $input, bool $required = false): ?int
 {
     $raw = appRequestString($input, 'id');
@@ -26,6 +33,13 @@ function halaqohHasReferences(PDO $pdo, int $id): bool
         $statement->execute([$id]);
         if ($statement->fetchColumn() !== false) return true;
     }
+    try {
+        $statement = $pdo->prepare("SELECT id FROM presensi_history WHERE JSON_UNQUOTE(JSON_EXTRACT(context_json,'$.group_id'))=TO_BASE64(CAST(? AS BINARY)) LIMIT 1 FOR UPDATE");
+        $statement->execute([(string) $id]);
+        if ($statement->fetchColumn() !== false) return true;
+    } catch (PDOException $error) {
+        if ($error->getCode() !== '42S02') throw $error;
+    }
     return false;
 }
 
@@ -39,7 +53,7 @@ function saveManagedHalaqoh(PDO $pdo, array $input): int
     if ($name === '' || appTextLength($name) > 100) throw new HalaqohManagementException('Isi nama halaqoh maksimal 100 karakter.');
     if (!$teacher) throw new HalaqohManagementException('Pilih pengajar dari daftar yang tersedia.');
     if (!in_array($program, ['bapak', 'ibu'], true)) throw new HalaqohManagementException('Pilih program Bapak atau Ibu.');
-    $programSchema = autosaveSchemaReady($pdo);
+    $programSchema = halaqohProgramColumnReady($pdo);
     if (!$programSchema && $program !== 'bapak') throw new HalaqohManagementException('Program Ibu belum tersedia. Hubungi pengelola untuk menyiapkan pembaruan aplikasi.');
     $ownsTransaction = !$pdo->inTransaction();
     if ($ownsTransaction) $pdo->beginTransaction();

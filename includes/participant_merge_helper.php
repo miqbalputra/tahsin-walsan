@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/participant_helper.php';
 require_once __DIR__ . '/tahsin_report_helper.php';
+require_once __DIR__ . '/attendance_history_helper.php';
 
 const PARTICIPANT_MERGE_FIELDS = ['nama_bapak','no_hp','alamat','kategori','tempat_tahsin','ustadz_luar','status_aktif','lanjut_tahsin'];
 
@@ -237,6 +238,11 @@ function participantMergeApply(PDO $pdo, int $actorId, array $plan, array $input
         // Move children in place; matching names never prove the same child.
         $pdo->prepare('UPDATE santri_detail SET wali_santri_id=? WHERE wali_santri_id=?')->execute([$keepId,$sourceId]);
         participantMergeMemberships($pdo,$fresh,$choices['memberships']);
+        if (array_filter($fresh['related']['presensi']??[],static fn($row)=>(int)$row['wali_santri_id']===$sourceId)) {
+            try { attendanceHistoryRequireReady($pdo); }
+            catch (AttendanceHistoryException $failure) { throw new ParticipantManagementException($failure->getMessage()); }
+            attendanceHistoryActor($pdo,$actorId,['admin']);
+        }
         $pdo->prepare('UPDATE presensi SET wali_santri_id=? WHERE wali_santri_id=?')->execute([$keepId,$sourceId]);
         foreach (['tahsin_roster_history','tahsin_verifications','participant_changes','participant_merge_aliases','data_induk_sync_conflicts'] as $table) {
             if (!array_key_exists($table,$fresh['related'])) continue;

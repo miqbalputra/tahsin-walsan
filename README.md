@@ -565,6 +565,11 @@ Untuk database existing, jalankan migrasi additive `migrate_alumni_archive.php` 
 
 ## Autosave Tahsin Bapak dan Ibu
 
+Pengelolaan anggota kini membatasi calon menurut program, menyimpan relasi
+lama sebagai arsip, dan memeriksa konfirmasi terhadap perubahan bersamaan.
+Aturan sumber sekolah, jurnal serta pengujian dijelaskan pada
+[panduan keanggotaan halaqoh](docs/MEMBERSHIPS.md).
+
 Alur guru baru menyediakan Hari Ini, Riwayat, dan Akun; daftar seluruh peserta; serta autosave draft ke HP dan server. Presensi Hadir dan capaian menjadi catatan resmi setelah lengkap. Finalisasi alur baru mempertahankan pilihan kosong sebagai Belum Dicatat.
 
 Jalankan dry-run `php migrate_autosave.php`, kemudian migrasi additive `php migrate_autosave.php --apply` setelah backup dan pengujian staging. Atur program Bapak/Ibu pada Halaqoh dan gunakan `TAHSIN_AUTOSAVE_HALAQOH_IDS` untuk membatasi pilot. Panduan aktivasi, kontrak API, batas dukungan, dan pengujian ada di [docs/AUTOSAVE_ROLLOUT.md](docs/AUTOSAVE_ROLLOUT.md).

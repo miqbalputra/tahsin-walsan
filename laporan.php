@@ -2,6 +2,7 @@
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
 require_once 'includes/report_helper.php';
+require_once 'includes/attendance_history_helper.php';
 
 // Must be at the very top
 checkRole(['admin', 'pj_tahfidz', 'kepsek']);
@@ -25,17 +26,18 @@ $totalResults = 0;
 // Handle Delete (Admin Only)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete'
     && in_array($_SESSION['role'] ?? '', ['admin', 'pj_tahfidz'], true)) {
-    if (verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        $presensi_id = filter_var($_POST['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-        if ($presensi_id !== false) {
-            $stmt = $pdo->prepare("DELETE FROM presensi WHERE id = ?");
-            if ($stmt->execute([$presensi_id])) {
-                $message = "Data presensi berhasil dihapus!";
-                addLog($pdo, 'DELETE_PRESENSI', 'id=' . $presensi_id);
-            }
-        }
+    requireValidCsrfToken($_POST['csrf_token'] ?? null);
+    try {
+        $deleted = attendanceHistoryDeleteOne($pdo, (int) $_SESSION['user_id'], appRequestString($_POST, 'id'), appRequestString($_POST, 'record_fingerprint'));
+        $message = $deleted ? 'Presensi dibatalkan. Salinan lengkap tersedia pada Riwayat Pemulihan Presensi.' : 'Catatan sudah tidak ada; tidak ada data lain yang diubah.';
+    } catch (AttendanceHistoryException | InvalidArgumentException $failure) {
+        http_response_code(422); $error = $failure->getMessage();
+    } catch (Throwable $failure) {
+        reportApplicationError($failure, 'attendance-delete');
+        http_response_code(503); $error = 'Penghapusan belum dapat dipastikan. Periksa laporan dan riwayat pemulihan sebelum mencoba lagi.';
     }
 }
+$historyReady = attendanceHistoryReady($pdo);
 
 try {
     $totalResults = countPresensiReport($pdo, $filters, $_SESSION['role'] ?? '', $_SESSION['user_id'] ?? null);
@@ -43,6 +45,7 @@ try {
     $page = min($page, $totalPages);
     $results = fetchPresensiReport($pdo, $filters, $_SESSION['role'] ?? '', $_SESSION['user_id'] ?? null, [
         'include_phone' => true,
+        'include_history_snapshot' => true,
         'paginate' => true,
         'page' => $page,
         'limit' => $perPage,
@@ -117,6 +120,7 @@ require_once 'includes/sidebar.php';
         <?php endif; ?>
     </div>
 </div>
+<?php if (in_array($_SESSION['role'], ['admin','pj_tahfidz'], true)): ?><p class="mb-5"><a class="underline text-blue-700" href="presensi-riwayat.php">Riwayat Pemulihan Presensi</a><?php if (!$historyReady): ?> · Penyimpanan versi lama belum siap; hubungi pengelola sebelum mengubah atau menghapus catatan.<?php endif; ?></p><?php endif; ?>
 
 <!-- Main UI Section -->
 <div class="space-y-6">
@@ -186,11 +190,11 @@ require_once 'includes/sidebar.php';
     <!-- Feedback Section -->
     <?php if ($message): ?>
         <div class="bg-emerald-50 text-emerald-600 p-4 rounded-xl border border-emerald-100 italic text-sm">
-            <?php echo $message; ?>
+            <?php echo appEscape($message); ?>
         </div>
     <?php endif; ?>
     <?php if ($error): ?>
-        <div class="bg-red-50 text-red-600 p-4 rounded-xl border border-red-100 font-medium text-sm"> <?php echo $error; ?>
+        <div class="bg-red-50 text-red-600 p-4 rounded-xl border border-red-100 font-medium text-sm"> <?php echo appEscape($error); ?>
         </div>
     <?php endif; ?>
 
@@ -274,7 +278,8 @@ require_once 'includes/sidebar.php';
                                         <?php csrfField(); ?>
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
-                                        <button type="submit" class="text-red-400 hover:text-red-600 transition">Hapus</button>
+                                        <input type="hidden" name="record_fingerprint" value="<?= attendanceHistoryHash(attendanceHistoryDecode($row['saved_snapshot'])) ?>">
+                                        <button type="submit" <?= !$historyReady ? 'disabled' : '' ?> class="text-red-400 hover:text-red-600 transition">Hapus</button>
                                     </form>
                                 <?php endif; ?>
                             </td>

@@ -17,7 +17,7 @@ INSERT INTO halaqoh_members(id,halaqoh_id,wali_santri_id) VALUES(1,1,1),(2,2,2),
 INSERT INTO presensi(id,halaqoh_id,wali_santri_id,tanggal,status,alasan,jenis_materi,jilid,halaman,hasil_talaqqi,created_at) VALUES(1,2,2,'2026-10-18','H',NULL,'Iqro',1,'1-2','Lulus','2026-10-18 08:00:00'),(2,1,1,'2026-10-18','I','Berbeda',NULL,NULL,NULL,NULL,'2026-10-18 08:01:00');
 CREATE TABLE activity_logs(id INT AUTO_INCREMENT PRIMARY KEY,user_id INT,username VARCHAR(50),action VARCHAR(100),description TEXT,ip_address VARCHAR(45),created_at DATETIME) ENGINE=InnoDB;
 INSERT INTO activity_logs(user_id,action,description,created_at) VALUES(1,'INIT_CAPAIAN','Wali ID: 2','2026-10-18 08:00:00');");
-tahsinApplyMigration($pdo); autosaveApplyMigration($pdo); familyApplyMigration($pdo);
+tahsinApplyMigration($pdo); autosaveApplyMigration($pdo); familyApplyMigration($pdo); attendanceHistoryApplyMigration($pdo);
 $pdo->exec("UPDATE halaqoh SET program_code='ibu' WHERE id=3;
 INSERT INTO tahsin_capaian_awal VALUES(1,'Iqro',1,NULL,'1',1,'2026-10-18 08:00:00'),(2,'Al Quran',NULL,'Al Fatihah','1-7',1,'2026-10-18 08:01:00');
 INSERT INTO tahsin_autosave_drafts(user_id,halaqoh_id,session_date,wali_id,revision,payload_json,official_revision,context_revision,state) VALUES(4,1,'2026-10-18',1,3,'{\"status\":\"H\"}','old-keep','ctx-keep','draft'),(4,1,'2026-10-18',2,7,'{\"status\":\"I\",\"alasan\":\"Sumber\"}','old-source','ctx-source','draft'),(4,2,'2026-10-25',2,2,'{\"status\":\"S\"}','source-only','ctx-source','draft');

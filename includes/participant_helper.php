@@ -7,6 +7,15 @@ require_once __DIR__ . '/alumni_archive_helper.php';
 
 final class ParticipantManagementException extends RuntimeException {}
 
+function participantActionLabel(string $action): string
+{
+    return ['merge' => 'Gabung peserta', 'archive' => 'Arsipkan peserta', 'save' => 'Simpan peserta',
+        'class_promote' => 'Naikkan kelas', 'class_graduate' => 'Luluskan anak',
+        'class_restore' => 'Kembalikan kelas anak', 'achievement' => 'Ubah capaian catatan',
+        'baseline' => 'Ubah capaian awal', 'membership_add' => 'Tambahkan keanggotaan',
+        'membership_remove' => 'Nonaktifkan keanggotaan'][$action] ?? 'Perubahan peserta';
+}
+
 function participantApplyMigration(PDO $pdo): void
 {
     if ($pdo->inTransaction()) throw new RuntimeException('Jalankan migrasi jurnal peserta di luar transaksi data.');
@@ -168,6 +177,43 @@ function participantChildHasReferences(PDO $pdo, array $child): bool
     return false;
 }
 
+/** Read authoritative school rows, including when the optional family view is unavailable. */
+function participantSchoolSnapshot(PDO $pdo, int $id, bool $lock = false): array
+{
+    $suffix=$lock?' FOR UPDATE':''; $guardians=$relations=$students=$legacy=$children=[];
+    try {
+        $statement=$pdo->prepare('SELECT * FROM family_guardians WHERE wali_santri_id=? ORDER BY id'.$suffix); $statement->execute([$id]); $guardians=$statement->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $error) { if ($error->getCode()!=='42S02') throw $error; }
+    if ($guardians) {
+        $ids=array_column($guardians,'id'); $in=implode(',',array_fill(0,count($ids),'?'));
+        $statement=$pdo->prepare("SELECT * FROM family_relations WHERE guardian_id IN ($in) ORDER BY guardian_id,student_id".$suffix); $statement->execute($ids); $relations=$statement->fetchAll(PDO::FETCH_ASSOC);
+        $studentIds=array_values(array_unique(array_column($relations,'student_id')));
+        if ($studentIds) {
+            $in=implode(',',array_fill(0,count($studentIds),'?'));
+            $statement=$pdo->prepare("SELECT * FROM family_students WHERE id IN ($in) ORDER BY id".$suffix); $statement->execute($studentIds); $students=$statement->fetchAll(PDO::FETCH_ASSOC);
+        }
+        $current=[]; foreach ($relations as $relation) if ((int)$relation['is_current']===1) $current[(int)$relation['student_id']]=true;
+        foreach ($students as $student) if (isset($current[(int)$student['id']])) $children[]=['nama_anak'=>$student['nama_anak'],'kelas'=>$student['kelas'],'school_status'=>$student['school_status']];
+    } else {
+        $statement=$pdo->prepare('SELECT * FROM santri_detail WHERE wali_santri_id=? ORDER BY id'.$suffix); $statement->execute([$id]); $legacy=$statement->fetchAll(PDO::FETCH_ASSOC);
+        $hasDataIndukRoster = familyDataIndukRosterColumnsReady($pdo);
+        foreach ($legacy as $child) {
+            $archivedByDataInduk = $hasDataIndukRoster && !empty($child['data_induk_student_id']) && ($child['status_roster'] ?? '') === 'archived';
+            $status = $archivedByDataInduk ? 'archived' : (isAlumniClass($child['kelas']) ? 'graduated' : 'active');
+            $children[]=['nama_anak'=>$child['nama_anak'],'kelas'=>$child['kelas'],'school_status'=>$status];
+        }
+    }
+    $eligible=(bool)array_filter($children,static fn($child)=>$child['school_status']==='active'&&trim((string)$child['kelas'])!=='');
+    return compact('guardians','relations','students','legacy','children','eligible');
+}
+
+function participantCanJoinHalaqoh(PDO $pdo, int $id): bool
+{
+    $lock=$pdo->inTransaction();
+    $statement=$pdo->prepare('SELECT status_aktif,kategori FROM wali_santri WHERE id=?'.($lock?' FOR UPDATE':'')); $statement->execute([$id]); $parent=$statement->fetch(PDO::FETCH_ASSOC);
+    return $parent && (int)$parent['status_aktif']===1 && in_array($parent['kategori'],['reguler','askar'],true) && participantSchoolSnapshot($pdo,$id,$lock)['eligible'];
+}
+
 function participantAssignMemberships(PDO $pdo, int $id, array $choices): void
 {
     $snapshot = participantSnapshot($pdo, $id, true);
@@ -180,6 +226,8 @@ function participantAssignMemberships(PDO $pdo, int $id, array $choices): void
             $statement->execute([(int) $target]);
             if ($statement->fetchColumn() !== $program) throw new ParticipantManagementException('Halaqoh tidak ditemukan pada program yang dipilih. Buka kembali formulir.');
             if ((int) $snapshot['parent']['status_aktif'] !== 1) throw new ParticipantManagementException('Peserta arsip belum dapat ditempatkan di halaqoh. Pilih pertahankan/tanpa penempatan, atau aktifkan kembali jika memiliki anak yang masih sekolah.');
+            $alreadyActive=(bool)array_filter($active,static fn($row)=>(int)$row['halaqoh_id']===(int)$target);
+            if (!$alreadyActive && !participantCanJoinHalaqoh($pdo,$id)) throw new ParticipantManagementException('Penempatan baru memerlukan peserta Reguler/Askar aktif dengan anak yang masih sekolah.');
         }
         foreach ($active as $membership) {
             if ($target !== 'none' && (int) $membership['halaqoh_id'] === (int) $target) continue;
@@ -189,7 +237,7 @@ function participantAssignMemberships(PDO $pdo, int $id, array $choices): void
         $statement = $pdo->prepare('SELECT id FROM halaqoh_members WHERE wali_santri_id=? AND halaqoh_id=? ORDER BY id LIMIT 1 FOR UPDATE');
         $statement->execute([$id, (int) $target]);
         $membershipId = $statement->fetchColumn();
-        if ($membershipId) $pdo->prepare('UPDATE halaqoh_members SET archived_at=NULL,archive_reason=NULL WHERE id=?')->execute([$membershipId]);
+        if ($membershipId!==false) $pdo->prepare('UPDATE halaqoh_members SET archived_at=NULL,archive_reason=NULL WHERE id=?')->execute([$membershipId]);
         else $pdo->prepare('INSERT INTO halaqoh_members(wali_santri_id,halaqoh_id) VALUES(?,?)')->execute([$id, (int) $target]);
     }
 }

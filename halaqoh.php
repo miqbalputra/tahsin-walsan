@@ -10,7 +10,7 @@ unset($_SESSION['flash_halaqoh']);
 $error = '';
 $showHalaqohModal = false;
 $halaqohForm = ['id' => '', 'nama_halaqoh' => '', 'ustadz_id' => '', 'program_code' => 'bapak'];
-$programSchema = autosaveSchemaReady($pdo);
+$programSchema = halaqohProgramColumnReady($pdo);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireValidCsrfToken($_POST['csrf_token'] ?? '');
     foreach ($halaqohForm as $key => $default) {

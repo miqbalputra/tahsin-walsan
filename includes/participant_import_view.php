@@ -49,7 +49,7 @@ function participantImportRenderChange(array $change, string $operationLabel = '
                     </dl>
                     <?php endif; ?>
                     <?php $children=$title==='Sebelum ' . $operationLabel?($change['before']['children']??[]):($change['after_children']??[]); ?>
-                    <h5 class="font-bold mt-4 mb-2">Anak</h5>
+                    <h5 class="font-bold mt-4 mb-2"><?= appEscape($change['children_label']??'Anak') ?></h5>
                     <?php if (!$children): ?><p class="text-sm text-slate-600">Belum ada data anak.</p><?php else: ?>
                     <ul class="list-disc pl-5 text-sm space-y-2"><?php foreach ($children as $child): ?><li>ID <?= (int)$child['id'] ?>: <?= appEscape($child['nama_anak']) ?> — <?= appEscape(($child['kelas']??'')?:'kelas belum diisi') ?></li><?php endforeach; ?></ul>
                     <?php endif; ?>

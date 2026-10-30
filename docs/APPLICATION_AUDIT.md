@@ -126,7 +126,8 @@ PHP tidak mengganti prototipe tersebut.
 - Build CSS/vendor berhasil. Bukti lokal ini belum membuktikan tampilan
   browser, runtime PHP 8.2 pada image, atau aturan Apache produksi.
 - Lint 100 berkas PHP bersih dan `git diff --check` lulus.
-- Batch rapor belum didorong ke remote dan belum dideploy.
+- Pada checkpoint batch rapor, perubahan belum didorong ke remote dan belum
+  dideploy.
 
 ## Perubahan dan bukti batch backup/pemulihan
 
@@ -198,6 +199,59 @@ PHP tidak mengganti prototipe tersebut.
   dapat mengganti ID anak; perbaikannya dicatat pada batch berikutnya.
   Penggabungan duplikat belum menangani semua draft/baseline serta mapping
   pusat. Tampilan browser dan pemulihan cadangan produksi nyata belum terbukti.
+
+## Impor Santri Baru versi lama — 30 Oktober 2026
+
+- Pemadanan wali sekarang menolak beberapa pemilik dengan nama dan nomor HP
+  yang sama, kecocokan berdasarkan nama saja, dan wali yang dikelola master
+  keluarga/Data Induk. Anak yang muncul ulang dalam CSV diproses sekali.
+  Entri nomor HP berisi karakter tanpa angka, nama keluarga tanpa nomor yang
+  berulang, dan nama halaqoh yang ganda/tidak konsisten tidak dipilih diam-diam.
+- Pratinjau terikat sesi, akun, isi file dan sidik sumber data. Setelah
+  pratinjau, perubahan wali/anak/halaqoh menyebabkan konfirmasi ditolak sampai
+  pengguna meninjau ulang. Saat menyimpan, halaman memakai mutex yang sama
+  dengan formulir/impor peserta, mengunci data sumber, memeriksa peran lagi,
+  dan memastikan tabel pemicu transaksi mendukung rollback.
+- `INSERT IGNORE` pada penempatan baru dihapus; kesalahan relasi sekarang
+  membatalkan transaksi. Kunci dan mode SQL dipulihkan. File unggahan hanya
+  dihapus setelah transaksi sukses.
+- Pemeriksaan fixture lokal sintetis lulus: 7 assertion preview memastikan
+  pemadanan ambigu ditolak, duplikat tidak ditambahkan, rencana grup yang
+  bertentangan tidak memilih halaqoh, dan preview tidak menulis database.
+  Pemeriksaan HTTP lokal juga membuktikan preview basi ditolak tanpa membuat
+  anak, percobaan ulang setelah pratinjau baru berhasil satu kali tanpa
+  mengubah presensi lama, serta keluarga baru mendapat satu anak dan satu
+  penempatan halaqoh. Seluruhnya memakai database fixture; tidak ada akses
+  produksi.
+- Belum menambahkan migrasi atau jurnal baru untuk halaman lama ini.
+  Pemulihan data produksi nyata, seluruh matriks peran, dan penerimaan runtime
+  tetap menjadi syarat audit menyeluruh.
+
+## Sinkronisasi arsip Data Induk — 30 Oktober 2026
+
+- Temuan: event arsip wali hanya menonaktifkan akun, meninggalkan relasi
+  halaqoh aktif. Arsip siswa juga tidak masuk ke perhitungan kelayakan roster,
+  sehingga masih dapat ditawarkan sebagai peserta sekolah aktif.
+- Arsip wali kini menutup semua relasi aktif dengan alasan tetap; arsip anak
+  menutup relasi hanya jika tak ada anak lain yang masih sekolah. Saudara
+  dengan kelas kosong diperlakukan konservatif agar tidak menyebabkan arsip
+  otomatis yang salah. Snapshot aktif tidak membatalkan arsip manual wali.
+- Pembacaan peserta, calon anggota dan view keluarga menghormati status arsip
+  Data Induk saat kolom migrasinya tersedia. Skema lama tetap membaca dengan
+  aturan semula.
+- Operasi gagal sebelum menulis bila kolom arsip atau tabel InnoDB yang
+  diperlukan belum siap. Seluruh pengarsipan bersifat soft archive. Presensi,
+  identitas baris, relasi dan histori roster tetap utuh.
+- Verifikasi fixture database uji terisolasi lulus 13 pemeriksaan: skema lama
+  gagal aman tanpa penulisan sebelum migrasi; satu dari
+  dua saudara diarsipkan tanpa mengeluarkan wali; anak terakhir menutup relasi;
+  anak lokal berkelas kosong mempertahankan relasi; event wali berulang
+  idempoten; presensi dan identitas relasi cocok byte-for-byte; interval
+  histori ditutup; view keluarga serta calon keanggotaan membaca status anak
+  arsip. Regresi keanggotaan yang ada lulus 49 pemeriksaan.
+- Hasil fixture: `.sessions/audit-20261030/data-induk-archive-checkpoint.json`.
+  Belum ada perubahan produksi/deployment. Audit aplikasi keseluruhan masih
+  berjalan dan pemulihan cadangan produksi nyata belum dibuktikan.
 
 ## Perubahan dan bukti batch formulir peserta
 
@@ -279,6 +333,212 @@ PHP tidak mengganti prototipe tersebut.
   Apache/PHP 8.2, serta pemulihan cadangan produksi nyata. Hasil ini belum
   membuktikan seluruh aplikasi selesai diaudit.
 
+## Perubahan dan bukti batch kenaikan kelas — 29 Oktober 2026
+
+- Query promosi lama tidak mengambil `wali_santri_id` yang kemudian dipakai
+  untuk pengarsipan wali. Pengiriman ulang dapat menaikkan anak lagi dan
+  koreksi Lulus dapat menimpa kelas anak yang sebenarnya sudah berubah.
+- Tiga mutasi kelas dipisahkan dari template ke `student_progress_helper.php`.
+  Token sesi menyimpan fingerprint anak/status wali yang ditampilkan. Receipt
+  database mencegah pengiriman ulang mempromosikan dua kali; formulir basi,
+  ID di luar pilihan, array rusak, dan peran yang tidak berhak ditolak.
+- Snapshot peserta, seluruh anak, dan membership sebelum/sesudah disimpan
+  pada jurnal existing `participant_changes` dalam transaksi yang sama. Jurnal
+  kedua yang sengaja digagalkan membuktikan rollback seluruh kelas, status
+  arsip, membership, interval roster, serta jurnal pertama.
+- Promosi memakai ID wali yang benar. Wali yang masih memiliki anak sekolah
+  aktif tidak ikut diarsipkan. Koreksi kelas tidak mengaktifkan kembali wali
+  atau membership secara otomatis. Kelas NULL/tidak dikenal tidak ditebak.
+- Mapping keluarga/Data Induk tetap dilindungi saat integrasi dimatikan.
+  Riwayat memiliki label khusus perubahan kelas dan rincian sebelum/sesudah.
+  Anak dengan beberapa halaqoh hanya tampil sekali pada daftar promosi.
+- Formulir dibatasi 200 anak per proses. Kelas Mustawa pengganti tetap tersedia
+  ketika semua anak sudah Lulus. Penyimpanan ditolak jika jurnal belum siap.
+  Panduan persiapan dan koreksi tersedia di [STUDENT_PROGRESS.md](STUDENT_PROGRESS.md).
+- Lulus: 28 assertion service/pelestarian data, 199 pemeriksaan HTTP (termasuk
+  validasi array API dari batch 27 Oktober), 48 assertion formulir peserta,
+  102 assertion backup/pemulihan, 43 integrasi keluarga, dan 153 regresi
+  pelaporan. Fixture baru memakai server loopback khusus;
+  database produksi tidak diakses atau dimigrasi.
+- Pilihan hapus Alfa pada formulir libur kini tidak dicentang secara default.
+  Uji HTTP memastikan penyimpanan libur default mempertahankan seluruh
+  presensi. Pada checkpoint ini, penghapusan Alfa eksplisit, hapus presensi
+  admin/guru, dan reset masih memerlukan jurnal/pemulihan khusus. Tindak lanjut
+  ada pada batch versi presensi di bawah; audit seluruh fitur tetap berjalan.
+- Belum ada deployment batch ini. Penerimaan browser, seluruh matriks fitur,
+  dan uji pemulihan cadangan produksi nyata tetap diperlukan.
+
+## Versi presensi dan pemulihan — 29 Oktober 2026
+
+- Semua jalur UPDATE/DELETE presensi kini menyimpan versi sebelum tindakan
+  melalui trigger InnoDB. UPDATE juga menyimpan versi sesudah tindakan. NULL,
+  teks/spasi, kolom tambahan, biner, decimal dan generated dipertahankan dengan
+  encoding base64. Identitas pelaku dan UTC offset ikut disimpan.
+- Penghapusan laporan admin/guru memakai fingerprint dari row yang benar-benar
+  ditampilkan dan pemeriksaan penugasan sesi. Reset, penimpaan presensi,
+  perubahan capaian, cleanup Alfa, dan pemindahan presensi saat merge menolak
+  penulisan jika jurnal/trigger yang sesuai struktur tabel belum siap.
+- Halaqoh yang hanya tersisa pada snapshot penghapusan tetap dianggap memiliki
+  riwayat, sehingga tidak dihapus atau diganti programnya melalui aplikasi.
+- Halaman admin/PJ `presensi-riwayat.php` memiliki daftar berhalaman,
+  perbandingan versi, unduhan privat, token sesi, CSRF dan konfirmasi pemulihan.
+  Recovery mempertahankan ID, memverifikasi ulang setiap nilai, dan memiliki
+  receipt atomik. Pengiriman ulang tidak membuat salinan ganda.
+- ID yang sudah digunakan, catatan pengganti dalam sesi, pratinjau basi,
+  perubahan identitas/penugasan, dan snapshot dari instance database lain
+  menolak pemulihan otomatis. Salinan tetap dapat diperiksa pengelola.
+- Kalender libur memakai validasi server dan transaksi bersama pembersihan
+  Alfa. Snapshot kalender pada activity_logs wajib tersimpan; kegagalan log
+  membatalkan kalender, cleanup, jurnal presensi dan revisi. Hari/tanggal atau
+  input array rusak tidak masuk ke operasi penghapusan.
+  Halaman libur tidak lagi menjalankan DDL/CREATE TABLE pada request pengguna.
+- Ditemukan pula output header/sidebar riwayat guru dikirim sebelum mutasi.
+  Pengujian penolakan hak akses mengungkap status 422 menjadi 200 dan warning
+  headers-sent. Controller kini dijalankan sebelum layout. Pesan notifikasi
+  dan filter tanggal juga diamankan dari HTML/array.
+- Lulus: 27 assertion service/versi/pelestarian data, 28 pemeriksaan HTTP
+  pemulihan, 199 HTTP regresi, 44 akun/data, 47 merge, 25 autosave database,
+  41 pelaporan MySQL/MariaDB, dan 20 integrasi pengingat. Backup/pemulihan lulus
+  102 assertion dengan 35 tabel sintetis terisi dan hash penuh yang sama
+  sesudah restore terpisah serta pemasangan ulang view/trigger. Build aset,
+  19 pemeriksaan URL aset, serta 55 service worker lulus.
+- Migrasi additive `migrate_attendance_history.php --apply` diperlukan paling
+  akhir setelah migrasi struktur lainnya. Migrasi ini baru diterapkan pada
+  fixture loopback; tidak ada akses/migrasi atau deployment produksi.
+  Panduan ada di [ATTENDANCE_RECOVERY.md](ATTENDANCE_RECOVERY.md).
+- Audit belum selesai: perilaku tampilan browser/perangkat, konflik pada
+  input legacy/full-form, akses capaian, pengelolaan anggota per program,
+  cakupan fitur lainnya, runtime Apache/PHP produksi dan pemulihan backup
+  produksi nyata masih perlu bukti penerimaan.
+
+## Akses dan editor capaian — 30 Oktober 2026
+
+- Katalog capaian admin/guru memakai assembler sesi pelaporan yang sama,
+  menggantikan query latest-H global. Uji regresi awal membuktikan guru dapat
+  melihat bacaan dari halaqoh lain pada peserta yang sama; kedua rute capaian
+  kini memproyeksikan sumber sesuai penugasan. Baseline global hanya tampil
+  untuk guru dengan penempatan aktif tunggal yang sesuai.
+- Formulir native terpisah menggantikan mutasi modal tanpa kontrol versi.
+  ID/tanggal sumber terikat token akun/sesi, CSRF dan fingerprint. Formulir
+  basi ditolak; isian pengguna tetap tersedia. Receipt atomik mencegah
+  pengiriman ulang mengubah data atau waktu baseline dua kali.
+- Editor hanya menulis kolom materi yang berubah, mempertahankan ID,
+  tanggal, status, alasan, kolom tambahan, nilai NULL/biner dan draft.
+  Salinan identik satu halaqoh/sesi dikoreksi bersama; sumber konflik/lintas
+  halaqoh memerlukan keputusan Rekap Lengkap. Keputusan asal tetap tersimpan
+  dan menjadi perlu diperiksa ulang jika sumber terpilih diubah.
+- Capaian awal tetap terpisah tanpa presensi palsu. Jurnal peserta menyimpan
+  seluruh versi baseline/sumber sesi/keputusan sebelum-sesudah secara biner
+  aman dan dapat dibandingkan/diunduh. Kegagalan jurnal membatalkan seluruh
+  perubahan, termasuk histori presensi dan revisi autosave.
+- Katalog memakai output escaped, pencarian terlingkup dan pagination server.
+  Pesan kegagalan database tidak lagi dipaparkan kepada pengguna. Editor
+  menolak input array, rentang salah, teks kontrol dan CSRF tidak sah.
+- Lulus: 47 assertion service/pelestarian capaian, 22 HTTP capaian,
+  160 regresi pelaporan, 41 integrasi laporan MySQL/MariaDB, 199 HTTP keamanan,
+  44 akun/data, 19 URL aset dan 55 service worker. Backup/pemulihan lulus
+  102 assertion; isi 35 tabel cocok sesudah restore, termasuk snapshot nyata
+  perubahan baseline. Build aset dan lint 36 file PHP perubahan lulus.
+  Katalog/editor diperiksa secara visual di browser desktop dan lebar 390px;
+  ini belum menggantikan penerimaan seluruh fitur/perangkat. Sidebar existing
+  masih memerlukan pemeriksaan saat resize desktop ke ponsel tanpa reload.
+  Seluruh pengujian memakai database sintetis loopback terpisah. Panduan:
+  [ACHIEVEMENT_EDITING.md](ACHIEVEMENT_EDITING.md).
+- Belum ada deployment atau migrasi produksi. Audit keseluruhan belum selesai:
+  konflik input legacy/full-form, anggota per program, browser/perangkat,
+  runtime Apache/PHP produksi serta pemulihan backup produksi nyata masih
+  memerlukan pemeriksaan/penerimaan.
+
+## Konflik formulir presensi kompatibilitas — 30 Oktober 2026
+
+- Uji reproduksi membuktikan endpoint lama menimpa halaman/ayat yang sudah
+  diubah setelah GET. Formulir kini mengikat versi sumber/roster/jadwal,
+  dilengkapi CSRF dan receipt per pengiriman. Konflik menghasilkan 409
+  sebelum penulisan; finalisasi menolak seluruh batch jika satu versi basi.
+- Controller dijalankan sebelum header/sidebar. Kesalahan mempunyai status
+  HTTP yang benar; isian gagal tetap tersedia dan dapat dibandingkan dengan
+  formulir terbaru. Nama anak dan pesan tidak lagi dirender sebagai HTML mentah.
+- Kode controller, tampilan dan antrean client dipisahkan. Permintaan satu
+  peserta berurutan, finalisasi menunggu hasilnya, dan kiriman yang hasilnya
+  belum pasti dipertahankan untuk retry dengan ID/payload/versi yang sama.
+  Input yang belum lengkap tidak diberi label tersimpan; browser memberi
+  peringatan sebelum meninggalkan isian yang belum diakui.
+- Penulisan hanya mengubah kolom yang maknanya berubah. Snapshot lengkap
+  sebelum/sesudah dan receipt ikut transaksi, sehingga kegagalan jurnal
+  membatalkan seluruh perubahan dan revisi. Draft server tidak dihapus.
+  Input array, kontrol, panjang/rentang/jilid tidak sah ditolak; EBTA Iqro
+  didukung kedua alur. Verifikasi membedakan ID presensi nol dari NULL.
+- Migrasi additive `migrate_attendance_forms.php --apply` menambah jurnal
+  pengiriman tanpa mengganti tabel domain. GET tidak menjalankan DDL.
+  Endpoint lama yang tidak mengirim versi/token ditolak. Panduan lengkap:
+  [ATTENDANCE_FORMS.md](ATTENDANCE_FORMS.md).
+- Lulus: 29 assertion service/pelestarian formulir, 22 HTTP formulir lama,
+  17 urutan pengiriman/retry/navigasi, 28 autosave database dan 165 regresi
+  pelaporan. Regresi batch juga lulus 28 HTTP pemulihan, 199 HTTP keamanan,
+  44 akun/data dan 41 integrasi pelaporan. Backup/pemulihan lulus 102
+  assertion dengan 36 tabel terisi, termasuk jurnal formulir, dan hash penuh
+  sama sesudah pemulihan. Build, 19 URL aset, 57 service worker, lint 43 file
+  PHP perubahan dan diff check lulus. Pemeriksaan histori/aktor dilakukan
+  sekali per operasi atomik, dan deteksi dugaan baseline dibaca sekaligus
+  untuk sumber formulir, untuk mengurangi query berulang pada finalisasi.
+- Browser fixture membuktikan simpan otomatis Hadir, dialog pembatalan,
+  finalisasi dengan pengiriman sendiri, status input belum lengkap, dan
+  perlindungan tautan saat input belum tersimpan. Layout diperiksa pada
+  desktop serta lebar 390px; tombol finalisasi dirapikan setelah pemeriksaan
+  visual. Console tidak menunjukkan error pada alur akhir. Bukti lokal:
+  `.sessions/audit-20261030/legacy-finalized-desktop.png`.
+- Tidak ada akses, migrasi atau deployment produksi. Audit menyeluruh tetap berjalan,
+  terutama seluruh matriks browser/fitur,
+  Apache/PHP produksi, dan pemulihan backup produksi nyata.
+
+## Keanggotaan per program — 30 Oktober 2026
+
+- Controller lama menerima ID penempatan tanpa versi sumber, tidak memeriksa
+  penempatan ganda dalam program yang sama, dan menyaring calon anggota
+  secara global. Keanggotaan Bapak dapat menyembunyikan calon yang valid
+  untuk Ibu. Alur sekarang memisahkan katalog, validasi, transaksi, controller
+  dan tampilan; calon disaring per program, dengan konfirmasi identitas serta
+  sumber sekolah sebelum simpan. Program dibaca dari kolom halaqoh,
+  terpisah dari kesiapan trigger autosave.
+- Sumber master keluarga dibaca dari tabel wali/relasi/anak. View yang belum
+  tersedia tidak menyebabkan fallback ke anak lokal yang sudah tidak aktif.
+  Formulir peserta memakai pemeriksaan kelayakan yang sama untuk penempatan
+  baru. Riwayat lama serta pilihan mempertahankan penempatan tidak diubah
+  secara otomatis. Daftar mempunyai pencarian, pagination dan satu baris
+  per peserta; daftar anak tidak lagi dipotong oleh GROUP_CONCAT.
+- Token sesi, CSRF, fingerprint seluruh sumber dan mutex bersama dengan
+  formulir peserta mencegah pengiriman ulang serta penempatan bersamaan yang
+  bertentangan. Hak admin/PJ diperiksa ulang di dalam transaksi. Perubahan
+  relasi, interval roster dan jurnal sebelum/sesudah dilakukan atomik;
+  kegagalan jurnal membatalkan seluruh perubahan.
+- Penonaktifan mengarsipkan relasi target, termasuk relasi ganda lama,
+  tanpa menghapus biodata, anak, presensi, capaian awal, draft atau penempatan
+  program lain. Aktivasi kembali mempertahankan ID relasi lama, termasuk
+  nol. Snapshot menyimpan NULL, kolom tambahan dan data biner secara tepat;
+  riwayat menampilkan sumber anak pada saat tindakan dari snapshot tersebut.
+  Panduan: [MEMBERSHIPS.md](MEMBERSHIPS.md). Tidak ada migrasi baru khusus
+  halaman anggota dan GET tidak menjalankan DDL.
+- Lulus 49 pemeriksaan service/pelestarian dan 25 HTTP keanggotaan, termasuk
+  dua proses bersamaan, formulir basi, rollback jurnal, role dicabut,
+  arsip/aktivasi kembali dan sumber keluarga. Regresi lulus 48 pengelolaan
+  peserta, 199 HTTP keamanan, 44 akun/data dan 165 pelaporan. Backup dengan
+  tindakan keanggotaan nyata lulus 102 pemeriksaan untuk 36 tabel; hash penuh
+  sama setelah pemulihan pada database terpisah. Bukti lokal:
+  `.sessions/audit-20261023/backup-25160-70cfcc19/results.json`.
+- Build, lint 52 file PHP perubahan, 19 URL aset, 57 service worker dan
+  diff check lulus. Browser fixture membuktikan tambah anggota, hasil simpan,
+  riwayat sumber sekolah sebelum/sesudah dan daftar pada desktop serta
+  390px tanpa overflow horizontal. Console tidak mencatat warning/error.
+  Bukti `.sessions/audit-20261030/membership-verified.png` dan
+  `membership-mobile.png`; checkpoint `membership-checkpoint.json`.
+- Pada checkpoint batch anggota, perubahan masih lokal dan belum dipush.
+  Pada 30 Oktober 2026, branch audit didorong ke remote tanpa deployment.
+  Tidak ada akses atau perubahan pada database produksi. Audit menyeluruh
+  masih berjalan:
+  impor lama, seluruh matriks peran/fitur/browser, perilaku navigasi saat
+  ukuran layar berubah, Apache/PHP produksi serta pemulihan cadangan
+  produksi nyata belum seluruhnya diverifikasi.
+
 ## Menjalankan pemeriksaan lokal
 
 Database uji harus berjalan hanya pada `127.0.0.1:13317`, dengan akun fixture
@@ -292,8 +552,18 @@ php tests/rapor-tests.php
 php tests/tahsin-reminder-tests.php
 php -d extension=pdo_mysql tests/security-integration.php
 php -d extension=pdo_mysql tests/backup-integration.php
+php -d extension=pdo_mysql -d memory_limit=256M tests/attendance-history-integration.php
+php -d extension=pdo_mysql -d memory_limit=256M tests/attendance-form-integration.php
+node tests/legacy-attendance-http-tests.cjs
+node tests/legacy-attendance-queue-tests.cjs
+node tests/attendance-history-http-tests.cjs
 php -d extension=pdo_mysql -d memory_limit=256M tests/participant-import-integration.php
 php -d extension=pdo_mysql -d memory_limit=256M tests/participant-management-integration.php
+php -d extension=pdo_mysql -d memory_limit=256M tests/membership-integration.php
+node tests/membership-http-tests.cjs
+php -d extension=pdo_mysql -d memory_limit=256M tests/student-progress-integration.php
+php -d extension=pdo_mysql -d memory_limit=256M tests/achievement-integration.php
+node tests/achievement-http-tests.cjs
 php -d extension=pdo_mysql -d memory_limit=256M tests/participant-merge-integration.php
 node tests/security-http-tests.cjs
 node tests/service-worker-tests.cjs
@@ -301,6 +571,7 @@ node tests/n8n-reminder-workflow.cjs
 php -d extension=pdo_mysql tests/tahsin-mysql-integration.php
 php -d extension=pdo_mysql tests/tahsin-reminder-mysql-integration.php
 php -d extension=pdo_mysql tests/family-integration.php
+php -d extension=pdo_mysql tests/data-induk-archive-integration.php
 php -d extension=pdo_mysql tests/autosave-integration.php
 npm run build
 ```

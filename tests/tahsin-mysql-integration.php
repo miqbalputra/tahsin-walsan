@@ -27,6 +27,7 @@ $pdo->exec("INSERT INTO santri_detail (wali_santri_id, nama_anak, kelas) VALUES 
 for ($id = 1; $id <= 4; $id++) $pdo->prepare('INSERT INTO halaqoh_members (id, halaqoh_id, wali_santri_id) VALUES (?, 1, ?)')->execute([$id, $id]);
 $beforeMigration = (int) $pdo->query('SELECT COUNT(*) FROM wali_santri')->fetchColumn();
 tahsinApplyMigration($pdo);
+attendanceHistoryApplyMigration($pdo);
 expectTahsin($beforeMigration, (int) $pdo->query('SELECT COUNT(*) FROM wali_santri')->fetchColumn(), 'Migration preserves existing parents');
 expectTahsin(4, (int) $pdo->query('SELECT COUNT(*) FROM tahsin_roster_history')->fetchColumn(), 'Migration snapshots eligible current roster');
 $initialTracking = $pdo->query('SELECT tracked_from FROM tahsin_tracking WHERE id = 1')->fetchColumn();

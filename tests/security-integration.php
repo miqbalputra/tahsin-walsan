@@ -8,6 +8,7 @@ putenv('SESSION_SAVE_PATH=' . $sessionDirectory);
 require_once __DIR__ . '/../includes/auth_helper.php';
 require_once __DIR__ . '/../includes/user_helper.php';
 require_once __DIR__ . '/../includes/halaqoh_helper.php';
+require_once __DIR__ . '/../includes/attendance_history_helper.php';
 $database = 'tahsin_test_security_' . getmypid() . '_' . bin2hex(random_bytes(4));
 $pdo = new PDO('mysql:host=127.0.0.1;port=13317;charset=utf8mb4', 'root', 'tahsin_local_test', [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -18,6 +19,7 @@ $pdo->exec("USE `$database`");
 $pdo->exec(file_get_contents(__DIR__ . '/fixtures/tahsin-schema.sql'));
 $pdo->exec("CREATE TABLE activity_logs (id INT AUTO_INCREMENT PRIMARY KEY,user_id INT,username VARCHAR(50),action VARCHAR(100),description TEXT,ip_address VARCHAR(45),created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE login_attempts (id INT AUTO_INCREMENT PRIMARY KEY,ip_address VARCHAR(45),username VARCHAR(50),attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+$pdo->exec("CREATE TABLE holidays(id INT AUTO_INCREMENT PRIMARY KEY,tanggal DATE NOT NULL UNIQUE,keterangan VARCHAR(255),created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB");
 $insert = $pdo->prepare('INSERT INTO users(id,username,password,nama_lengkap,role) VALUES(?,?,?,?,?)');
 foreach ([[1,'audit_admin','Admin Uji','admin'],[2,'audit_pj','PJ Uji','pj_tahfidz'],[3,'audit_teacher','Guru Uji','ustadz'],[4,'audit_reader','Kepala Sekolah Uji','kepsek']] as [$id,$username,$name,$role]) {
     $insert->execute([$id,$username,password_hash('AuditTest-2026', PASSWORD_DEFAULT),$name,$role]);
@@ -27,6 +29,7 @@ INSERT INTO wali_santri(id,nama_bapak) VALUES(1,'Wali Uji');
 INSERT INTO santri_detail(wali_santri_id,nama_anak,kelas) VALUES(1,'Anak Uji','1A');
 INSERT INTO halaqoh_members(halaqoh_id,wali_santri_id) VALUES(1,1);
 INSERT INTO presensi(halaqoh_id,wali_santri_id,tanggal,status) VALUES(1,1,'2026-10-18','H')");
+attendanceHistoryApplyMigration($pdo);
 $checks = 0;
 function secCheck(bool $condition, string $message): void {
     global $checks; if (!$condition) throw new RuntimeException($message); $checks++;

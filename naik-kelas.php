@@ -13,35 +13,11 @@
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
 require_once 'includes/alumni_archive_helper.php';
+require_once 'includes/student_progress_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
 $pageTitle = 'Naik Kelas & Arsip Lulusan';
-
-/**
- * Hitung kelas baru dari kelas lama.
- * Mengembalikan [bool $ok, string $next].
- * - "Mustawa N Ikhwan|Akhwat" -> "Mustawa (N+1) Ikhwan|Akhwat" (N<6) atau "Lulus" (N>=6)
- * - "Mustawa N"               -> "Mustawa (N+1)"            (N<6) atau "Lulus" (N>=6)
- * - lainnya (NULL, '', "Lulus", typo) -> [false, '']  (di-skip)
- */
-function nextKelas(string $kelas): array
-{
-    $k = trim($kelas ?? '');
-    if ($k === '') {
-        return [false, ''];
-    }
-    if (preg_match('/^Mustawa\s+(\d+)\s+(Ikhwan|Akhwat)$/i', $k, $m)) {
-        $n = (int) $m[1];
-        $suffix = ucfirst(strtolower($m[2]));
-        return $n >= 6 ? [true, 'Lulus'] : [true, 'Mustawa ' . ($n + 1) . ' ' . $suffix];
-    }
-    if (preg_match('/^Mustawa\s+(\d+)$/i', $k, $m)) {
-        $n = (int) $m[1];
-        return $n >= 6 ? [true, 'Lulus'] : [true, 'Mustawa ' . ($n + 1)];
-    }
-    return [false, ''];
-}
 
 // ---------------------------------------------------------------------------
 // Export backup CSV (GET ?export=backup) — snapshot santri_detail sebelum eksekusi
@@ -71,117 +47,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireValidCsrfToken($_POST['csrf_token'] ?? '');
     $action = $_POST['action'] ?? '';
 
-    if ($action === 'bulk_naik') {
-        $ids = array_values(array_unique(array_filter(array_map('intval', $_POST['santri_ids'] ?? []), fn($x) => $x > 0)));
-        if (!$ids) {
-            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Tidak ada santri yang dipilih.'));
-        }
+    if (in_array($action, ['bulk_naik', 'bulk_lulus', 'set_kelas'], true)) {
         try {
-            $pdo->beginTransaction();
-            $placeholders = implode(',', array_fill(0, count($ids), '?'));
-            familyAssertLocalChildrenWritable($pdo, $ids);
-            $stmt = $pdo->prepare("SELECT id, kelas FROM santri_detail WHERE id IN ($placeholders) FOR UPDATE");
-            $stmt->execute($ids);
-            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-            $upd = $pdo->prepare("UPDATE santri_detail SET kelas = ? WHERE id = ?");
-            $snap = [];
-            $affectedWaliIds = [];
-            $done = 0;
-            $skip = 0;
-            foreach ($rows as $r) {
-                [$ok, $next] = nextKelas((string) $r['kelas']);
-                if (!$ok) {
-                    $skip++;
-                    continue;
-                }
-                $upd->execute([$next, $r['id']]);
-                $snap[] = $r['id'] . ':' . $r['kelas'] . '->' . $next;
-                $affectedWaliIds[] = (int) $r['wali_santri_id'];
-                $done++;
-            }
-            $archiveResult = $done > 0
-                ? archiveEligibleAlumni($pdo, $affectedWaliIds, 'AUTO_NAIK_KELAS')
-                : ['archived_wali' => 0, 'archived_memberships' => 0];
-            addLog($pdo, 'BULK_NAIK_KELAS', json_encode($snap));
-            $pdo->commit();
-
-            $msg = "$done anak berhasil dinaikkan kelas.";
-            if ($archiveResult['archived_wali'] > 0) {
-                $msg .= " {$archiveResult['archived_wali']} wali alumni otomatis diarsipkan dan keluar dari halaqoh.";
-            }
-            if ($skip > 0) {
-                $msg .= " $skip di-skip (kelas sudah Lulus / format tidak dikenal).";
-            }
-            redirectTo('naik-kelas.php?tab=naik&msg=' . rawurlencode($msg));
-        } catch (Exception $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            reportApplicationError($e, 'naik-kelas-promosi');
-            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Kenaikan kelas belum tersimpan. Coba lagi atau hubungi pengelola.'));
+            $result = studentProgressSubmit($pdo, (int) $_SESSION['user_id'], $_POST);
+            $message = $action === 'bulk_naik' ? $result['done'] . ' anak berhasil dinaikkan kelas.'
+                : ($action === 'bulk_lulus' ? $result['done'] . ' anak ditandai Lulus.' : 'Kelas anak berhasil dikembalikan.');
+            if ($result['archived_wali'] > 0) $message .= ' ' . $result['archived_wali'] . ' wali alumni otomatis diarsipkan; riwayat presensi tetap tersimpan.';
+            $message .= ' Salinan sebelum/sesudah tersedia di Riwayat Perubahan Peserta.';
+            redirectTo('naik-kelas.php?tab=naik&msg=' . rawurlencode($message));
+        } catch (StudentProgressException | InvalidArgumentException $failure) {
+            appRequestError(422, 'Perubahan kelas belum diproses', $failure->getMessage());
+        } catch (Throwable $failure) {
+            reportApplicationError($failure, 'student-progress');
+            appRequestError(503, 'Penyimpanan kelas belum dapat dipastikan', 'Periksa kelas terbaru dan Riwayat Perubahan Peserta sebelum mengirim kembali, atau hubungi pengelola.');
         }
     }
-
-    // Luluskan manual (per-pilih) — tandai santri terpilih sbg 'Lulus' langsung,
-    // tanpa lewat nextKelas. Berguna bila kenaikan kelas sudah jalan sebagian
-    // sehingga label "Mustawa 6" berisi campuran mantan M5 & M6 asli, dan admin
-    // perlu memilih manual siapa yang benar-benar lulus.
-    if ($action === 'bulk_lulus') {
-        $ids = array_values(array_unique(array_filter(array_map('intval', $_POST['santri_ids'] ?? []), fn($x) => $x > 0)));
-        if (!$ids) {
-            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Tidak ada santri yang dipilih untuk diluluskan.'));
-        }
-        try {
-            $pdo->beginTransaction();
-            $placeholders = implode(',', array_fill(0, count($ids), '?'));
-            $waliStmt = $pdo->prepare("SELECT DISTINCT wali_santri_id FROM santri_detail WHERE id IN ($placeholders) FOR UPDATE");
-            familyAssertLocalChildrenWritable($pdo, $ids);
-            $waliStmt->execute($ids);
-            $affectedWaliIds = array_map('intval', $waliStmt->fetchAll(PDO::FETCH_COLUMN));
-            $stmt = $pdo->prepare("UPDATE santri_detail SET kelas = 'Lulus' WHERE id IN ($placeholders)");
-            $stmt->execute($ids);
-            $done = $stmt->rowCount();
-            $archiveResult = $done > 0
-                ? archiveEligibleAlumni($pdo, $affectedWaliIds, 'AUTO_LULUS_MANUAL')
-                : ['archived_wali' => 0, 'archived_memberships' => 0];
-            addLog($pdo, 'BULK_LULUS_MANUAL', "Luluskan manual santri: " . implode(',', $ids));
-            $pdo->commit();
-            $msg = "$done santri ditandai 'Lulus' (manual).";
-            if ($archiveResult['archived_wali'] > 0) {
-                $msg .= " {$archiveResult['archived_wali']} wali alumni otomatis diarsipkan dan keluar dari halaqoh.";
-            }
-            redirectTo('naik-kelas.php?tab=naik&msg=' . rawurlencode($msg));
-        } catch (Exception $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            reportApplicationError($e, 'naik-kelas-lulus-manual');
-            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Pelulusan manual belum tersimpan. Coba lagi atau hubungi pengelola.'));
-        }
-    }
-
-    // Batalkan Lulus — kembalikan kelas satu santri dari 'Lulus' ke kelas yg dipilih.
-    if ($action === 'set_kelas') {
-        $sid = (int) ($_POST['santri_id'] ?? 0);
-        $kelas = trim((string) ($_POST['kelas'] ?? ''));
-        if ($sid <= 0) {
-            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('ID santri tidak valid.'));
-        }
-        if ($kelas === '' || $kelas === 'Lulus') {
-            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Pilih kelas pengganti yang valid (bukan Lulus).'));
-        }
-        try {
-            familyAssertLocalChildrenWritable($pdo, [$sid]);
-            $pdo->prepare("UPDATE santri_detail SET kelas = ? WHERE id = ?")->execute([$kelas, $sid]);
-            addLog($pdo, 'SET_KELAS_SANTRI', "santri $sid -> kelas '$kelas'");
-            redirectTo('naik-kelas.php?tab=naik&msg=' . rawurlencode("Kelas santri dikembalikan ke '$kelas'."));
-        } catch (Exception $e) {
-            reportApplicationError($e, 'naik-kelas-batal-lulus');
-            redirectTo('naik-kelas.php?tab=naik&err=' . rawurlencode('Perubahan kelas belum tersimpan. Coba lagi atau hubungi pengelola.'));
-        }
-    }
-
     if ($action === 'bulk_archive') {
         $ids = array_values(array_unique(array_filter(array_map('intval', $_POST['wali_ids'] ?? []), fn($x) => $x > 0)));
         if (!$ids) {
@@ -264,16 +144,23 @@ $error = $_GET['err'] ?? '';
 $active_tab = ($_GET['tab'] ?? '') === 'arsip' ? 'arsip' : 'naik';
 
 // Filter Tab 1
-$kelas_filter = $_GET['kelas'] ?? '';
-$halaqoh_filter = $_GET['halaqoh'] ?? '';
+try {
+    $kelas_filter = appRequestString($_GET, 'kelas');
+    $halaqoh_filter = appRequestString($_GET, 'halaqoh');
+    if ($halaqoh_filter !== '' && !filter_var($halaqoh_filter, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]])) throw new InvalidArgumentException('Pilih halaqoh dari daftar yang tersedia.');
+} catch (InvalidArgumentException $failure) {
+    appRequestError(422, 'Filter belum dapat digunakan', $failure->getMessage());
+}
 
 // Daftar kelas (exclude 'Lulus') + halaqoh untuk dropdown
 $daftar_kelas = $pdo->query("SELECT DISTINCT kelas FROM santri_detail WHERE kelas IS NOT NULL AND kelas <> '' AND kelas <> 'Lulus' ORDER BY kelas")->fetchAll(PDO::FETCH_COLUMN);
+$kelasPengganti = studentProgressClassChoices($pdo);
+$progressReady = participantSchemaReady($pdo);
 $daftar_halaqoh = $pdo->query("SELECT h.id, h.nama_halaqoh, u.nama_lengkap as nama_ustadz FROM halaqoh h JOIN users u ON h.ustadz_id = u.id ORDER BY h.nama_halaqoh")->fetchAll();
 
 // Tab 1 — pratinjau naik kelas
 $naikSql = "
-    SELECT sd.id, sd.wali_santri_id, w.nama_bapak, sd.nama_anak, sd.kelas, h.nama_halaqoh
+    SELECT sd.id, sd.wali_santri_id, w.nama_bapak, sd.nama_anak, sd.kelas, h.nama_halaqoh, w.status_aktif AS parent_active
     FROM santri_detail sd
     JOIN wali_santri w ON w.id = sd.wali_santri_id AND w.status_aktif = 1
     LEFT JOIN halaqoh_members hm ON hm.wali_santri_id = w.id AND hm.archived_at IS NULL
@@ -293,12 +180,22 @@ $naikSql .= " ORDER BY sd.kelas, w.nama_bapak, sd.nama_anak";
 $naikStmt = $pdo->prepare($naikSql);
 $naikStmt->execute($naikParams);
 $naikRows = $naikStmt->fetchAll(PDO::FETCH_ASSOC);
+$uniqueChildren = [];
+foreach ($naikRows as $row) {
+    $id = (int) $row['id'];
+    if (!isset($uniqueChildren[$id])) $uniqueChildren[$id] = $row + ['group_names' => []];
+    if ($row['nama_halaqoh'] !== null) $uniqueChildren[$id]['group_names'][$row['nama_halaqoh']] = true;
+}
+$naikRows = array_values($uniqueChildren);
+foreach ($naikRows as &$row) $row['nama_halaqoh'] = implode(', ', array_keys($row['group_names']));
+unset($row);
 
 // Hitung kelas baru per baris + daftar id yang valid (bisa dicentang)
 $naikPreview = [];
 $naikValidIds = [];
 foreach ($naikRows as $r) {
-    [$ok, $next] = nextKelas((string) $r['kelas']);
+    $next = studentProgressNextClass((string) $r['kelas']);
+    $ok = $next !== null;
     $r['next_ok'] = $ok;
     $r['next_kelas'] = $next;
     $naikPreview[] = $r;
@@ -309,12 +206,14 @@ foreach ($naikRows as $r) {
 
 // Daftar santri yang sudah ditandai 'Lulus' (untuk dibatalkan bila keliru).
 $lulusList = $pdo->query("
-    SELECT sd.id, sd.nama_anak, sd.kelas, w.nama_bapak, w.status_aktif
+    SELECT sd.id, sd.wali_santri_id, sd.nama_anak, sd.kelas, w.nama_bapak, w.status_aktif, w.status_aktif AS parent_active
     FROM santri_detail sd
     JOIN wali_santri w ON w.id = sd.wali_santri_id
     WHERE sd.kelas = 'Lulus'
     ORDER BY w.nama_bapak, sd.nama_anak
 ")->fetchAll(PDO::FETCH_ASSOC);
+
+$progressToken = studentProgressFormToken(array_merge($naikRows, $lulusList), (int) $_SESSION['user_id']);
 
 // Tab 2 — kandidat arsip (semua anak 'Lulus' dan masih aktif)
 $kandidatArsip = $pdo->query("
@@ -432,14 +331,15 @@ require_once 'includes/sidebar.php';
             <svg class="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
             </svg>
-            <?php echo htmlspecialchars($message); ?>
+            <?php echo appEscape($message); ?>
         </div>
     <?php endif; ?>
     <?php if ($error): ?>
         <div class="bg-red-50 text-red-600 p-4 rounded-xl mb-6 border border-red-100 font-semibold">
-            ⚠️ <?php echo htmlspecialchars($error); ?>
+            ⚠️ <?php echo appEscape($error); ?>
         </div>
     <?php endif; ?>
+    <?php if (!$progressReady): ?><p id="progress-unavailable" role="alert" class="bg-amber-50 border border-amber-100 rounded-2xl p-4 mb-6 text-sm text-amber-700">Penyimpanan kelas belum siap. Hubungi pengelola untuk menyiapkan riwayat perubahan sebelum mengubah kelas anak.</p><?php endif; ?>
 
     <!-- Tab switcher -->
     <div class="bg-white rounded-2xl border border-slate-100 shadow-sm mb-6 p-1.5 inline-flex gap-1">
@@ -499,6 +399,7 @@ require_once 'includes/sidebar.php';
 
         <div class="bg-amber-50 border border-amber-100 rounded-2xl p-4 mb-6 text-sm text-amber-800">
             <strong>⚠️ Sebelum eksekusi:</strong> disarankan <a href="naik-kelas.php?export=backup" class="underline font-semibold">export backup CSV</a> terlebih dahulu.
+            Proses dibatasi 200 anak per pengiriman. Kelas lama dan perubahan keanggotaan tersimpan di <a href="peserta-riwayat.php" class="underline font-semibold">Riwayat Perubahan Peserta</a>.
             Mustawa 6 akan menjadi <strong>"Lulus"</strong>. Nilai kelas yang formatnya tidak dikenal akan di-skip (tidak ikut dinaikkan).
         </div>
 
@@ -620,15 +521,16 @@ require_once 'includes/sidebar.php';
                                         onsubmit="return confirm('Kembalikan kelas santri ini dari Lulus?')">
                                         <?php csrfField(); ?>
                                         <input type="hidden" name="action" value="set_kelas">
+                                        <input type="hidden" name="progress_token" value="<?= appEscape($progressToken) ?>">
                                         <input type="hidden" name="santri_id" value="<?php echo (int) $l['id']; ?>">
-                                        <select name="kelas" required
+                                        <select name="kelas" required aria-label="Kelas pengganti untuk <?= appEscape($l['nama_anak']) ?>"
                                             class="text-sm border border-slate-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 outline-none">
                                             <option value="">— pilih kelas —</option>
-                                            <?php foreach ($daftar_kelas as $kls): ?>
+                                            <?php foreach ($kelasPengganti as $kls): ?>
                                                 <option value="<?php echo htmlspecialchars($kls); ?>"><?php echo htmlspecialchars($kls); ?></option>
                                             <?php endforeach; ?>
                                         </select>
-                                        <button type="submit"
+                                        <button type="submit" <?= !$progressReady ? 'disabled aria-describedby="progress-unavailable"' : '' ?>
                                             class="bg-amber-100 text-amber-700 px-3 py-1.5 rounded-xl text-[11px] font-bold uppercase hover:bg-amber-200 transition border border-amber-100 whitespace-nowrap">
                                             Kembalikan
                                         </button>
@@ -654,12 +556,13 @@ require_once 'includes/sidebar.php';
                 <form method="POST" action="" class="flex gap-3">
                     <?php csrfField(); ?>
                     <input type="hidden" name="action" value="bulk_naik">
+                    <input type="hidden" name="progress_token" value="<?= appEscape($progressToken) ?>">
                     <template x-for="id in selectedNaik" :key="id">
                         <input type="hidden" name="santri_ids[]" :value="id">
                     </template>
                     <button type="button" @click="showConfirmNaik = false"
                         class="flex-1 px-4 py-3 rounded-2xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 transition">Batal</button>
-                    <button type="submit"
+                    <button type="submit" <?= !$progressReady ? 'disabled aria-describedby="progress-unavailable"' : '' ?>
                         class="flex-1 px-4 py-3 rounded-2xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200">Ya, Naikkan</button>
                 </form>
             </div>
@@ -678,12 +581,13 @@ require_once 'includes/sidebar.php';
                 <form method="POST" action="" class="flex gap-3">
                     <?php csrfField(); ?>
                     <input type="hidden" name="action" value="bulk_lulus">
+                    <input type="hidden" name="progress_token" value="<?= appEscape($progressToken) ?>">
                     <template x-for="id in selectedNaik" :key="id">
                         <input type="hidden" name="santri_ids[]" :value="id">
                     </template>
                     <button type="button" @click="showConfirmLulus = false"
                         class="flex-1 px-4 py-3 rounded-2xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 transition">Batal</button>
-                    <button type="submit"
+                    <button type="submit" <?= !$progressReady ? 'disabled aria-describedby="progress-unavailable"' : '' ?>
                         class="flex-1 px-4 py-3 rounded-2xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 transition shadow-lg shadow-emerald-200">Ya, Luluskan</button>
                 </form>
             </div>

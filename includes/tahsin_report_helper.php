@@ -254,7 +254,7 @@ function tahsinResolveSession(array $records, ?array $verification = null, array
     }
     $eligible = array_values(array_filter($records, static fn($r) => !array_key_exists($r['tanggal'], $holidays)));
     if ($verification && hash_equals($fingerprint, (string) $verification['fingerprint'])) {
-        if (empty($verification['selected_presensi_id'])) {
+        if (($verification['selected_presensi_id'] ?? null) === null) {
             return array_replace($result, ['state' => 'baseline', 'missing_fields' => ['catatan ini hanya capaian awal']]);
         }
         foreach ($records as $record) {
@@ -363,7 +363,7 @@ function tahsinQuality(array $row): array
 }
 
 /** No database writes. Future obligations are never generated. */
-function tahsinAssembleReport(array $data, array $filters, string $role = 'admin', int $userId = 0, ?DateTimeImmutable $now = null, ?string $liveSession = null): array
+function tahsinAssembleReport(array $data, array $filters, string $role = 'admin', int $userId = 0, ?DateTimeImmutable $now = null, ?string $liveSession = null, bool $achievementCatalog = false): array
 {
     $now = $now ?? tahsinNow();
     $end = min($filters['end_date'], $now->format('Y-m-d'));
@@ -401,6 +401,7 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
             'nama_halaqoh' => $currentOwner['nama_halaqoh'] ?? '—', 'nama_ustadz' => $currentOwner['nama_ustadz'] ?? '—',
             'current_halaqoh_id' => $currentOwner['halaqoh_id'] ?? null,
             'details' => [], 'terakhir_hadir' => null, 'materi_terakhir' => '—', 'materi_record' => null, 'baseline_record' => null]);
+        if ($achievementCatalog) $row['latest_hadir_record'] = null;
         $relevant = tahsinOwnerMatches($currentOwner, $filters, $role, $userId);
         $allKeys = array_unique(array_merge($sessions, array_keys($records[$id] ?? [])));
         sort($allKeys);
@@ -471,6 +472,7 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
                 'in_schedule' => $inSchedule, 'verified_roster' => (bool) $known, 'deadline_at' => tahsinDeadline($session),
                 'roster_source' => $known ? 'Histori roster pada sesi' : ($session === $liveSession ? 'Roster aktif saat ini; histori sesi belum terverifikasi' : 'Histori belum tersedia')];
             if ($inSchedule && $cell['record'] && $cell['record']['status'] === 'H') {
+                if ($achievementCatalog) $row['latest_hadir_record'] = $cell['record'];
                 if (!$row['terakhir_hadir'] || $cell['record']['tanggal'] > $row['terakhir_hadir']) $row['terakhir_hadir'] = $cell['record']['tanggal'];
                 if ($cell['complete']) {
                     $row['materi_terakhir'] = tahsinMaterial($cell['record']);
@@ -494,7 +496,9 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
             }
         }
         if (!$relevant) continue;
-        if ($row['materi_record'] === null && isset($baselines[$id]) && substr($baselines[$id]['updated_at'], 0, 10) <= $end) {
+        $currentPlacements = array_unique(array_map(static fn($owner) => $owner['halaqoh_id'] . ':' . $owner['ustadz_id'], $current[$id] ?? []));
+        $baselineVisible = $role !== 'ustadz' || (count($currentPlacements) === 1 && count($matchingCurrent) >= 1);
+        if ($baselineVisible && $row['materi_record'] === null && isset($baselines[$id]) && substr($baselines[$id]['updated_at'], 0, 10) <= $end) {
             $row['materi_terakhir'] = 'Capaian awal: ' . tahsinMaterial($baselines[$id]);
             $row['baseline_record'] = $baselines[$id];
         }

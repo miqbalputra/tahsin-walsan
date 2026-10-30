@@ -11,6 +11,21 @@ function familySchemaReady(PDO $pdo): bool
     }
 }
 
+/** Data Induk roster fields are optional on databases that have not applied its additive migration. */
+function familyDataIndukRosterColumnsReady(PDO $pdo): bool
+{
+    static $readyByConnection = [];
+    $key = spl_object_id($pdo);
+    if (array_key_exists($key, $readyByConnection)) return $readyByConnection[$key];
+    try {
+        $pdo->query('SELECT data_induk_student_id,status_roster FROM santri_detail LIMIT 0');
+        return $readyByConnection[$key] = true;
+    } catch (PDOException $error) {
+        if (in_array($error->getCode(), ['42S02', '42S22'], true)) return $readyByConnection[$key] = false;
+        throw $error;
+    }
+}
+
 /** Only these fixed identifiers may be interpolated into read queries. */
 function familyChildrenTable(PDO $pdo): string
 {

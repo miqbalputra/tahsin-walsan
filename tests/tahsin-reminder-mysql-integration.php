@@ -33,6 +33,7 @@ expectTahsin(true, $legacyMonitor['sessions'][0]['current_roster_available'], 'L
 
 // Fixture history enables deterministic persistence checks for the fixed session.
 tahsinApplyMigration($pdo);
+attendanceHistoryApplyMigration($pdo);
 $pdo->exec("UPDATE tahsin_tracking SET tracked_from = '2026-10-01 00:00:00'; UPDATE tahsin_roster_history SET valid_from = '2026-10-01 00:00:00'");
 $pdo->exec("INSERT INTO presensi (halaqoh_id,wali_santri_id,tanggal,status,jenis_materi,jilid,halaman,hasil_talaqqi) VALUES (1,1,'2026-10-11','H','Iqro',2,'1-2','Lulus'),(1,2,'2026-10-11','A',NULL,NULL,NULL,NULL)");
 $valid = ['status'=>'H','jenis_materi'=>'Iqro','jilid'=>'2','halaman_dari'=>'1','halaman_sampai'=>'2','hasil_talaqqi'=>'Lulus'];

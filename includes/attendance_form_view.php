@@ -1,0 +1,478 @@
+<?php
+$quranSurahNames = [
+    'Al-Fatihah', 'Al-Baqarah', "Ali 'Imran", 'An-Nisa', "Al-Ma'idah", "Al-An'am", "Al-A'raf", 'Al-Anfal', 'At-Taubah', 'Yunus',
+    'Hud', 'Yusuf', "Ar-Ra'd", 'Ibrahim', 'Al-Hijr', 'An-Nahl', 'Al-Isra', 'Al-Kahf', 'Maryam', 'Taha',
+    'Al-Anbiya', 'Al-Hajj', "Al-Mu'minun", 'An-Nur', 'Al-Furqan', "Ash-Shu'ara", 'An-Naml', 'Al-Qasas', 'Al-Ankabut', 'Ar-Rum',
+    'Luqman', 'As-Sajdah', 'Al-Ahzab', 'Saba', 'Fatir', 'Yasin', 'As-Saffat', 'Sad', 'Az-Zumar', 'Ghafir',
+    'Fussilat', 'Ash-Shura', 'Az-Zukhruf', 'Ad-Dukhan', 'Al-Jathiyah', 'Al-Ahqaf', 'Muhammad', 'Al-Fath', 'Al-Hujurat', 'Qaf',
+    'Adh-Dhariyat', 'At-Tur', 'An-Najm', 'Al-Qamar', 'Ar-Rahman', "Al-Waqi'ah", 'Al-Hadid', 'Al-Mujadilah', 'Al-Hashr', 'Al-Mumtahanah',
+    'As-Saff', "Al-Jumu'ah", 'Al-Munafiqun', 'At-Taghabun', 'At-Talaq', 'At-Tahrim', 'Al-Mulk', 'Al-Qalam', 'Al-Haqqah', "Al-Ma'arij",
+    'Nuh', 'Al-Jinn', 'Al-Muzzammil', 'Al-Muddaththir', 'Al-Qiyamah', 'Al-Insan', 'Al-Mursalat', 'An-Naba', "An-Nazi'at", "'Abasa",
+    'At-Takwir', 'Al-Infitar', 'Al-Mutaffifin', 'Al-Inshiqaq', 'Al-Buruj', 'At-Tariq', "Al-A'la", 'Al-Ghashiyah', 'Al-Fajr', 'Al-Balad',
+    'Ash-Shams', 'Al-Lail', 'Ad-Duha', 'Ash-Sharh', 'At-Tin', 'Al-Alaq', 'Al-Qadr', 'Al-Bayyinah', 'Az-Zalzalah', 'Al-Adiyat',
+    "Al-Qari'ah", 'At-Takathur', 'Al-Asr', 'Al-Humazah', 'Al-Fil', 'Quraysh', "Al-Ma'un", 'Al-Kawthar', 'Al-Kafirun', 'An-Nasr',
+    'Al-Masad', 'Al-Ikhlas', 'Al-Falaq', 'An-Nas'
+];
+
+?>
+<div x-data="{
+    isFinalizing: false,
+    confirmModal: {
+        show: false,
+        title: '',
+        message: '',
+        callback: null
+    },
+    openConfirm(title, message, callback) {
+        this.confirmModal.title = title;
+        this.confirmModal.message = message;
+        this.confirmModal.callback = callback;
+        this.confirmModal.show = true;
+    },
+    async finalizeForm(event) { return window.legacyAttendanceFinalize(event, this); }
+}">
+    <!-- Custom Interactive Modal -->
+    <template x-teleport="body">
+        <div x-show="confirmModal.show"
+             class="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
+             x-cloak>
+            <!-- Backdrop with Blur -->
+            <div x-show="confirmModal.show"
+                 x-transition:enter="transition ease-out duration-300"
+                 x-transition:enter-start="opacity-0"
+                 x-transition:enter-end="opacity-100"
+                 x-transition:leave="transition ease-in duration-200"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0"
+                 @click="confirmModal.show = false"
+                 class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"></div>
+
+            <!-- Modal Content -->
+            <div x-show="confirmModal.show"
+                 x-transition:enter="transition ease-out duration-300"
+                 x-transition:enter-start="opacity-0 scale-95 translate-y-4"
+                 x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+                 x-transition:leave="transition ease-in duration-200"
+                 x-transition:leave-start="opacity-100 scale-100 translate-y-0"
+                 x-transition:leave-end="opacity-0 scale-95 translate-y-4"
+                 class="relative bg-white w-full max-w-sm rounded-[32px] shadow-2xl overflow-hidden border border-slate-100">
+
+                <div class="p-8 text-center">
+                    <div class="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6 ring-8 ring-red-50/50">
+                        <svg class="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                    </div>
+
+                    <h3 class="text-xl font-black text-slate-800 mb-2 uppercase tracking-tight" x-text="confirmModal.title"></h3>
+                    <p class="text-slate-500 text-sm font-medium leading-relaxed" x-text="confirmModal.message"></p>
+                </div>
+
+                <div class="flex p-4 gap-3 bg-slate-50/50">
+                    <button @click="confirmModal.show = false"
+                            class="flex-1 px-6 py-4 rounded-2xl bg-white border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-all uppercase tracking-widest">
+                        Batal
+                    </button>
+                    <button @click="confirmModal.callback(); confirmModal.show = false"
+                            class="flex-1 px-6 py-4 rounded-2xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 shadow-lg shadow-red-500/30 transition-all uppercase tracking-widest">
+                        Ya, Hapus
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <div class="mb-6 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <a href="input-presensi.php"
+                class="bg-white p-2 rounded-xl border border-slate-100 text-slate-400 hover:text-blue-600 transition">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                </svg>
+            </a>
+            <div>
+                <h2 class="text-2xl font-bold text-slate-800">
+                    <?php echo htmlspecialchars($halaqoh['nama_halaqoh']); ?>
+                </h2>
+                <p class="text-slate-500 text-sm">Input kehadiran wali santri</p>
+            </div>
+        </div>
+    </div>
+
+<?php if ($message): ?>
+    <div class="bg-emerald-50 text-emerald-600 p-6 rounded-2xl mb-6 shadow-sm border border-emerald-100 flex items-center">
+        <svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+        </svg>
+        <span class="font-bold">
+            <?= appEscape($message) ?>
+        </span>
+        <a href="dashboard.php" class="ml-auto bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-bold">Kembali ke
+            Beranda</a>
+    </div>
+<?php endif; ?>
+
+<?php if ($error): ?>
+    <div class="bg-red-50 text-red-600 p-6 rounded-2xl mb-6 border border-red-100 font-medium">
+        <?= appEscape($error) ?><p class="mt-3">Isian Anda tetap tersedia di bawah. <a class="underline" href="<?= appEscape($freshUrl) ?>" target="_blank" rel="noopener">Buka formulir terbaru untuk membandingkan</a>.</p>
+    </div>
+<?php endif; ?>
+
+<?php if ($holiday): ?>
+    <div class="bg-amber-100 border-2 border-amber-200 p-8 rounded-[2.5rem] mb-8 text-center relative overflow-hidden shadow-xl shadow-amber-50">
+        <div class="relative z-10">
+            <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+                <svg class="w-10 h-10 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+            <h3 class="text-2xl font-black text-amber-800 uppercase tracking-tight">HARI LIBUR KAJIAN</h3>
+            <p class="text-amber-700 font-bold mt-1"><?php echo htmlspecialchars($holiday['keterangan'] ?: 'Tidak ada keterangan'); ?></p>
+            <p class="text-amber-600 text-xs mt-4 max-w-sm mx-auto leading-relaxed italic">Presensi pada hari libur tidak disarankan untuk diinput sebagai 'Alpha' agar tidak merusak statistik kehadiran santri.</p>
+        </div>
+        <svg class="absolute -right-10 -bottom-10 w-48 h-48 text-amber-200/50" fill="currentColor" viewBox="0 0 24 24"><path d="M19 19H5V8h14v11zM7 10v7h10v-7H7zm15-3h-3V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2H7V5a2 2 0 0 0-2-2H1a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zM9 5h6v2H9V5z"/></svg>
+    </div>
+<?php endif; ?>
+
+<?php if ($sessionAttendance['conflicts']): ?>
+<div class="mb-5 p-4 rounded-xl bg-amber-50 text-amber-800 text-sm" role="alert">
+    <?= (int) $sessionAttendance['conflicts'] ?> peserta memiliki catatan sesi yang perlu ditinjau. Minta admin/PJ memverifikasi di
+    <a class="underline font-bold" href="../rekap-lengkap.php?<?= htmlspecialchars(http_build_query(['start_date' => tahsinSessionDate($tanggal), 'end_date' => tahsinSessionDate($tanggal), 'halaqoh_id' => $halaqoh_id])) ?>">Rekap Lengkap</a>.
+</div>
+<?php endif; ?>
+<p class="text-xs text-slate-500 mb-4">Sesi Ahad <?= date('d/m/Y', strtotime(tahsinSessionDate($tanggal))) ?>, selesai sekitar 07.30 WIB. Hadir wajib dilengkapi capaian. Saat menekan Finalisasi &amp; Simpan Semua setelah sesi selesai, peserta yang belum dipilih akan disimpan sebagai Alfa. Selama masih draft, data kosong tetap belum diinput.</p>
+<?php if (attendanceLegacyRecordedSession($pdo, $tanggal)): ?><p class="text-xs text-amber-800 bg-amber-50 p-3 rounded-lg mb-4">Histori roster sesi ini belum tersedia. Hanya peserta yang sudah memiliki catatan sesi ditampilkan untuk perbaikan; daftar peserta lama tidak ditebak dari roster sekarang.</p><?php endif; ?>
+<form method="POST" action="" data-legacy-attendance @submit.prevent="finalizeForm($event)">
+    <?php csrfField(); ?>
+    <input type="hidden" name="attendance_form_token" value="<?= appEscape($token) ?>">
+    <input type="hidden" name="attendance_operation_id" value="<?= appEscape($token) ?>">
+    <?php if (!$ready): ?><p role="alert" class="bg-amber-50 text-amber-800 p-4 mb-4 rounded-xl">Penyimpanan belum siap. Pengelola perlu menyiapkan jurnal formulir dan versi presensi sebelum mengubah catatan lama.</p><?php endif; ?>
+    <p role="alert" data-legacy-error hidden class="bg-red-50 text-red-700 rounded-xl p-4 mb-4"></p>
+    <!-- Tanggal Picker -->
+    <div
+        class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm mb-6 flex flex-col md:flex-row md:items-center gap-4">
+        <label for="legacy-date" class="font-bold text-slate-700">Tanggal Pertemuan:</label>
+        <input type="date" id="legacy-date" name="tanggal" value="<?php echo $tanggal; ?>"
+            onchange="if (legacyAttendanceCanLeave()) { window.legacyAttendanceLeaving=true; window.location.href='form-presensi.php?id=<?php echo $halaqoh_id; ?>&legacy=1&tanggal=' + this.value; } else { this.value='<?= appEscape($tanggal) ?>'; }"
+            class="px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition font-semibold text-slate-700">
+        <p class="text-xs text-slate-400 italic md:ml-4">*Pilih tanggal untuk melihat/mengedit data yang sudah ada.</p>
+    </div>
+
+    <!-- Members List -->
+    <div class="space-y-4 pb-32">
+        <?php if (empty($members)): ?>
+            <div class="bg-white p-8 rounded-3xl border border-slate-100 text-center text-slate-500">
+                <p class="font-bold text-slate-700">Belum ada peserta aktif di halaqoh ini.</p>
+                <p class="text-sm mt-2">Silakan hubungi admin untuk memeriksa penempatan peserta halaqoh.</p>
+            </div>
+        <?php endif; ?>
+        <?php foreach ($members as $m):
+            $prev = $existing_attendance[$m['id']] ?? null;
+            // Format phone for WA link
+            $wa_phone = preg_replace('/[^0-9]/', '', (string) $m['no_hp']);
+            if (strpos($wa_phone, '0') === 0) {
+                $wa_phone = '62' . substr($wa_phone, 1);
+            }
+            $display=autosaveFromRecord($prev); $display['intent']='save';
+            if (!$prev) $display['jenis_materi']='Al Quran';
+            if (is_array($submitted[$m['id']]??null)) foreach ($submitted[$m['id']] as $key=>$value) if (array_key_exists($key,$display) && is_string($value)) $display[$key]=$value;
+            foreach (['jilid','alasan','hasil_talaqqi'] as $key) $prev[$key]=$display[$key];
+            $cardConfig=['waliId'=>(int)$m['id'],'groupId'=>$halaqoh_id,'date'=>$tanggal,'status'=>$display['status'],'materi'=>$display['jenis_materi'],
+                'halamanDari'=>$display['halaman_dari'],'halamanSampai'=>$display['halaman_sampai'],'suratDari'=>$display['nama_surat_dari'],'suratSampai'=>$display['nama_surat_sampai'],'intent'=>$display['intent'],'wasSaved'=>isset($prev['id'])];
+            ?>
+            <div x-data="legacyAttendanceCard(<?= appJsonAttribute($cardConfig) ?>, (title, message, callback) => openConfirm(title, message, callback))" @input="markEdited()" @input.debounce.500ms="if ($event.target.matches('input[type=text]')) saveDraft()" @change="markEdited()" @change.debounce.500ms="saveDraft()"
+                class="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden transition-all duration-300 relative"
+                :class="status === 'H' ? 'ring-2 ring-blue-500 ring-offset-2' : (status === 'A' ? 'bg-red-50/30' : '')">
+
+                <input type="hidden" data-entry-revision name="entry_revisions[<?= (int)$m['id'] ?>]" value="<?= appEscape($form['revisions'][(int)$m['id']]??'') ?>">
+                <input type="hidden" name="presensi[<?php echo $m['id']; ?>][intent]" x-model="intent">
+
+                <!-- Saving Indicator -->
+                <div class="absolute top-4 right-4 flex items-center gap-1.5 pointer-events-none">
+                    <div x-show="isSaving" class="flex items-center text-[10px] font-bold text-blue-500 animate-pulse">
+                        <svg class="w-3 h-3 mr-1 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3"
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Menyimpan...
+                    </div>
+                    <div x-show="isSaved" x-transition
+                        class="flex items-center text-[10px] font-bold text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                        <svg class="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Tersimpan
+                    </div>
+                </div>
+
+                <!-- Main Member Info & Status -->
+                <div class="p-6">
+                    <p x-show="saveError" x-text="saveError" role="alert" class="mb-4 text-xs text-amber-800 bg-amber-50 rounded-lg p-3"></p>
+                    <button type="button" x-show="retryRequest" @click="retrySend()" :disabled="isSaving" class="underline text-blue-700 mb-4">Ulangi pengiriman yang sama</button>
+                    <a x-show="blocked" class="block underline text-blue-700 mb-4" href="<?= appEscape($freshUrl) ?>" target="_blank" rel="noopener">Buka formulir terbaru untuk membandingkan</a>
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div class="flex items-center gap-4">
+                            <div
+                                class="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 font-bold text-lg">
+                                <?= appEscape(tahsinTextLimit($m['nama_bapak'],1)) ?>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h4 class="font-bold text-slate-800">
+                                        <?php echo htmlspecialchars($m['nama_bapak']); ?>
+                                    </h4>
+                                    <?php if ($wa_phone): ?>
+                                        <a href="https://wa.me/<?php echo $wa_phone; ?>" target="_blank" rel="noopener noreferrer"
+                                            class="p-1 px-1.5 bg-emerald-100 text-emerald-600 rounded-lg hover:bg-emerald-600 hover:text-white transition-all flex items-center gap-1">
+                                            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                                                <path
+                                                    d="M20.2 3.8C18.1 1.7 15.2 0.5 12.1 0.5c-6.1 0-11.1 5-11.1 11.1 0 2 0.5 3.9 1.5 5.6L1 23l5.8-1.5c1.6 0.9 3.5 1.3 5.3 1.3 6.1 0 11.1-5 11.1-11.1 0-3-1.2-5.8-3.3-8ZM12.1 20.8c-1.7 0-3.3-0.4-4.7-1.3l-0.3-0.2L3.6 20.5l1.2-3.4-0.2-0.3c-0.9-1.5-1.4-3.2-1.4-5 0-5.1 4.2-9.3 9.3-9.3 2.5 0 4.8 1 6.6 2.7 1.7 1.7 2.7 4.1 2.7 6.6 0 5.1-4.2 9.3-9.3 9.3Zm5.1-7c-0.3-0.1-1.7-0.9-1.9-1-0.3-0.1-0.5-0.1-0.7 0.1-0.2 0.3-0.8 1-1 1.2-0.2 0.2-0.3 0.2-0.6 0.1-0.3-0.1-1.2-0.5-2.4-1.5-0.9-0.8-1.5-1.8-1.6-2.1-0.2-0.3 0-0.5 0.1-0.6 0.1-0.1 0.3-0.3 0.4-0.5 0.1-0.2 0.2-0.3 0.3-0.5 0.1-0.2 0-0.3-0.1-0.5-0.1-0.1-0.7-1.7-1-2.4-0.3-0.6-0.6-0.5-0.7-0.5h-0.7c-0.2 0-0.6 0.1-0.9 0.4-0.3 0.3-1.1 1.1-1.1 2.7s1.2 3.1 1.3 3.3c0.1 0.2 2.3 3.5 5.5 4.9 0.8 0.3 1.4 0.5 1.9 0.7 0.8 0.2 1.5 0.2 2.1 0.1 0.6-0.1 1.9-0.8 2.2-1.5 0.3-0.7 0.3-1.3 0.2-1.5-0.1-0.2-0.3-0.3-0.6-0.4Z" />
+                                            </svg>
+                                            <span class="text-[9px] font-black uppercase tracking-widest hidden sm:inline">WhatsApp</span>
+                                        </a>
+                                    <?php endif; ?>
+                                </div>
+                                <?php if ($m['info_anak']): ?>
+                                    <p class="text-[10px] text-blue-500 font-semibold leading-tight mt-0.5">
+                                        Anak: <?= str_replace('&lt;br&gt;','<br>',appEscape($m['info_anak'])) ?>
+                                    </p>
+                                <?php endif; ?>
+                                <p class="text-[9px] text-slate-400 mt-1">ID Peserta: #
+                                    <?php echo $m['id']; ?>
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Status Selection (Mobile Friendly Buttons) -->
+                        <div class="flex flex-wrap gap-2">
+                            <label class="cursor-pointer focus-within:ring-2 focus-within:ring-blue-500 rounded-xl">
+                                <input type="radio" name="presensi[<?php echo $m['id']; ?>][status]" value="H"
+                                    x-model="status" @change="intent = 'save'" class="sr-only">
+                                <div :class="status === 'H' ? 'bg-blue-600 text-white scale-105' : 'bg-slate-50 text-slate-500'"
+                                    class="px-5 py-2 rounded-xl font-bold text-sm transition-all border border-transparent shadow-sm">
+                                    Hadir</div>
+                            </label>
+                            <label class="cursor-pointer focus-within:ring-2 focus-within:ring-blue-500 rounded-xl">
+                                <input type="radio" name="presensi[<?php echo $m['id']; ?>][status]" value="S"
+                                    x-model="status" @change="intent = 'save'" class="sr-only">
+                                <div :class="status === 'S' ? 'bg-emerald-500 text-white scale-105' : 'bg-slate-50 text-slate-500'"
+                                    class="px-5 py-2 rounded-xl font-bold text-sm transition-all border border-transparent shadow-sm">
+                                    Sakit</div>
+                            </label>
+                            <label class="cursor-pointer focus-within:ring-2 focus-within:ring-blue-500 rounded-xl">
+                                <input type="radio" name="presensi[<?php echo $m['id']; ?>][status]" value="I"
+                                    x-model="status" @change="intent = 'save'" class="sr-only">
+                                <div :class="status === 'I' ? 'bg-amber-500 text-white scale-105' : 'bg-slate-50 text-slate-500'"
+                                    class="px-5 py-2 rounded-xl font-bold text-sm transition-all border border-transparent shadow-sm">
+                                    Izin</div>
+                            </label>
+                            <label class="cursor-pointer focus-within:ring-2 focus-within:ring-blue-500 rounded-xl">
+                                <input type="radio" name="presensi[<?php echo $m['id']; ?>][status]" value="A"
+                                    x-model="status" @change="intent = 'save'" class="sr-only">
+                                <div :class="status === 'A' ? 'bg-red-500 text-white scale-105' : 'bg-slate-50 text-slate-500'"
+                                    class="px-5 py-2 rounded-xl font-bold text-sm transition-all border border-transparent shadow-sm">
+                                    Alpha</div>
+                            </label>
+
+                            <!-- Button Batal / Reset -->
+                            <button type="button" x-show="status" @click="resetSelection()"
+                                class="px-3 py-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all border border-dashed border-slate-200 text-xs font-bold uppercase flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                </svg>
+                                Batal
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Additional Context Fields -->
+                    <div x-show="status === 'S' || status === 'I'" x-cloak x-transition
+                        class="mt-4 pt-4 border-t border-slate-50">
+                        <label for="legacy-alasan-<?= (int)$m['id'] ?>" class="block text-xs font-bold text-slate-400 uppercase mb-2">Alasan / Keterangan: <span class="text-red-500">*</span></label>
+                        <input type="text" id="legacy-alasan-<?= (int)$m['id'] ?>" name="presensi[<?php echo $m['id']; ?>][alasan]"
+                            :required="status === 'S' || status === 'I'"
+                            value="<?php echo htmlspecialchars($prev['alasan'] ?? ''); ?>"
+                            class="w-full px-4 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder="Tulis alasan...">
+                    </div>
+
+                    <!-- Achievement Form (Only for Hadir) -->
+                    <div x-show="status === 'H'" x-cloak x-transition
+                        class="mt-6 pt-6 border-t border-slate-100 bg-blue-50/20 -mx-6 -mb-6 p-6">
+                        <h5 class="text-sm font-bold text-blue-600 mb-4 flex items-center">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                            Pencapaian Materi
+                        </h5>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div>
+                                <label for="legacy-jenis_materi-<?= (int)$m['id'] ?>" class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Jenis
+                                    Materi <span class="text-red-500">*</span></label>
+                                <select id="legacy-jenis_materi-<?= (int)$m['id'] ?>" name="presensi[<?php echo $m['id']; ?>][jenis_materi]" x-model="materi"
+                                    @change="halamanDari = ''; halamanSampai = ''; suratDari = ''; suratSampai = ''"
+                                    :required="status === 'H'"
+                                    class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                    <option value="Iqro" <?php echo ($prev['jenis_materi'] ?? '') === 'Iqro' ? 'selected' : ''; ?>>Iqro</option>
+                                    <option value="Al Quran" <?php echo ($prev['jenis_materi'] ?? '') === 'Al Quran' ? 'selected' : ''; ?>>Al Quran</option>
+                                </select>
+                            </div>
+
+                            <template x-if="materi === 'Iqro'">
+                                <div class="contents">
+                                    <div>
+                                        <label for="legacy-jilid-<?= (int)$m['id'] ?>" class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Jilid <span class="text-red-500">*</span></label>
+                                        <select id="legacy-jilid-<?= (int)$m['id'] ?>" name="presensi[<?php echo $m['id']; ?>][jilid]"
+                                            :required="status === 'H' && materi === 'Iqro'"
+                                            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="">Pilih Jilid</option>
+                                            <?php for ($j = 1; $j <= 6; $j++): ?>
+                                                <option value="<?php echo $j; ?>" <?php echo ($prev['jilid'] ?? '') == $j ? 'selected' : ''; ?>>Jilid
+                                                    <?php echo $j; ?>
+                                                </option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label for="legacy-halaman_dari-<?= (int)$m['id'] ?>" class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Halaman Dari <span class="text-red-500">*</span></label>
+                                        <select id="legacy-halaman_dari-<?= (int)$m['id'] ?>" name="presensi[<?php echo $m['id']; ?>][halaman_dari]" x-model="halamanDari"
+                                            :required="status === 'H' && materi === 'Iqro'"
+                                            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="">Pilih</option>
+                                            <?php for ($h = 1; $h <= 36; $h++): ?>
+                                                <option value="<?php echo $h; ?>"><?php echo $h; ?></option>
+                                            <?php endfor; ?>
+                                            <option value="EBTA">EBTA</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label for="legacy-halaman_sampai-<?= (int)$m['id'] ?>" class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Halaman Sampai <span class="text-red-500">*</span></label>
+                                        <select id="legacy-halaman_sampai-<?= (int)$m['id'] ?>" name="presensi[<?php echo $m['id']; ?>][halaman_sampai]" x-model="halamanSampai"
+                                            :required="status === 'H' && materi === 'Iqro'"
+                                            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="">Pilih</option>
+                                            <?php for ($h = 1; $h <= 36; $h++): ?>
+                                                <option value="<?php echo $h; ?>"><?php echo $h; ?></option>
+                                            <?php endfor; ?>
+                                            <option value="EBTA">EBTA</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <template x-if="materi === 'Al Quran'">
+                                <div class="contents">
+                                    <div>
+                                        <label for="legacy-nama_surat_dari-<?= (int)$m['id'] ?>" class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nama Surat Dari <span class="text-red-500">*</span></label>
+                                        <select id="legacy-nama_surat_dari-<?= (int)$m['id'] ?>" name="presensi[<?php echo $m['id']; ?>][nama_surat_dari]" x-model="suratDari"
+                                            :required="status === 'H' && materi === 'Al Quran'"
+                                            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="">Pilih Surat</option>
+                                            <?php foreach ($quranSurahNames as $surah): ?>
+                                                <option value="<?php echo htmlspecialchars($surah); ?>"><?php echo htmlspecialchars($surah); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label for="legacy-halaman_dari-<?= (int)$m['id'] ?>" class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Dari Ayat <span class="text-red-500">*</span></label>
+                                        <select id="legacy-halaman_dari-<?= (int)$m['id'] ?>" name="presensi[<?php echo $m['id']; ?>][halaman_dari]" x-model="halamanDari"
+                                            :required="status === 'H' && materi === 'Al Quran'"
+                                            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="">Pilih Ayat</option>
+                                            <?php for ($a = 1; $a <= 285; $a++): ?>
+                                                <option value="<?php echo $a; ?>"><?php echo $a; ?></option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label for="legacy-nama_surat_sampai-<?= (int)$m['id'] ?>" class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nama Surat Sampai <span class="text-red-500">*</span></label>
+                                        <select id="legacy-nama_surat_sampai-<?= (int)$m['id'] ?>" name="presensi[<?php echo $m['id']; ?>][nama_surat_sampai]" x-model="suratSampai"
+                                            :required="status === 'H' && materi === 'Al Quran'"
+                                            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="">Pilih Surat</option>
+                                            <?php foreach ($quranSurahNames as $surah): ?>
+                                                <option value="<?php echo htmlspecialchars($surah); ?>"><?php echo htmlspecialchars($surah); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label for="legacy-halaman_sampai-<?= (int)$m['id'] ?>" class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Sampai Ayat <span class="text-red-500">*</span></label>
+                                        <select id="legacy-halaman_sampai-<?= (int)$m['id'] ?>" name="presensi[<?php echo $m['id']; ?>][halaman_sampai]" x-model="halamanSampai"
+                                            :required="status === 'H' && materi === 'Al Quran'"
+                                            class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="">Pilih Ayat</option>
+                                            <?php for ($a = 1; $a <= 285; $a++): ?>
+                                                <option value="<?php echo $a; ?>"><?php echo $a; ?></option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Hasil
+                                    Talaqqi <span class="text-red-500">*</span></label>
+                                <div class="flex gap-2 h-[38px]">
+                                    <label class="flex-1 cursor-pointer focus-within:ring-2 focus-within:ring-blue-500 rounded-lg">
+                                        <input type="radio" name="presensi[<?php echo $m['id']; ?>][hasil_talaqqi]"
+                                            value="Lulus" class="sr-only peer"
+                                            :required="status === 'H'"
+                                            <?php echo ($prev['hasil_talaqqi'] ?? '') === 'Lulus' ? 'checked' : ''; ?>>
+                                        <div
+                                            class="h-full flex items-center justify-center rounded-lg border border-slate-200 text-xs font-bold text-slate-500 peer-checked:bg-emerald-500 peer-checked:text-white peer-checked:border-emerald-500 transition-all">
+                                            LULUS</div>
+                                    </label>
+                                    <label class="flex-1 cursor-pointer focus-within:ring-2 focus-within:ring-blue-500 rounded-lg">
+                                        <input type="radio" name="presensi[<?php echo $m['id']; ?>][hasil_talaqqi]"
+                                            value="Ulang" class="sr-only peer"
+                                            :required="status === 'H'"
+                                            <?php echo ($prev['hasil_talaqqi'] ?? '') === 'Ulang' ? 'checked' : ''; ?>>
+                                        <div
+                                            class="h-full flex items-center justify-center rounded-lg border border-slate-200 text-xs font-bold text-slate-500 peer-checked:bg-red-500 peer-checked:text-white peer-checked:border-red-500 transition-all">
+                                            ULANG</div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    </div>
+
+    <!-- Floating Save Button -->
+    <div
+        class="fixed bottom-0 left-0 right-0 p-4 lg:left-64 bg-white/80 backdrop-blur-md border-t border-slate-100 z-40">
+        <div class="max-w-4xl mx-auto flex flex-col md:flex-row items-center gap-4">
+            <div class="hidden md:flex md:flex-1 min-w-0 items-center text-xs text-slate-400 font-medium italic">
+                <svg class="w-4 h-4 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                Isian lengkap disimpan otomatis. Isian belum lengkap tetap di halaman. Finalisasi setelah 07.30 WIB mengisi peserta yang belum dipilih sebagai Alfa.
+            </div>
+            <button type="submit" :disabled="isFinalizing || <?= !$ready?'true':'false' ?>"
+                :class="isFinalizing ? 'cursor-wait opacity-70' : 'hover:bg-blue-700 active:scale-[0.98]'"
+                class="w-full md:w-auto md:flex-none shrink-0 whitespace-nowrap px-6 bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-blue-200 transition-all flex justify-center items-center gap-2">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4">
+                    </path>
+                </svg>
+                <span x-text="isFinalizing ? 'MENYIMPAN SEMUA...' : 'FINALISASI & SIMPAN SEMUA'"></span>
+            </button>
+        </div>
+    </div>
+</form>
+</div>
+
+
+
+<script src="<?= appEscape(appAssetUrl('assets/js/tahsin-legacy.js')) ?>"></script>

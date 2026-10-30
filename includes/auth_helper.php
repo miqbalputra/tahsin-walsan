@@ -210,6 +210,9 @@ function refreshAuthenticatedSession(PDO $pdo): bool
     $_SESSION['nama_lengkap'] = $user['nama_lengkap'];
     $_SESSION['role'] = $user['role'];
     $_SESSION['auth_password_fingerprint'] = $fingerprint;
+    if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
+        $pdo->prepare('SET @tahsin_actor_id=?,@tahsin_actor_name=?')->execute([(int) $user['id'], $user['nama_lengkap']]);
+    }
     return true;
 }
 

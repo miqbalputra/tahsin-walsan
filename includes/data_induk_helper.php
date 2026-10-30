@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/database_helper.php';
 /**
  * Read-model integration for Data Induk Yayasan.
  * This file deliberately contains no page-load synchronization: remote calls are
@@ -13,6 +14,92 @@ final class DataIndukException extends RuntimeException
     {
         parent::__construct($message);
         $this->statusCode = $statusCode;
+    }
+}
+
+/** Fail before a roster write if its archive columns or rollback guarantees are missing. */
+function dataIndukRequireRosterArchive(PDO $pdo): void
+{
+    try {
+        $pdo->query('SELECT archived_at,archive_reason FROM halaqoh_members LIMIT 0');
+    } catch (PDOException $error) {
+        if (in_array($error->getCode(), ['42S02', '42S22'], true)) {
+            throw new DataIndukException('Migrasi arsip anggota halaqoh belum siap. Sinkronisasi dibatalkan tanpa mengubah roster.', 0);
+        }
+        throw $error;
+    }
+    appRequireTransactionalTables($pdo, ['wali_santri', 'santri_detail', 'halaqoh_members', 'data_induk_sync_conflicts']);
+}
+
+function dataIndukArchiveMemberships(PDO $pdo, int $waliId, string $reason): int
+{
+    $statement = $pdo->prepare('SELECT id FROM halaqoh_members WHERE wali_santri_id=? AND archived_at IS NULL ORDER BY id FOR UPDATE');
+    $statement->execute([$waliId]);
+    if (!$statement->fetchAll(PDO::FETCH_COLUMN)) return 0;
+    $statement = $pdo->prepare('UPDATE halaqoh_members SET archived_at=CURRENT_TIMESTAMP,archive_reason=? WHERE wali_santri_id=? AND archived_at IS NULL');
+    $statement->execute([$reason, $waliId]);
+    return $statement->rowCount();
+}
+
+/** Apply a guardian archive without deleting the guardian, children, attendance, or membership rows. */
+function dataIndukArchiveGuardian(PDO $pdo, string $masterId): array
+{
+    if ($masterId === '' || strlen($masterId) > 36) throw new DataIndukException('ID wali dari Data Induk tidak valid.');
+    dataIndukRequireRosterArchive($pdo);
+    $ownsTransaction = !$pdo->inTransaction();
+    if ($ownsTransaction) $pdo->beginTransaction();
+    try {
+        $statement = $pdo->prepare('SELECT id FROM wali_santri WHERE data_induk_guardian_id=? LIMIT 1 FOR UPDATE');
+        $statement->execute([$masterId]);
+        $waliId = $statement->fetchColumn();
+        if ($waliId === false) {
+            if ($ownsTransaction) $pdo->commit();
+            return ['wali_id'=>null,'archived_memberships'=>0];
+        }
+        $waliId = (int)$waliId;
+        $pdo->prepare('UPDATE wali_santri SET status_aktif=0 WHERE id=? AND status_aktif<>0')->execute([$waliId]);
+        $archived = dataIndukArchiveMemberships($pdo, $waliId, 'DATA_INDUK_GUARDIAN_ARCHIVE');
+        if ($ownsTransaction) $pdo->commit();
+        return ['wali_id'=>$waliId,'archived_memberships'=>$archived];
+    } catch (Throwable $error) {
+        if ($ownsTransaction && $pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
+    }
+}
+
+/** Archived children stop qualifying a guardian for new/current roster placement; history remains intact. */
+function dataIndukArchiveStudent(PDO $pdo, string $masterId): array
+{
+    if ($masterId === '' || strlen($masterId) > 36) throw new DataIndukException('ID anak dari Data Induk tidak valid.');
+    dataIndukRequireRosterArchive($pdo);
+    $lookup = $pdo->prepare('SELECT wali_santri_id FROM santri_detail WHERE data_induk_student_id=? LIMIT 1');
+    $lookup->execute([$masterId]);
+    $initialWali = $lookup->fetchColumn();
+    if ($initialWali === false) return ['wali_id'=>null,'archived_memberships'=>0];
+    $initialWali = (int)$initialWali;
+    $ownsTransaction = !$pdo->inTransaction();
+    if ($ownsTransaction) $pdo->beginTransaction();
+    try {
+        $statement = $pdo->prepare('SELECT id FROM wali_santri WHERE id=? FOR UPDATE');
+        $statement->execute([$initialWali]);
+        if ($statement->fetchColumn() === false) throw new DataIndukException('Wali anak tidak ditemukan; perubahan dibatalkan.');
+        $statement = $pdo->prepare('SELECT wali_santri_id FROM santri_detail WHERE data_induk_student_id=? FOR UPDATE');
+        $statement->execute([$masterId]);
+        $currentWali = $statement->fetchColumn();
+        if ($currentWali === false || (int)$currentWali !== $initialWali) throw new DataIndukException('Relasi wali berubah saat sinkronisasi; ulangi sinkronisasi.');
+        $waliId = (int)$currentWali;
+        $pdo->prepare("UPDATE santri_detail SET status_roster='archived' WHERE data_induk_student_id=? AND status_roster<>'archived'")->execute([$masterId]);
+        $statement = $pdo->prepare('SELECT id FROM santri_detail WHERE wali_santri_id=? ORDER BY id FOR UPDATE');
+        $statement->execute([$waliId]);
+        $statement->fetchAll(PDO::FETCH_COLUMN);
+        $statement = $pdo->prepare("SELECT 1 FROM santri_detail WHERE wali_santri_id=? AND LOWER(TRIM(COALESCE(kelas,'')))<>'lulus' AND (data_induk_student_id IS NULL OR status_roster='active') LIMIT 1");
+        $statement->execute([$waliId]);
+        $archived = $statement->fetchColumn() ? 0 : dataIndukArchiveMemberships($pdo, $waliId, 'DATA_INDUK_STUDENT_ARCHIVE');
+        if ($ownsTransaction) $pdo->commit();
+        return ['wali_id'=>$waliId,'archived_memberships'=>$archived];
+    } catch (Throwable $error) {
+        if ($ownsTransaction && $pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
     }
 }
 
@@ -233,13 +320,15 @@ function dataIndukSyncRoster(PDO $pdo): array
     if (familySchemaReady($pdo) && (int) $pdo->query('SELECT COUNT(*) FROM family_guardians')->fetchColumn() > 0) {
         throw new DataIndukException('Master keluarga sudah terhubung. Pemetaan ID ekspor sekolah ke UUID Data Induk diperlukan sebelum sinkronisasi roster diaktifkan.');
     }
+    dataIndukRequireRosterArchive($pdo);
     $unitId = dataIndukConfig()['unit_id'];
     $students = dataIndukFetchAll('students', ['unitId' => $unitId]);
     $guardians = dataIndukFetchAll('guardians', ['unitId' => $unitId]);
     $links = dataIndukFetchAll('family-links', ['unitId' => $unitId]);
     $classes = dataIndukClassNames($pdo);
     $guardianIds = [];
-    $stats = ['students' => count($students), 'guardians' => 0, 'children' => 0, 'conflicts' => 0];
+    $stats = ['students' => count($students), 'guardians' => 0, 'children' => 0, 'conflicts' => 0, 'archived_memberships' => 0];
+    $affectedWaliIds = [];
     // Presensi Tahsin Bapak has a single wali-bapak model. Other family links
     // are fetched for validation but are not forced into this local table.
     $fatherByStudent = [];
@@ -255,11 +344,13 @@ function dataIndukSyncRoster(PDO $pdo): array
     try {
         foreach ($guardians as $guardian) {
             $masterId = (string) $guardian['id'];
-            if (!isset($fatherGuardianIds[$masterId])) {
+            $mappedWaliId = dataIndukMappedId($pdo, 'wali_santri', 'data_induk_guardian_id', $masterId);
+            if (!isset($fatherGuardianIds[$masterId]) && $mappedWaliId === null) {
                 continue;
             }
-            $guardianIds[$masterId] = dataIndukMappedId($pdo, 'wali_santri', 'data_induk_guardian_id', $masterId);
+            $guardianIds[$masterId] = $mappedWaliId;
             if ($guardianIds[$masterId] === null) {
+                if (empty($fatherGuardianIds[$masterId])) continue;
                 $candidate = $pdo->prepare('SELECT id FROM wali_santri WHERE LOWER(REPLACE(REPLACE(no_hp,\' \',\'\'),\'-\',\'\'))=? AND LOWER(nama_bapak)=? LIMIT 2');
                 $candidate->execute([dataIndukNormalize((string) ($guardian['phone'] ?? '')), dataIndukNormalize((string) ($guardian['fullName'] ?? ''))]);
                 $matches = $candidate->fetchAll(PDO::FETCH_COLUMN);
@@ -268,12 +359,21 @@ function dataIndukSyncRoster(PDO $pdo): array
                     $stats['conflicts']++;
                     continue;
                 }
-                $insert = $pdo->prepare('INSERT INTO wali_santri (nama_bapak,no_hp,alamat,kategori,status_aktif,data_induk_guardian_id) VALUES (?,?,?,?,1,?)');
-                $insert->execute([$guardian['fullName'] ?? 'Tanpa Nama', $guardian['phone'] ?? null, $guardian['address'] ?? null, 'reguler', $masterId]);
+                $isArchived = empty($guardian['archivedAt']) ? 0 : 1;
+                $insert = $pdo->prepare('INSERT INTO wali_santri (nama_bapak,no_hp,alamat,kategori,status_aktif,data_induk_guardian_id) VALUES (?,?,?,?,?,?)');
+                $insert->execute([$guardian['fullName'] ?? 'Tanpa Nama', $guardian['phone'] ?? null, $guardian['address'] ?? null, 'reguler', $isArchived ? 0 : 1, $masterId]);
                 $guardianIds[$masterId] = (int) $pdo->lastInsertId();
+                $affectedWaliIds[$guardianIds[$masterId]] = true;
             } else {
-                $update = $pdo->prepare('UPDATE wali_santri SET nama_bapak=?, no_hp=?, alamat=?, status_aktif=? WHERE id=?');
-                $update->execute([$guardian['fullName'] ?? '', $guardian['phone'] ?? null, $guardian['address'] ?? null, empty($guardian['archivedAt']) ? 1 : 0, $guardianIds[$masterId]]);
+                // A current Data Induk snapshot must not silently reactivate a local manual archive.
+                $isArchived = empty($guardian['archivedAt']) ? 0 : 1;
+                $update = $pdo->prepare('UPDATE wali_santri SET nama_bapak=?, no_hp=?, alamat=?, status_aktif=IF(?,0,status_aktif) WHERE id=?');
+                $update->execute([$guardian['fullName'] ?? '', $guardian['phone'] ?? null, $guardian['address'] ?? null, $isArchived, $guardianIds[$masterId]]);
+            }
+            $affectedWaliIds[$guardianIds[$masterId]] = true;
+            if (!empty($guardian['archivedAt'])) {
+                $archive = dataIndukArchiveGuardian($pdo, $masterId);
+                $stats['archived_memberships'] += $archive['archived_memberships'];
             }
             $stats['guardians']++;
         }
@@ -298,11 +398,24 @@ function dataIndukSyncRoster(PDO $pdo): array
                 }
                 $insert = $pdo->prepare('INSERT INTO santri_detail (wali_santri_id,nama_anak,kelas,data_induk_student_id,data_induk_enrollment_id,data_induk_class_id,status_roster) VALUES (?,?,?,?,?,?,?)');
                 $insert->execute([$waliId, $student['fullName'] ?? 'Tanpa Nama', $className, $masterId, $student['enrollmentId'] ?? null, $classId ?: null, ($student['status'] ?? '') === 'active' ? 'active' : 'archived']);
+                $affectedWaliIds[(int)$waliId] = true;
             } else {
+                $oldParent = $pdo->prepare('SELECT wali_santri_id FROM santri_detail WHERE id=? FOR UPDATE');
+                $oldParent->execute([$childId]);
+                $oldWaliId = $oldParent->fetchColumn();
+                if ($oldWaliId !== false) $affectedWaliIds[(int)$oldWaliId] = true;
                 $update = $pdo->prepare('UPDATE santri_detail SET wali_santri_id=?, nama_anak=?, kelas=?, data_induk_enrollment_id=?, data_induk_class_id=?, status_roster=? WHERE id=?');
                 $update->execute([$waliId, $student['fullName'] ?? '', $className, $student['enrollmentId'] ?? null, $classId ?: null, ($student['status'] ?? '') === 'active' ? 'active' : 'archived', $childId]);
+                $affectedWaliIds[(int)$waliId] = true;
             }
             $stats['children']++;
+        }
+        $affectedWaliIds = array_keys($affectedWaliIds);
+        sort($affectedWaliIds, SORT_NUMERIC);
+        foreach ($affectedWaliIds as $waliId) {
+            $activeChild = $pdo->prepare("SELECT 1 FROM santri_detail WHERE wali_santri_id=? AND LOWER(TRIM(COALESCE(kelas,'')))<>'lulus' AND (data_induk_student_id IS NULL OR status_roster='active') LIMIT 1");
+            $activeChild->execute([$waliId]);
+            if (!$activeChild->fetchColumn()) $stats['archived_memberships'] += dataIndukArchiveMemberships($pdo, (int)$waliId, 'DATA_INDUK_STUDENT_ARCHIVE');
         }
         $pdo->commit();
         return $stats;
@@ -373,10 +486,12 @@ function dataIndukSync(PDO $pdo, string $scope = 'all'): array
                 $entityId = (string) ($event['entityId'] ?? '');
                 switch (strtolower((string) ($event['entityType'] ?? ''))) {
                     case 'guardian':
-                        $pdo->prepare('UPDATE wali_santri SET status_aktif=0 WHERE data_induk_guardian_id=?')->execute([$entityId]);
+                        $archive = dataIndukArchiveGuardian($pdo, $entityId);
+                        $stats['archived_memberships'] = ($stats['archived_memberships'] ?? 0) + $archive['archived_memberships'];
                         break;
                     case 'student':
-                        $pdo->prepare("UPDATE santri_detail SET status_roster='archived' WHERE data_induk_student_id=?")->execute([$entityId]);
+                        $archive = dataIndukArchiveStudent($pdo, $entityId);
+                        $stats['archived_memberships'] = ($stats['archived_memberships'] ?? 0) + $archive['archived_memberships'];
                         break;
                     case 'teacher':
                         $pdo->prepare('UPDATE users SET data_induk_active=0 WHERE data_induk_teacher_id=?')->execute([$entityId]);
