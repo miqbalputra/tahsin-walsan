@@ -43,6 +43,9 @@ jobs:
       - name: Legacy student CSV checks
         run: php tests/legacy-student-import-tests.php
 
+      - name: Spreadsheet export escaping checks
+        run: php tests/spreadsheet-export-tests.php
+
       - name: Legacy destructive generator safety checks
         run: node tests/legacy-generator-safety-tests.cjs
 

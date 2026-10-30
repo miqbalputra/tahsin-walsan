@@ -1165,7 +1165,7 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   utuh dan baris induk baru tanpa benturan masih dapat dipulihkan.
 - Fixture recovery membuat arsip lama dengan satu kolom identitas yang hilang,
   lalu memeriksa bahwa restore menolak tautan anak dan mempertahankan identitas
-  induk tujuan. Hasil CI belum dicatat.
+  induk tujuan. Suite backup/pemulihan pada CI `41036568551` lulus.
 
 ## Percobaan autentikasi API Hermes — 30 Oktober 2026
 
@@ -1175,7 +1175,8 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   Penghitung yang tidak tersedia menghasilkan 503 agar batas ini tidak gagal
   terbuka; permintaan sah tetap memakai batas 120 per menit.
 - Perubahan hanya memakai penghitung file privat dan tidak menyentuh tabel
-  aplikasi atau data lama. Hasil pemeriksaan otomatis/CI belum dicatat.
+  aplikasi atau data lama. Suite API dan HTTP keamanan pada CI `41036568551`
+  lulus.
 
 ## Koneksi database produksi eksplisit — 30 Oktober 2026
 
@@ -1190,8 +1191,8 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   `test`.
   Koneksi berhenti dengan pesan aman bila konfigurasi tidak lengkap. Panduan
   Coolify dan instalasi menjelaskan pengaturan tersebut.
-- Perubahan tidak membuka koneksi ke database saat diedit. Pemeriksaan sintaks
-  dan CI untuk perubahan ini belum dicatat.
+- Perubahan tidak membuka koneksi ke database saat diedit. Parser environment,
+  lint PHP dan suite CI `41036568551` lulus.
 
 ## Konfirmasi penghapusan akun — 30 Oktober 2026
 
@@ -1202,8 +1203,8 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   terakhir tetap dijalankan terlebih dahulu; data halaqoh terkait tetap utuh.
 - Fixture keamanan kini memastikan penghapusan tanpa persetujuan ditolak dan
   baris akun tetap ada.
-- Tidak ada akun yang dihapus dalam audit. Pemeriksaan sintaks dan CI untuk
-  perubahan ini belum dicatat.
+- Tidak ada akun yang dihapus dalam audit. Lint PHP dan suite keamanan HTTP
+  pada CI `41036568551` lulus.
 
 ## Migrasi kolom access_code — 30 Oktober 2026
 
@@ -1213,8 +1214,9 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
 - Migrasi kini memeriksa tabel dan prasyarat kolom sebelum DDL, memvalidasi
   definisi kolom jika sudah ada, dan dapat dijalankan ulang tanpa menulis ulang
   baris lama. Kegagalan dicatat dan mengembalikan exit code 1.
-- Tidak ada migrasi yang dijalankan pada database selama audit. Pemeriksaan
-  sintaks dan CI untuk perubahan ini belum dicatat.
+- Tidak ada migrasi yang dijalankan pada database selama audit. Lint PHP dan
+  pemeriksaan isolasi HTTP pada CI `41036568551` lulus; belum ada migrasi yang
+  dijalankan terhadap database existing.
 
 ## Pelaporan gagal migrasi lama — 30 Oktober 2026
 
@@ -1228,8 +1230,9 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
 - `migrate_login_attempts.php` memakai path proyek absolut serta kegagalan
   ber-exit-code 1. Komentar lama pada migrasi `lanjut_tahsin` disamakan dengan
   perilaku aplikasi: nilainya informasi dan tidak mengecualikan arsip alumni.
-- Migrasi ini belum dijalankan pada database apa pun. Pemeriksaan sintaks dan
-  CI untuk perubahan ini belum dicatat.
+- Migrasi ini belum dijalankan pada database apa pun. Lint PHP dan pemeriksaan
+  isolasi HTTP pada CI `41036568551` lulus; belum ada fixture khusus untuk
+  seluruh kegagalan CLI migration.
 
 ## Regresi batas autentikasi Hermes — 30 Oktober 2026
 
@@ -1237,7 +1240,7 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   semuanya ditolak sebagai 401; permintaan kesebelas dalam jendela lima menit
   harus mendapat 429. Permintaan memakai fixture loopback dan tidak mencapai
   koneksi database API.
-- Pemeriksaan syntax JavaScript dan hasil CI untuk regresi ini belum dicatat.
+- Suite batas API dan HTTP keamanan pada CI `41036568551` lulus.
 
 ## Keamanan ekspor spreadsheet — 30 Oktober 2026
 
@@ -1249,7 +1252,9 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
 - Perubahan hanya pada berkas unduhan. Database, skema, migrasi, riwayat
   presensi, dan arsip backup ZIP untuk pemulihan tidak diubah; backup ZIP tetap
   menyimpan nilai mentah dengan checksum agar pemulihan data lama tetap utuh.
-- Pemeriksaan syntax dan hasil CI untuk perubahan ini belum dicatat.
+- Lint dan suite laporan pada CI `41036568551` lulus. Tes langsung helper
+  spreadsheet ditambahkan pada batch berikutnya karena sebelumnya belum menjadi
+  langkah khusus di workflow.
 
 ## Isi image produksi — 30 Oktober 2026
 
@@ -1261,9 +1266,9 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   Git dan tidak masuk image karena aturan `*.sql` pada `.dockerignore`. Berkas
   lokal tersebut sengaja tidak diubah agar arsip sumber tetap tersedia; jangan
   jalankan pada database yang berisi data aktif.
-- Tidak ada database yang dibuka atau diubah. Pemeriksaan syntax, tes lokal,
-  dan hasil CI untuk perubahan image belum dicatat. Tes keselamatan generator
-  lokal lulus 55 assertion; build Docker belum dapat dijalankan di lingkungan ini.
+- Tidak ada database yang dibuka atau diubah. Tes keselamatan generator lokal
+  lulus 55 assertion. Build dan smoke test Docker lulus pada CI `41036568551`;
+  Docker memang tidak tersedia untuk dijalankan langsung di lingkungan ini.
 
 ## Percobaan key endpoint pengingat — 30 Oktober 2026
 
@@ -1278,4 +1283,30 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   Tes unit autentikasi (13 assertion), HTTP tanpa database (12 assertion),
   rate limit (10 assertion), suite Tahsin (172 assertion), suite pengingat
   (39 assertion) lulus. HTTP integration berbasis MariaDB dan hasil CI setelah
-  push masih perlu diverifikasi.
+  push tercatat pada bagian verifikasi CI terbaru di bawah.
+
+## Verifikasi CI setelah push — 30 Oktober 2026
+
+- Commit `89a8957dd4f68c4722b102a8516d86b9e9b89054` lulus workflow
+  [CI run 41036568551](https://github.com/miqbalputra/tahsin-walsan/actions/runs/41036568551).
+- Seluruh langkah berhasil: lint PHP 8.2, parser konfigurasi, penyimpanan privat
+  impor, runner API pengingat tanpa database, impor CSV lama, pemeriksaan
+  generator lama, build aset, PHPUnit, suite integrasi MariaDB, suite HTTP
+  keamanan/pemulihan, workflow pengingat, serta build dan smoke test image Apache.
+- Ini membuktikan regresi pada codebase untuk lingkungan CI tersebut. Ini belum
+  membuktikan tampilan browser pada perangkat, pemulihan dari arsip produksi
+  nyata, konfigurasi Apache cPanel, atau kesehatan database aplikasi aktif;
+  tidak ada rilis/deployment produksi dalam audit ini.
+
+## Regression ekspor spreadsheet — 30 Oktober 2026
+
+- Review menemukan helper proteksi formula XLS/CSV belum diuji langsung.
+  Renderer HTML Excel kini memakai helper bersama yang dapat diuji tanpa
+  membuka database, dan workflow CI menjalankan tes helper khusus.
+- Tes lokal lulus 31 pemeriksaan untuk awalan formula ASCII/full-width,
+  whitespace dan karakter kontrol, escaping HTML, kutipan CSV, delimiter,
+  baris baru, nilai kosong, serta pembacaan ulang CSV.
+- Regresi yang berkaitan juga lulus: 172 tes Tahsin, 48 tes rapor, 13 tes
+  impor CSV lama, serta lint tiga berkas PHP. Perubahan hanya pada formatter,
+  ekspor dan workflow; tidak mengubah database, skema, atau data lama.
+- CI setelah penambahan tes khusus ini menunggu hasil push.

@@ -10,6 +10,12 @@ function appSpreadsheetSafeText($value): string
     return $value;
 }
 
+/** Return an HTML cell value that remains text in spreadsheet applications. */
+function appSpreadsheetExcelCell($value): string
+{
+    return htmlspecialchars(appSpreadsheetSafeText($value), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
 /** Write a fully quoted, spreadsheet-safe CSV row for human viewing. */
 function appSpreadsheetCsvRow($stream, array $fields): bool
 {
