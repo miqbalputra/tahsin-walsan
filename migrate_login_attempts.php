@@ -6,7 +6,7 @@
  * Skrip tidak boleh dijalankan melalui HTTP.
  */
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
-require_once 'config/database.php';
+require_once __DIR__ . '/config/database.php';
 
 try {
     $pdo->exec("
@@ -20,7 +20,8 @@ try {
         ) ENGINE=InnoDB
     ");
     echo "Tabel login_attempts siap. Skrip migrasi tetap tersimpan untuk audit.\n";
-} catch (PDOException $e) {
-    fwrite(STDERR, "Migrasi gagal: " . $e->getMessage() . "\n");
+} catch (Throwable $error) {
+    error_log('Login attempts migration failed: ' . $error->getMessage());
+    fwrite(STDERR, "Migrasi login_attempts gagal. " . $error->getMessage() . "\n");
     exit(1);
 }

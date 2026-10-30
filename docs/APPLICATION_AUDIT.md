@@ -1215,3 +1215,18 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   baris lama. Kegagalan dicatat dan mengembalikan exit code 1.
 - Tidak ada migrasi yang dijalankan pada database selama audit. Pemeriksaan
   sintaks dan CI untuk perubahan ini belum dicatat.
+
+## Pelaporan gagal migrasi lama — 30 Oktober 2026
+
+- Pemeriksaan migrasi tambahan menemukan beberapa skrip lama mencetak pesan
+  kegagalan tetapi tetap berakhir dengan kode keluar 0. `migrate_settings.php`
+  juga membaca template relatif terhadap direktori kerja dan bisa menyemai
+  nilai kosong jika file tidak tersedia.
+- Migrasi kini memakai path absolut, melaporkan kegagalan ke STDERR/log dengan
+  exit code 1, dan tidak menimpa nilai `settings` existing saat seed.
+  Pengisian template rapor memerlukan file sumber yang terbaca dan tidak kosong.
+- `migrate_login_attempts.php` memakai path proyek absolut serta kegagalan
+  ber-exit-code 1. Komentar lama pada migrasi `lanjut_tahsin` disamakan dengan
+  perilaku aplikasi: nilainya informasi dan tidak mengecualikan arsip alumni.
+- Migrasi ini belum dijalankan pada database apa pun. Pemeriksaan sintaks dan
+  CI untuk perubahan ini belum dicatat.
