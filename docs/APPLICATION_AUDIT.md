@@ -1084,3 +1084,16 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   Seluruh CI lulus pada commit `af89e02` (run `41026792627`). Ini membuktikan
   perilaku pada fixture CI; pemulihan backup produksi dan verifikasi hosting
   tetap harus dilakukan terpisah sebelum audit dinyatakan lengkap.
+
+## Perbaikan instruksi backup pra-deploy — 30 Oktober 2026
+
+- README dan panduan rollout Data Induk menyebut skrip snapshot/baseline PHP
+  yang tidak dilacak Git. Operator yang mengikuti instruksi tersebut akan
+  menemui perintah yang tidak tersedia sebelum migrasi.
+- Instruksi kini memakai skrip backup CLI yang dilacak, menyetel folder privat
+  di luar webroot, menjelaskan pemeriksaan status dan pemulihan staging, serta
+  menjalankan audit duplikasi presensi read-only. Contoh dump SQL memakai file
+  opsi klien privat dan mencegah penimpaan file tujuan.
+- Verifikasi dokumentasi: seluruh perintah backup dan audit merujuk file yang
+  tercatat Git; tidak ada lagi referensi ke skrip snapshot/baseline yang
+  hilang. Tidak ada koneksi atau perubahan database.

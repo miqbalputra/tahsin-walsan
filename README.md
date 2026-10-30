@@ -527,17 +527,29 @@ pengujian lokal tersedia di [Audit Aplikasi](docs/APPLICATION_AUDIT.md).
 
 Fitur Rekap Lengkap membutuhkan migrasi additive histori roster, capaian awal, dan verifikasi. Ikuti [panduan penerapan dan pengujian](docs/TAHSIN_REPORTING_ROLLOUT.md). Data kosong tidak dianggap Alfa; angka kehadiran yang belum lengkap disertai indikator kualitas data.
 
-Sebelum deployment, ambil baseline read-only dan simpan hasilnya di luar web root:
+Sebelum deployment, arahkan BACKUP_STORAGE_PATH ke folder privat di luar
+webroot. Jika kredensial database hanya ada di .env pada cPanel, aktifkan
+APP_LOAD_ENV_FILE=1 untuk perintah CLI. Buat backup lengkap dan simpan salinan
+di luar server:
 
 ```bash
-php scripts/production-baseline.php > baseline-before.json
+BACKUP_STORAGE_PATH=/secure/backup/path APP_LOAD_ENV_FILE=1 php scripts/backup-database.php
 ```
 
 Buat juga snapshot SQL independen tanpa menimpa file backup lama:
 
 ```bash
-php scripts/database-snapshot.php /secure/backup/path/tahsin_YYYYmmdd.sql
+set -o noclobber; mysqldump --defaults-extra-file=/secure/path/tahsin-client.cnf --single-transaction --routines --triggers --hex-blob presensi_tahsin > /secure/backup/path/tahsin_YYYYmmdd.sql
 ```
+
+Ganti presensi_tahsin dengan nama database pada konfigurasi aplikasi. File
+tahsin-client.cnf harus hanya dapat dibaca pemiliknya. Perintah memakai
+noclobber agar tidak menimpa file lama; gunakan nama file baru dan pastikan
+proses dump berhasil sebelum menganggap snapshot siap. Jangan menaruh password
+database langsung pada baris perintah. Simpan hasil pemeriksaan dari
+`APP_LOAD_ENV_FILE=1 php scripts/audit-presensi-duplicates.php > /secure/backup/path/presensi-duplicates-before.json`
+di luar webroot. Uji pemulihan backup ZIP atau snapshot SQL ke staging sebelum
+melanjutkan deployment.
 
 Migrasi index tidak berjalan melalui browser. Jalankan dry-run terlebih dahulu, lalu apply hanya setelah backup database berhasil dan restore staging tervalidasi:
 
