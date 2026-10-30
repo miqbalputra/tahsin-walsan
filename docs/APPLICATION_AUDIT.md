@@ -923,8 +923,10 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
 - Uji lokal lulus 6 assertion: webroot dan subdirektorinya ditolak, kandidat
   privat dipilih, dan berkas sementara dibuat dengan izin privat pada sistem
   POSIX. Lint halaman impor juga lulus; verifikasi CI masih menunggu.
-- CI `41017273920` gagal pada tahap workflow/runner dan tidak memberikan hasil
-  suite yang dapat dipakai; langkah penyebab pastinya belum terverifikasi.
+- CI `41017273920` gagal pada langkah rebuild aset publik. Reproduksi lokal
+  menemukan CSS tersimpan belum sesuai dengan build dari Tailwind 3.4.19 yang
+  terkunci di `package-lock.json`; aset CSS dan versi cache kini disegarkan
+  mengikuti hasil build tersebut.
 - Tidak ada file unggahan lama, data peserta, atau database produksi yang
   diubah.
 
