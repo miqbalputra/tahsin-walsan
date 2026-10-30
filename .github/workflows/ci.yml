@@ -107,20 +107,19 @@ jobs:
       - name: Membership HTTP suite
         run: node tests/membership-http-tests.cjs
 
-      - name: Weekly reminder HTTP checks
+      - name: Create weekly reminder HTTP fixture
         run: |
+          set -e
           mariadb -h 127.0.0.1 -P 13317 -u root -ptahsin_local_test -e "DROP DATABASE IF EXISTS tahsin_test_weekly_reminder_ci"
           php tests/tahsin-reminder-mysql-integration.php tahsin_test_weekly_reminder_ci
-          mkdir -p .sessions/ci-reminder-http
-          DB_HOST=127.0.0.1 DB_PORT=13317 DB_DATABASE=tahsin_test_weekly_reminder_ci \
-            DB_USERNAME=root DB_PASSWORD=tahsin_local_test \
-            N8N_API_KEY=tahsin-test-api HERMES_API_KEY=tahsin-test-api \
-            SESSION_SAVE_PATH="$PWD/.sessions/ci-reminder-http" \
-            php -S 127.0.0.1:18083 dev-router.php > .sessions/ci-reminder-http/server.log 2>&1 &
-          SERVER_PID=$!
-          for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:18083/health.php >/dev/null 2>&1; then break; fi
-            sleep 1
-          done
-          node tests/tahsin-reminder-http-checks.cjs
-          kill $SERVER_PID
+
+      - name: Weekly reminder HTTP checks
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 13317
+          DB_DATABASE: tahsin_test_weekly_reminder_ci
+          DB_USERNAME: root
+          DB_PASSWORD: tahsin_local_test
+          N8N_API_KEY: tahsin-test-api
+          HERMES_API_KEY: tahsin-test-api
+        run: node tests/tahsin-reminder-http-runner.cjs

@@ -565,6 +565,23 @@ PHP tidak mengganti prototipe tersebut.
 - Belum dideploy. Validasi runtime produksi dan pemulihan cadangan produksi
   nyata tetap terbuka.
 
+## Determinisme tes pengingat mingguan — 30 Oktober 2026
+
+- Actions untuk commit `d83dcde` gagal pada langkah suite HTTP pengingat
+  mingguan. Reproduksi lokal menemukan tes bergantung pada hari sistem,
+  mengirim formulir tanpa token/versi sumber terbaru, memakai fixture tanpa
+  tabel jurnal formulir, serta mencari teks konfirmasi yang sudah berubah.
+- Router fixture tes kini memberi jam tetap hanya untuk server PHP lokal yang
+  memakai router tersebut. `tahsinNow()` mengabaikan konstanta itu pada PHP-FPM
+  dan proses CLI, sehingga waktu aplikasi produksi tidak dapat digeser melalui
+  request HTTP. Runner HTTP kini memilih port kosong, memastikan koneksi hanya
+  ke database loopback bernama `tahsin_test_*`, dan menghentikan server fixture
+  setelah suite.
+- Menunggu CI commit `d83dcde` selesai untuk memastikan pola kegagalan sebelum
+  perbaikan, lalu validasi ulang suite dengan fixture database lokal baru:
+  20 pemeriksaan integrasi dan 13 pemeriksaan HTTP lulus. Status CI untuk
+  perbaikan ini masih menunggu push berikutnya.
+
 ## Menjalankan pemeriksaan lokal
 
 Database uji harus berjalan hanya pada `127.0.0.1:13317`, dengan akun fixture

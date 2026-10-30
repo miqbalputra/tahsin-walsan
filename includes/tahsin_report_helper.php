@@ -13,7 +13,12 @@ function tahsinDate(string $value): ?string
 
 function tahsinNow(): DateTimeImmutable
 {
-    return new DateTimeImmutable('now', new DateTimeZone('Asia/Jakarta'));
+    $timezone = new DateTimeZone('Asia/Jakarta');
+    // Only the dedicated PHP development-server fixture can supply a test clock.
+    if (PHP_SAPI === 'cli-server' && defined('TAHSIN_TEST_NOW')) {
+        return new DateTimeImmutable((string) constant('TAHSIN_TEST_NOW'), $timezone);
+    }
+    return new DateTimeImmutable('now', $timezone);
 }
 
 // Production's PHP 8.2 image does not require mbstring.
