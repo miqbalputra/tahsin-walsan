@@ -2,6 +2,7 @@
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
 require_once 'includes/report_helper.php';
+require_once __DIR__ . '/includes/csv_helper.php';
 
 checkLogin();
 $allowed_roles = ['admin', 'pj_tahfidz', 'kepsek', 'ustadz'];
@@ -47,23 +48,23 @@ header("Content-Disposition: attachment; filename=\"$filename\"");
                     <?php echo date('d/m/Y', strtotime($row['tanggal'])); ?>
                 </td>
                 <td>
-                    <?php echo $row['nama_halaqoh']; ?>
+                    <?php echo appSpreadsheetExcelCell($row['nama_halaqoh']); ?>
                 </td>
                 <td>
-                    <?php echo $row['nama_bapak']; ?>
+                    <?php echo appSpreadsheetExcelCell($row['nama_bapak']); ?>
                 </td>
                 <td>
-                    <?php echo $row['status']; ?>
+                    <?php echo appSpreadsheetExcelCell($row['status']); ?>
                 </td>
                 <td>
-                    <?php echo $row['jenis_materi'] ?: '-'; ?>
+                    <?php echo appSpreadsheetExcelCell($row['jenis_materi'] ?: '-'); ?>
                 </td>
                 <td>
                     <?php
                     if ($row['jenis_materi'] === 'Iqro')
-                        echo "Jilid " . $row['jilid'];
+                        echo appSpreadsheetExcelCell("Jilid " . $row['jilid']);
                     elseif ($row['jenis_materi'] === 'Al Quran')
-                        echo $row['nama_surat'];
+                        echo appSpreadsheetExcelCell($row['nama_surat']);
                     else
                         echo "-";
                     ?>
@@ -71,19 +72,19 @@ header("Content-Disposition: attachment; filename=\"$filename\"");
                 <td>
                     <?php
                     if ($row['jenis_materi'] === 'Al Quran' && !empty($row['halaman'])) {
-                        echo "Ayat " . $row['halaman'];
+                        echo appSpreadsheetExcelCell("Ayat " . $row['halaman']);
                     } elseif ($row['jenis_materi'] === 'Iqro' && !empty($row['halaman'])) {
-                        echo "Hal " . $row['halaman'];
+                        echo appSpreadsheetExcelCell("Hal " . $row['halaman']);
                     } else {
                         echo "-";
                     }
                     ?>
                 </td>
                 <td>
-                    <?php echo $row['hasil_talaqqi'] ?: '-'; ?>
+                    <?php echo appSpreadsheetExcelCell($row['hasil_talaqqi'] ?: '-'); ?>
                 </td>
                 <td>
-                    <?php echo $row['alasan'] ?: '-'; ?>
+                    <?php echo appSpreadsheetExcelCell($row['alasan'] ?: '-'); ?>
                 </td>
             </tr>
         <?php endforeach; ?>

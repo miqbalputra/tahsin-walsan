@@ -1,6 +1,8 @@
+const { requireFullReplacementApproval, createPrivateOutputDirectory, writePrivateArtifact, destructiveSqlWarning } = require('./destructive-import-safety.cjs');
+requireFullReplacementApproval('generate_final_sql.js');
+
 const XLSX = require('xlsx');
 const path = require('path');
-const fs = require('fs');
 
 const files = ['Mustawa_Ikhwan.xlsx', 'Mustawa_Akhwat.xlsx'];
 const fatherMap = new Map(); // normalizedKey -> { id, originalName, phone, address }
@@ -72,7 +74,7 @@ files.forEach(fileName => {
 });
 
 // Generate SQL
-let sqlOutput = `-- Data Import from Mustawa_Ikhwan.xlsx and Mustawa_Akhwat.xlsx\n`;
+let sqlOutput = destructiveSqlWarning(['wali_santri', 'santri_detail']) + '-- Data Import from Mustawa_Ikhwan.xlsx and Mustawa_Akhwat.xlsx\n';
 sqlOutput += `-- Generated on ${new Date().toLocaleString()}\n`;
 sqlOutput += `SET FOREIGN_KEY_CHECKS = 0;\n`;
 sqlOutput += `TRUNCATE TABLE santri_detail;\n`;
@@ -103,8 +105,8 @@ if (santriList.length > 0) {
     sqlOutput += santriValues.join(',\n') + ';\n';
 }
 
-const outputPath = path.join(__dirname, '..', 'import_mustawa_lengkap.sql');
-fs.writeFileSync(outputPath, sqlOutput);
+const outputDir = createPrivateOutputDirectory(path.join(__dirname, '..'));
+const outputPath = writePrivateArtifact(outputDir, 'import_mustawa_lengkap.sql', sqlOutput);
 
 console.log(`Successfully generated SQL file: ${outputPath}`);
 console.log(`Total Unique Fathers (Wali Santri): ${fatherMap.size}`);

@@ -37,7 +37,7 @@ $labels = array_map(static fn($t) => date('d/m', strtotime($t['tanggal'])), $tre
 $hadirCount = array_column($trendData, 'hadir');
 ?>
 
-<script src="assets/js/chart.umd.min.js"></script>
+<script src="<?= appEscape(appAssetUrl('assets/js/chart.umd.min.js')) ?>"></script>
 
 <!-- Header Content -->
 <div class="mb-10">
@@ -84,7 +84,7 @@ $hadirCount = array_column($trendData, 'hadir');
                         ?>
                         <div>
                             <div class="flex justify-between text-[10px] font-black uppercase mb-1">
-                                <span class="text-slate-400"><?php echo $label; ?></span>
+                                <span class="text-slate-400"><?php echo appEscape($label); ?></span>
                                 <span class="text-slate-700"><?php echo $percent; ?>%</span>
                             </div>
                             <div class="w-full h-1.5 <?php echo $bg; ?> rounded-full overflow-hidden"><div class="h-full <?php echo $color; ?> rounded-full" style="width: <?php echo $percent; ?>%"></div></div>
@@ -111,8 +111,8 @@ $hadirCount = array_column($trendData, 'hadir');
                     <tr>
                         <td class="py-4 px-2 font-bold text-slate-700"><?php echo htmlspecialchars($w['nama_bapak']); ?></td>
                         <td class="py-4 px-2 text-slate-500"><?php echo htmlspecialchars($w['nama_halaqoh']); ?></td>
-                        <td class="py-4 px-2 text-center"><span class="bg-red-500 text-white w-6 h-6 inline-flex items-center justify-center rounded-full text-[10px] font-black"><?php echo $w['total_alpha']; ?></span></td>
-                        <td class="py-4 px-2 text-right"><a href="laporan.php?wali_santri_id=<?php echo $w['id']; ?>" class="text-[10px] font-bold text-blue-600 uppercase border border-blue-100 px-3 py-1 rounded-lg">Detail</a></td>
+                        <td class="py-4 px-2 text-center"><span class="bg-red-500 text-white w-6 h-6 inline-flex items-center justify-center rounded-full text-[10px] font-black"><?php echo (int) $w['total_alpha']; ?></span></td>
+                        <td class="py-4 px-2 text-right"><a href="laporan.php?wali_santri_id=<?php echo (int) $w['id']; ?>" class="text-[10px] font-bold text-blue-600 uppercase border border-blue-100 px-3 py-1 rounded-lg">Detail</a></td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -127,7 +127,7 @@ $hadirCount = array_column($trendData, 'hadir');
         <div class="space-y-4">
             <?php foreach ($recentActivities as $act): ?>
                 <div class="flex items-center gap-4 p-3 rounded-2xl hover:bg-slate-50 transition">
-                    <div class="w-8 h-8 rounded-lg flex items-center justify-center font-black text-[10px] <?php echo match ($act['status']) { 'H' => 'bg-emerald-100 text-emerald-600', 'S' => 'bg-blue-100 text-blue-600', 'I' => 'bg-amber-100 text-amber-600', 'A' => 'bg-red-100 text-red-600'}; ?>"><?php echo $act['status']; ?></div>
+                    <div class="w-8 h-8 rounded-lg flex items-center justify-center font-black text-[10px] <?php echo match ($act['status']) { 'H' => 'bg-emerald-100 text-emerald-600', 'S' => 'bg-blue-100 text-blue-600', 'I' => 'bg-amber-100 text-amber-600', 'A' => 'bg-red-100 text-red-600'}; ?>"><?php echo appEscape($act['status']); ?></div>
                     <div class="flex-1 text-sm"><p class="font-bold text-slate-700"><?php echo htmlspecialchars($act['nama_bapak']); ?></p><p class="text-[10px] text-slate-400"><?php echo htmlspecialchars($act['nama_halaqoh']); ?></p></div>
                     <div class="text-[10px] text-slate-400 font-bold"><?php echo date('d/m', strtotime($act['tanggal'])); ?></div>
                 </div>
@@ -138,8 +138,8 @@ $hadirCount = array_column($trendData, 'hadir');
     <div class="flex flex-col gap-6">
         <div class="bg-slate-900 p-8 rounded-3xl text-white relative overflow-hidden flex-1">
             <div class="relative z-10">
-                <h3 class="text-2xl font-black mb-2">Ahlan wa Sahlan, <?php echo $_SESSION['nama_lengkap']; ?>!</h3>
-                <p class="text-slate-400 text-sm mb-6 uppercase tracking-widest font-bold">Role: <?php echo $_SESSION['role']; ?></p>
+                <h3 class="text-2xl font-black mb-2">Ahlan wa Sahlan, <?php echo appEscape($_SESSION['nama_lengkap'] ?? ''); ?>!</h3>
+                <p class="text-slate-400 text-sm mb-6 uppercase tracking-widest font-bold">Role: <?php echo appEscape($_SESSION['role'] ?? ''); ?></p>
                 <div class="grid grid-cols-2 gap-3">
                     <a href="peserta.php" class="bg-white/5 border border-white/10 p-4 rounded-2xl text-center hover:bg-white/10 transition"><p class="text-[10px] text-slate-400 font-bold uppercase mb-1">Data</p><p class="font-bold text-sm">Peserta</p></a>
                     <a href="halaqoh.php" class="bg-white/5 border border-white/10 p-4 rounded-2xl text-center hover:bg-white/10 transition"><p class="text-[10px] text-slate-400 font-bold uppercase mb-1">Data</p><p class="font-bold text-sm">Halaqoh</p></a>

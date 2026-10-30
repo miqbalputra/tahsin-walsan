@@ -51,6 +51,7 @@ function buildPresensiReportQuery($filters, $role = '', $user_id = null, $option
     if ($includeUstadz) {
         $columns[] = 'u.nama_lengkap AS nama_ustadz';
     }
+    if (!empty($options['_history_snapshot_sql'])) $columns[] = $options['_history_snapshot_sql'] . ' AS saved_snapshot';
 
     $sql = 'SELECT ' . implode(', ', $columns) . '
         FROM presensi p
@@ -121,6 +122,10 @@ function buildPresensiReportQuery($filters, $role = '', $user_id = null, $option
 
 function fetchPresensiReport($pdo, $filters, $role = '', $user_id = null, $options = [])
 {
+    if (!empty($options['include_history_snapshot'])) {
+        require_once __DIR__ . '/attendance_history_helper.php';
+        $options['_history_snapshot_sql'] = attendanceHistorySnapshotSql($pdo, 'p');
+    }
     $options['child_table'] = familyChildrenTable($pdo);
     [$sql, $params] = buildPresensiReportQuery($filters, $role, $user_id, $options);
     $stmt = $pdo->prepare($sql);

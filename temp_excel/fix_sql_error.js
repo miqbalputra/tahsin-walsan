@@ -1,6 +1,8 @@
+const { requireFullReplacementApproval, createPrivateOutputDirectory, writePrivateArtifact, createTemporaryPassword, destructiveSqlWarning } = require('./destructive-import-safety.cjs');
+requireFullReplacementApproval('fix_sql_error.js');
+
 const XLSX = require('xlsx');
 const path = require('path');
-const fs = require('fs');
 const bcrypt = require('bcryptjs');
 
 const files = ['Mustawa_Ikhwan.xlsx', 'Mustawa_Akhwat.xlsx'];
@@ -94,8 +96,8 @@ files.forEach(fileName => {
             if (hInfo && hInfo.halaqohName) {
                 const normUstadz = normalize(hInfo.ustadzName);
                 let uId;
-                const rawPassword = `tahsin${hInfo.halaqohNum}`;
-                const hashedPassword = bcrypt.hashSync(rawPassword, 10);
+                const rawPassword = createTemporaryPassword();
+                const hashedPassword = bcrypt.hashSync(rawPassword, 12);
 
                 if (!ustadzMap.has(normUstadz)) {
                     uId = ustadzIdCounter++;
@@ -144,8 +146,10 @@ finalUstadzList.forEach(u => {
     }
 });
 
-let sqlOutput = `-- Final Data Import: Fixed for Shared Hosting (DELETE instead of TRUNCATE)\n`;
+let sqlOutput = destructiveSqlWarning(['halaqoh_members', 'presensi', 'santri_detail', 'halaqoh', 'wali_santri', 'users (ustadz)'])
+    + `-- Final Data Import: Fixed for Shared Hosting (DELETE instead of TRUNCATE)\n`;
 sqlOutput += `-- Generated on ${new Date().toLocaleString()}\n`;
+sqlOutput += `-- WARNING: capaian, autosave, jurnal and other history tables are not cleared; reused IDs may attach old history to different records.\n`;
 sqlOutput += `SET FOREIGN_KEY_CHECKS = 0;\n`;
 sqlOutput += `DELETE FROM halaqoh_members;\n`;
 sqlOutput += `DELETE FROM presensi;\n`;
@@ -188,5 +192,21 @@ sqlOutput += `INSERT INTO halaqoh_members (halaqoh_id, wali_santri_id) VALUES\n`
 const mValues = memberList.map(m => `(${m.halaqohId}, ${m.waliId})`);
 sqlOutput += mValues.join(',\n') + ';\n';
 
-fs.writeFileSync(path.join(__dirname, '..', 'import_database_final.sql'), sqlOutput);
-console.log('Fixed SQL file generated successfully.');
+const outputDir = createPrivateOutputDirectory(path.join(__dirname, '..'));
+const outputPath = writePrivateArtifact(outputDir, 'import_database_final.sql', sqlOutput);
+const groupsByTeacher = new Map();
+for (const group of halaqohMap.values()) {
+    if (!groupsByTeacher.has(group.ustadzId)) groupsByTeacher.set(group.ustadzId, []);
+    groupsByTeacher.get(group.ustadzId).push(group.name);
+}
+const credentialsPath = writePrivateArtifact(outputDir, 'teacher-credentials.json', JSON.stringify({
+    warning: 'Kredensial sementara rahasia. Bagikan secara privat dan minta setiap ustadz menggantinya setelah login.',
+    accounts: finalUstadzList.map(u => ({
+        nama: u.fullName,
+        username: u.username,
+        password: u.rawPassword,
+        halaqoh: groupsByTeacher.get(u.id) || []
+    }))
+}, null, 2) + '\n');
+console.log('Generated replacement SQL: ' + outputPath);
+console.log('Temporary teacher credentials: ' + credentialsPath);

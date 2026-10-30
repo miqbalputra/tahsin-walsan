@@ -1,9 +1,7 @@
 <?php
 $pageTitle = 'Status Data Induk';
-require_once 'includes/header.php';
-require_once 'includes/sidebar.php';
-require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
+require_once 'config/database.php';
 require_once 'includes/data_induk_helper.php';
 checkRole(['admin']);
 
@@ -15,13 +13,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit('CSRF token tidak valid.');
     }
     try {
-        if (($_POST['action'] ?? '') === 'sync') {
-            $stats = dataIndukSync($pdo, (string) ($_POST['scope'] ?? 'all'));
-            $message = 'Sinkronisasi selesai: ' . htmlspecialchars(json_encode($stats, JSON_UNESCAPED_UNICODE));
-        } elseif (($_POST['action'] ?? '') === 'conflict') {
-            dataIndukResolveConflict($pdo, (int) ($_POST['conflict_id'] ?? 0), (string) ($_POST['decision'] ?? 'ignore'));
+        $action = appRequestString($_POST, 'action');
+        if ($action === 'sync') {
+            $stats = dataIndukSync($pdo, appRequestString($_POST, 'scope'));
+            $message = 'Sinkronisasi selesai: ' . json_encode($stats, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        } elseif ($action === 'conflict') {
+            $conflictId = filter_var(appRequestString($_POST, 'conflict_id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($conflictId === false) {
+                throw new InvalidArgumentException('ID konflik tidak valid. Data belum berubah.');
+            }
+            dataIndukResolveConflict($pdo, $conflictId, appRequestString($_POST, 'decision'));
             $message = 'Konflik telah diproses. Jalankan sync kembali untuk mengambil profil pusat terbaru.';
+        } else {
+            throw new InvalidArgumentException('Aksi Data Induk tidak valid. Data belum berubah.');
         }
+    } catch (InvalidArgumentException $exception) {
+        http_response_code(422);
+        $error = $exception->getMessage();
     } catch (Throwable $exception) {
         reportApplicationError($exception, 'data-induk-admin');
         $error = $exception instanceof DataIndukException ? $exception->getMessage() : 'Operasi gagal. Periksa konfigurasi dan log server.';
@@ -47,6 +55,8 @@ try {
 }
 $config = dataIndukConfig();
 $isStale = $state && $state['last_success_at'] && strtotime($state['last_success_at']) < time() - ($config['stale_minutes'] * 60);
+require_once 'includes/header.php';
+require_once 'includes/sidebar.php';
 ?>
 <div class="mb-8 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
     <div><h2 class="text-3xl font-black text-slate-800">Status Data Induk</h2><p class="text-slate-500">Snapshot identitas lokal untuk Presensi Tahsin Bapak.</p></div>
@@ -55,8 +65,8 @@ $isStale = $state && $state['last_success_at'] && strtotime($state['last_success
         <button class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700" <?= dataIndukIsConfigured() ? '' : 'disabled' ?>>Sync sekarang</button>
     </form>
 </div>
-<?php if ($message): ?><div class="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700"><?= $message ?></div><?php endif; ?>
-<?php if ($error): ?><div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+<?php if ($message): ?><div class="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700"><?= appEscape($message) ?></div><?php endif; ?>
+<?php if ($error): ?><div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800"><?= appEscape($error) ?></div><?php endif; ?>
 <div class="grid gap-4 md:grid-cols-3 xl:grid-cols-6 mb-8">
     <div class="rounded-2xl bg-white p-5 shadow-sm border border-slate-100"><p class="text-xs font-bold uppercase text-slate-400">Konfigurasi</p><p class="mt-2 font-bold <?= dataIndukIsConfigured() ? 'text-emerald-600' : 'text-amber-600' ?>"><?= dataIndukIsConfigured() ? 'Siap sync' : 'Belum aktif' ?></p></div>
     <div class="rounded-2xl bg-white p-5 shadow-sm border border-slate-100"><p class="text-xs font-bold uppercase text-slate-400">Sync terakhir</p><p class="mt-2 font-bold <?= $isStale ? 'text-amber-600' : 'text-slate-700' ?>"><?= htmlspecialchars($state['last_success_at'] ?? 'Belum pernah') ?></p></div>
@@ -67,6 +77,31 @@ $isStale = $state && $state['last_success_at'] && strtotime($state['last_success
 </div>
 <div class="grid gap-6 lg:grid-cols-2">
     <section class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm"><div class="border-b p-5 font-bold">Riwayat sinkronisasi</div><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th class="p-3">Waktu</th><th class="p-3">Scope</th><th class="p-3">Status</th><th class="p-3">Durasi</th></tr></thead><tbody><?php foreach ($runs as $run): ?><tr class="border-t"><td class="p-3"><?= htmlspecialchars($run['started_at']) ?></td><td class="p-3"><?= htmlspecialchars($run['scope']) ?></td><td class="p-3"><?= htmlspecialchars($run['status']) ?></td><td class="p-3"><?= htmlspecialchars((string) (json_decode($run['stats_json'] ?? '{}', true)['duration_ms'] ?? '-')) ?> ms</td></tr><?php endforeach; ?></tbody></table></div></section>
-    <section class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm"><div class="border-b p-5 font-bold">Konflik pemetaan</div><div class="divide-y"><?php foreach ($conflicts as $conflict): ?><div class="p-4 text-sm"><p class="font-bold"><?= htmlspecialchars($conflict['entity_type']) ?> · <?= htmlspecialchars($conflict['reason']) ?></p><p class="mt-1 text-xs text-slate-500">UUID pusat: <?= htmlspecialchars($conflict['master_id']) ?> · Kandidat lokal: <?= htmlspecialchars((string) $conflict['local_id']) ?></p><form method="post" class="mt-3 flex gap-2"><input type="hidden" name="action" value="conflict"><input type="hidden" name="conflict_id" value="<?= (int) $conflict['id'] ?>"><?php csrfField(); ?><button name="decision" value="approve" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">Setujui</button><button name="decision" value="ignore" class="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold">Abaikan</button></form></div><?php endforeach; ?><?php if (!$conflicts): ?><p class="p-5 text-sm text-slate-500">Tidak ada konflik tertunda.</p><?php endif; ?></div></section>
+    <section class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+        <div class="border-b p-5 font-bold">Konflik pemetaan</div>
+        <div class="divide-y">
+            <?php foreach ($conflicts as $conflict):
+                $payload = json_decode((string) ($conflict['payload_json'] ?? ''), true);
+                $candidateIds = is_array($payload['local_candidate_ids'] ?? null)
+                    ? array_values(array_filter($payload['local_candidate_ids'], static fn($id) => is_int($id) || (is_string($id) && ctype_digit($id))))
+                    : [];
+            ?>
+                <div class="p-4 text-sm">
+                    <p class="font-bold"><?= htmlspecialchars($conflict['entity_type']) ?> · <?= htmlspecialchars($conflict['reason']) ?></p>
+                    <p class="mt-1 text-xs text-slate-500">UUID pusat: <?= htmlspecialchars($conflict['master_id']) ?> · Kandidat lokal: <?= htmlspecialchars((string) ($conflict['local_id'] ?? 'belum dipilih')) ?></p>
+                    <?php if ($candidateIds): ?><p class="mt-1 text-xs text-slate-500">ID kandidat untuk ditinjau: #<?= htmlspecialchars(implode(', #', array_map('strval', $candidateIds))) ?></p><?php endif; ?>
+                    <form method="post" class="mt-3 flex gap-2">
+                        <input type="hidden" name="action" value="conflict">
+                        <input type="hidden" name="conflict_id" value="<?= (int) $conflict['id'] ?>">
+                        <?php csrfField(); ?>
+                        <?php if ($conflict['local_id'] !== null): ?><button name="decision" value="approve" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">Setujui kandidat #<?= (int) $conflict['local_id'] ?></button>
+                        <?php else: ?><p class="text-xs text-amber-700">Tidak ada satu kecocokan yang aman untuk disetujui otomatis. Periksa identitas lokal sebelum menyelesaikan konflik.</p><?php endif; ?>
+                        <button name="decision" value="ignore" class="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold">Abaikan</button>
+                    </form>
+                </div>
+            <?php endforeach; ?>
+            <?php if (!$conflicts): ?><p class="p-5 text-sm text-slate-500">Tidak ada konflik tertunda.</p><?php endif; ?>
+        </div>
+    </section>
 </div>
 <?php require_once 'includes/footer.php'; ?>

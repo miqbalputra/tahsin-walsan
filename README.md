@@ -1,5 +1,7 @@
 # 📖 Presensi Tahsin Bapak — Griya Qur'an
 
+[![CI](https://github.com/miqbalputra/tahsin-walsan/actions/workflows/ci.yml/badge.svg)](https://github.com/miqbalputra/tahsin-walsan/actions/workflows/ci.yml)
+
 Sistem pencatatan kehadiran dan perkembangan materi **Tahsin Al-Qur'an** untuk para **Bapak/Wali Santri** di **Griya Qur'an**. Dibangun dengan PHP 8.2.35 + MySQL, Tailwind CSS, Alpine.js, dan PWA support.
 
 ---
@@ -90,6 +92,10 @@ cd tahsin-walsan
 # 2. Copy environment
 cp .env.example .env
 # Edit .env sesuai database Anda
+# Selain APP_ENV=local/development/testing, DB_HOST, DB_DATABASE, DB_USERNAME, dan DB_PASSWORD wajib terisi.
+# Permintaan web PHP membaca .env secara otomatis. Perintah CLI memakai
+# variabel environment proses; tambahkan APP_LOAD_ENV_FILE=1 bila ingin CLI
+# membaca file yang sama.
 
 # 3. Build frontend assets
 npm install
@@ -99,15 +105,20 @@ npm run build
 mysql -u root -p < database.sql
 
 # 5. Jalankan
-php -S localhost:8000
+php -S 127.0.0.1:8000 dev-router.php
 ```
+
+Untuk operasi PHP CLI (backup, migrasi, atau pemeriksaan baseline), nilai di
+`.env` tidak dimuat otomatis. Awali perintah dengan `APP_LOAD_ENV_FILE=1`
+agar perintah tersebut memakai konfigurasi yang sama; variabel yang sudah
+diberikan oleh proses tetap diprioritaskan.
 
 ### Docker / Coolify
 
 ```bash
-# Build & run
+# Build & run (Docker tidak menyalin .env ke image; berikan saat runtime)
 docker build --pull -t tahsin-walsan .
-docker run -p 80:80 tahsin-walsan
+docker run --env-file .env -p 80:80 tahsin-walsan
 ```
 
 Lihat [COOLIFY_DEPLOY.md](COOLIFY_DEPLOY.md) untuk panduan deploy ke Coolify.
@@ -141,17 +152,18 @@ Dengan API ini, Hermes Agent bisa:
 
 ### Autentikasi
 
-Semua request **wajib** menyertakan API key. Dua cara:
+Semua request **wajib** menyertakan API key via header:
 
-**Via Header (recommended):**
 ```
 X-API-Key: <your-secret-key>
 ```
 
-**Via Query Parameter:**
-```
-?api_key=<your-secret-key>
-```
+> Key via query parameter (`?api_key=`) **tidak lagi didukung** agar secret tidak tertinggal di access log/riwayat browser.
+
+**Catatan keamanan tambahan:**
+- Rate limit bawaan: 120 permintaan/menit per IP.
+- Action `schema` nonaktif kecuali env `HERMES_EXPOSE_SCHEMA=1`.
+- CORS hanya aktif untuk origin yang didaftarkan di env `HERMES_ALLOWED_ORIGINS` (dipisah koma).
 
 **Setup API Key:**
 Set environment variable di server/Coolify:
@@ -426,7 +438,8 @@ curl -s -H "X-API-Key: rahasia123" \
   "https://tahsin.domain.com/api/hermes.php?action=status" | jq .
 
 # 2. Cari peserta
-curl -s "https://tahsin.domain.com/api/hermes.php?action=peserta&search=ahmad&api_key=rahasia123" | jq .
+curl -s -H "X-API-Key: rahasia123" \
+  "https://tahsin.domain.com/api/hermes.php?action=peserta&search=ahmad" | jq .
 
 # 3. Peringatan dini
 curl -s -H "X-API-Key: rahasia123" \
@@ -510,28 +523,58 @@ Berisi detail setiap endpoint, parameter, contoh request/response, dan panduan t
 
 ## 🛡️ Operasional Production Aman
 
+Status audit, cakupan fitur yang masih harus diverifikasi, dan perintah
+pengujian lokal tersedia di [Audit Aplikasi](docs/APPLICATION_AUDIT.md).
+
 Fitur Rekap Lengkap membutuhkan migrasi additive histori roster, capaian awal, dan verifikasi. Ikuti [panduan penerapan dan pengujian](docs/TAHSIN_REPORTING_ROLLOUT.md). Data kosong tidak dianggap Alfa; angka kehadiran yang belum lengkap disertai indikator kualitas data.
 
-Sebelum deployment, ambil baseline read-only dan simpan hasilnya di luar web root:
+Sebelum deployment, arahkan BACKUP_STORAGE_PATH ke folder privat di luar
+webroot. Jika kredensial database hanya ada di .env pada cPanel, aktifkan
+APP_LOAD_ENV_FILE=1 untuk perintah CLI. Buat backup lengkap dan simpan salinan
+di luar server:
 
 ```bash
-php scripts/production-baseline.php > baseline-before.json
+BACKUP_STORAGE_PATH=/secure/backup/path APP_LOAD_ENV_FILE=1 php scripts/backup-database.php
 ```
 
 Buat juga snapshot SQL independen tanpa menimpa file backup lama:
 
 ```bash
-php scripts/database-snapshot.php /secure/backup/path/tahsin_YYYYmmdd.sql
+set -o noclobber; mysqldump --defaults-extra-file=/secure/path/tahsin-client.cnf --single-transaction --routines --triggers --hex-blob presensi_tahsin > /secure/backup/path/tahsin_YYYYmmdd.sql
 ```
+
+Ganti presensi_tahsin dengan nama database pada konfigurasi aplikasi. File
+tahsin-client.cnf harus hanya dapat dibaca pemiliknya. Perintah memakai
+noclobber agar tidak menimpa file lama; gunakan nama file baru dan pastikan
+proses dump berhasil sebelum menganggap snapshot siap. Jangan menaruh password
+database langsung pada baris perintah. Simpan hasil pemeriksaan dari
+`APP_LOAD_ENV_FILE=1 php scripts/audit-presensi-duplicates.php > /secure/backup/path/presensi-duplicates-before.json`
+di luar webroot. Uji pemulihan backup ZIP atau snapshot SQL ke staging sebelum
+melanjutkan deployment.
 
 Migrasi index tidak berjalan melalui browser. Jalankan dry-run terlebih dahulu, lalu apply hanya setelah backup database berhasil dan restore staging tervalidasi:
 
 ```bash
-php migrate_performance_indexes.php
-APPLY_MIGRATIONS=1 php migrate_performance_indexes.php
+APP_LOAD_ENV_FILE=1 php migrate_performance_indexes.php
+APP_LOAD_ENV_FILE=1 APPLY_MIGRATIONS=1 php migrate_performance_indexes.php
 ```
 
-Backup ZIP dari menu **Backup & Restore** kini mencakup seluruh tabel yang ada, memakai checksum, dan restore bersifat merge-only. Data dengan primary key yang sudah ada tidak dihapus atau di-update.
+Backup ZIP dari menu **Backup & Restore** mencakup seluruh base table dan memakai checksum. Restore menambahkan baris yang belum ada dan melewati primary key yang sudah ada. Pilihan folder persisten, validasi, batas format lama, serta pemulihan penuh dijelaskan pada [panduan cadangan dan pemulihan](docs/BACKUP_RECOVERY.md).
+
+### Impor Peserta dengan Pratinjau
+
+Impor CSV peserta kini memakai pratinjau, pilihan identitas, pengulangan tanpa
+anak ganda, dan jurnal sebelum/sesudah. Persiapan skema serta perilaku pembaruan
+ada pada [panduan impor peserta](docs/PARTICIPANT_IMPORT.md).
+
+Formulir tambah/edit/arsip mempertahankan ID anak, memakai jurnal perubahan,
+dan memisahkan penempatan Bapak/Ibu. Persiapan migrasi dan alur pemulihan ada
+pada [panduan pengelolaan peserta](docs/PARTICIPANT_MANAGEMENT.md).
+
+Penggabungan duplikat menggunakan pratinjau, pilihan baseline/draft yang
+berbenturan, pemindahan ID anak, dan pengalihan ID peserta lama. Lihat
+[panduan penggabungan peserta](docs/PARTICIPANT_MERGE.md) untuk migrasi,
+pelestarian data dan pemulihan.
 
 ### Arsip Wali Alumni Otomatis
 
@@ -542,6 +585,11 @@ Untuk database existing, jalankan migrasi additive `migrate_alumni_archive.php` 
 ---
 
 ## Autosave Tahsin Bapak dan Ibu
+
+Pengelolaan anggota kini membatasi calon menurut program, menyimpan relasi
+lama sebagai arsip, dan memeriksa konfirmasi terhadap perubahan bersamaan.
+Aturan sumber sekolah, jurnal serta pengujian dijelaskan pada
+[panduan keanggotaan halaqoh](docs/MEMBERSHIPS.md).
 
 Alur guru baru menyediakan Hari Ini, Riwayat, dan Akun; daftar seluruh peserta; serta autosave draft ke HP dan server. Presensi Hadir dan capaian menjadi catatan resmi setelah lengkap. Finalisasi alur baru mempertahankan pilihan kosong sebagai Belum Dicatat.
 

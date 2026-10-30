@@ -1,4 +1,5 @@
 <?php
+header('Cache-Control: no-store, private');
 require_once __DIR__ . '/config/database.php';
 try {
     $pdo->query('SELECT 1')->fetchColumn();

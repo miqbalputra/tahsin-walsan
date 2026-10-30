@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rapor Tahsin — {{nama_wali}}</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6; }
+        .paper { max-width: 210mm; margin: 16px auto; padding: 18mm; border: 1px solid #ddd; }
+        .heading { text-align: center; margin-bottom: 24px; }
+        .heading h1 { margin: 0; color: #1b5e20; font-size: 28px; }
+        .heading p { margin: 0; }
+        h2 { font-size: 20px; text-align: center; text-decoration: underline; margin: 24px 0; }
+        h3 { font-size: 16px; margin: 18px 0 8px; }
+        table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; }
+        th, td { padding: 8px; border: 1px solid #777; text-align: left; overflow-wrap: anywhere; }
+        th { background: #f2f2f2; }
+        .identity th, .identity td { border: 0; vertical-align: top; }
+        .identity th { background: none; width: 30%; }
+        .summary { border: 2px solid #555; padding: 12px; }
+        .summary p { margin: 4px 0; }
+        .progress { padding: 12px; background: #f9fafb; border: 1px dashed #aaa; }
+        .signatures { display: flex; justify-content: space-between; gap: 24px; margin-top: 36px; }
+        .signature { width: 45%; text-align: center; }
+        .signature p { margin: 4px 0; }
+        .signature-name { padding-top: 60px; font-weight: bold; }
+        @page { size: A4; margin: 12mm; }
+        @media screen and (max-width: 600px) { .paper { padding: 16px; margin: 0; } th, td { padding: 6px; } }
+        @media print { .paper { border: 0; margin: 0; padding: 0; } thead { display: table-header-group; } tr, .signature { break-inside: avoid; } }
+    </style>
+</head>
+<body>
+<main class="paper">
+    <header class="heading"><h1>GRIYA QUR'AN</h1><p>Rumah Belajar Al-Qur'an &amp; Tahfidz</p></header>
+    <h2>LAPORAN PERKEMBANGAN TAHSIN</h2>
+    <table class="identity">
+        <tr><th scope="row">Nama Wali</th><td>{{nama_wali}}</td></tr>
+        <tr><th scope="row">Nama Anak / Kelas</th><td>{{nama_anak_kelas}}</td></tr>
+        <tr><th scope="row">Halaqoh</th><td>{{nama_halaqoh}}</td></tr>
+        <tr><th scope="row">Ustadz</th><td>{{nama_ustadz}}</td></tr>
+        <tr><th scope="row">Periode</th><td>{{periode}}</td></tr>
+    </table>
+    <section class="summary"><h3>Ringkasan presensi tercatat</h3>
+        <p>Hadir: <b>{{hadir}}</b> &nbsp; Sakit: <b>{{sakit}}</b> &nbsp; Izin: <b>{{izin}}</b> &nbsp; Alfa: <b>{{alfa}}</b></p>
+    </section>
+    <h3>Capaian materi terakhir sampai akhir periode</h3>
+    <p class="progress">{{capaian_terakhir}}</p>
+    <h3>Rincian per sesi</h3>
+    {{riwayat_tabel}}
+    <footer class="signatures">
+        <div class="signature"><p>Mengetahui,</p><p>Ustadz pembimbing</p><p class="signature-name">{{nama_ustadz}}</p></div>
+        <div class="signature"><p>Dicetak pada {{tanggal_cetak}}</p><p>{{jabatan_pengesah}}</p><p class="signature-name">{{nama_pengesah}}</p></div>
+    </footer>
+</main>
+</body>
+</html>

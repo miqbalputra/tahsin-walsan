@@ -1,9 +1,8 @@
 <?php
 $pageTitle = 'Riwayat Presensi';
-require_once '../includes/header.php';
-require_once '../includes/sidebar.php';
 require_once '../config/database.php';
 require_once '../includes/auth_helper.php';
+require_once '../includes/attendance_history_helper.php';
 
 checkRole(['ustadz']);
 
@@ -15,28 +14,28 @@ $error = $_GET['err'] ?? '';
 // Handle Delete
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
     // CSRF Validation
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
-    }
+    requireValidCsrfToken($_POST['csrf_token'] ?? '');
 
-    $presensi_id = $_POST['id'] ?? null;
-    if ($presensi_id) {
-        // Double check ownership before delete
-        $stmt = $pdo->prepare("DELETE p FROM presensi p 
-                              JOIN halaqoh h ON p.halaqoh_id = h.id 
-                              WHERE p.id = ? AND h.ustadz_id = ?");
-        $stmt->execute([$presensi_id, $ustadz_id]);
-        $message = "Data presensi berhasil dihapus!";
+    try {
+        $deleted = attendanceHistoryDeleteOne($pdo, (int) $ustadz_id, appRequestString($_POST, 'id'), appRequestString($_POST, 'record_fingerprint'));
+        $message = $deleted ? 'Presensi dibatalkan. Pengelola dapat memulihkan salinan lengkap melalui Riwayat Pemulihan Presensi.' : 'Catatan sudah tidak ada; tidak ada data lain yang diubah.';
+    } catch (AttendanceHistoryException | InvalidArgumentException $failure) {
+        http_response_code(422); $error = $failure->getMessage();
+    } catch (Throwable $failure) {
+        reportApplicationError($failure, 'teacher-attendance-delete');
+        http_response_code(503); $error = 'Penghapusan belum dapat dipastikan. Periksa laporan kembali atau hubungi pengelola.';
     }
 }
 
 // Filters
-$start_date = $_GET['start_date'] ?? date('Y-m-01');
-$end_date = $_GET['end_date'] ?? date('Y-m-d');
-$halaqoh_id = $_GET['halaqoh_id'] ?? '';
+$start_date = normalizeDateInput($_GET['start_date'] ?? '', date('Y-m-01'));
+$end_date = normalizeDateInput($_GET['end_date'] ?? '', date('Y-m-d'));
+$halaqoh_id = filter_var($_GET['halaqoh_id'] ?? '', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) ?: '';
+$historyReady = attendanceHistoryReady($pdo);
+$snapshotSql = attendanceHistorySnapshotSql($pdo, 'p');
 
 // Build Query
-$sql = "SELECT p.*, w.nama_bapak, w.no_hp, h.nama_halaqoh 
+$sql = "SELECT p.*, $snapshotSql AS saved_snapshot, w.nama_bapak, w.no_hp, h.nama_halaqoh
         FROM presensi p 
         JOIN wali_santri w ON p.wali_santri_id = w.id 
         JOIN halaqoh h ON p.halaqoh_id = h.id 
@@ -58,6 +57,8 @@ $results = $stmt->fetchAll();
 $stmtH = $pdo->prepare("SELECT id, nama_halaqoh FROM halaqoh WHERE ustadz_id = ? ORDER BY nama_halaqoh");
 $stmtH->execute([$ustadz_id]);
 $halaqohs = $stmtH->fetchAll();
+require_once '../includes/header.php';
+require_once '../includes/sidebar.php';
 ?>
 
 <div class="mb-8">
@@ -70,12 +71,12 @@ $halaqohs = $stmtH->fetchAll();
     <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
         <div>
             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Dari Tanggal</label>
-            <input type="date" name="start_date" value="<?php echo $start_date; ?>"
+            <input type="date" name="start_date" value="<?= appEscape($start_date) ?>"
                 class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition text-sm">
         </div>
         <div>
             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Sampai Tanggal</label>
-            <input type="date" name="end_date" value="<?php echo $end_date; ?>"
+            <input type="date" name="end_date" value="<?= appEscape($end_date) ?>"
                 class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition text-sm">
         </div>
         <div>
@@ -84,8 +85,8 @@ $halaqohs = $stmtH->fetchAll();
                 class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition text-sm">
                 <option value="">Semua Halaqoh</option>
                 <?php foreach ($halaqohs as $h): ?>
-                    <option value="<?php echo $h['id']; ?>" <?php echo $halaqoh_id == $h['id'] ? 'selected' : ''; ?>>
-                        <?php echo htmlspecialchars($h['nama_halaqoh']); ?>
+                    <option value="<?= (int) $h['id'] ?>" <?php echo $halaqoh_id == $h['id'] ? 'selected' : ''; ?>>
+                        <?= appEscape($h['nama_halaqoh']) ?>
                     </option>
                 <?php endforeach; ?>
             </select>
@@ -104,9 +105,12 @@ $halaqohs = $stmtH->fetchAll();
         <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
         </svg>
-        <?php echo $message; ?>
+        <?php echo appEscape($message); ?>
     </div>
 <?php endif; ?>
+
+<?php if ($error): ?><p role="alert" class="bg-red-50 text-red-600 rounded-xl p-4 mb-6"><?= appEscape($error) ?></p><?php endif; ?>
+<?php if (!$historyReady): ?><p role="status" class="bg-amber-50 text-amber-700 rounded-xl p-4 mb-6">Riwayat pemulihan belum disiapkan. Hubungi pengelola sebelum mengubah atau menghapus catatan lama.</p><?php endif; ?>
 
 <!-- Data Table -->
 <div class="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
@@ -154,20 +158,20 @@ $halaqohs = $stmtH->fetchAll();
                                     'A' => 'bg-red-100 text-red-700',
                                 };
                                 ?>">
-                                <?php echo $row['status']; ?>
+                                <?php echo appEscape($row['status']); ?>
                             </span>
                         </td>
                         <td class="px-6 py-4 text-slate-600 align-middle">
                             <?php if ($row['status'] === 'H'): ?>
                                 <span class="font-bold text-blue-600">
-                                    <?php echo $row['jenis_materi']; ?>
+                                    <?php echo appEscape($row['jenis_materi']); ?>
                                 </span>:
                                 <span class="text-slate-700">
-                                    <?php echo ($row['jenis_materi'] === 'Iqro') ? "Jilid " . $row['jilid'] : htmlspecialchars($row['nama_surat']); ?>
+                                    <?php echo $row['jenis_materi'] === 'Iqro' ? 'Jilid ' . (int) $row['jilid'] : appEscape($row['nama_surat']); ?>
                                 </span>
                                 <span
                                     class="text-[10px] bg-slate-100 text-slate-500 font-bold px-1.5 py-0.5 rounded-md ml-1 italic">
-                                    <?php echo ($row['jenis_materi'] === 'Al Quran' ? 'Ayat ' : 'Hal ') . $row['halaman']; ?>
+                                    <?php echo ($row['jenis_materi'] === 'Al Quran' ? 'Ayat ' : 'Hal ') . appEscape($row['halaman']); ?>
                                 </span>
                             <?php elseif ($row['alasan']): ?>
                                 <span
@@ -181,7 +185,7 @@ $halaqohs = $stmtH->fetchAll();
                                 <span
                                     class="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider
                                     <?php echo $row['hasil_talaqqi'] === 'Lulus' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'; ?>">
-                                    <?php echo $row['hasil_talaqqi']; ?>
+                                    <?php echo appEscape($row['hasil_talaqqi']); ?>
                                 </span>
                             <?php else: ?>
                                 <span class="text-slate-300">-</span>
@@ -191,10 +195,13 @@ $halaqohs = $stmtH->fetchAll();
                             <div class="flex justify-end items-center gap-2">
                                 <?php if ($row['status'] === 'H' && !empty($row['no_hp'])):
                                     $wa_msg = "Alhamdulillah Pak " . $row['nama_bapak'] . ", hari ini telah hadir Tahsin. \n\n*Detail Pencapaian*: \n- Materi: " . $row['jenis_materi'] . " " . ($row['jenis_materi'] === 'Iqro' ? 'Jilid ' . $row['jilid'] : $row['nama_surat']) . " \n- " . ($row['jenis_materi'] === 'Al Quran' ? 'Ayat' : 'Halaman') . ": " . $row['halaman'] . " \n- Hasil: *" . ($row['hasil_talaqqi'] ?? '-') . "* \n\nSemangat terus Pak, baarokallaahu fiikum.";
-                                    $wa_phone = preg_replace('/^0/', '62', $row['no_hp']);
-                                    $wa_url = "https://wa.me/" . $wa_phone . "?text=" . urlencode($wa_msg);
+                                    $wa_phone = preg_replace('/\D/', '', (string) $row['no_hp']);
+                                    if (str_starts_with($wa_phone, '0')) {
+                                        $wa_phone = '62' . substr($wa_phone, 1);
+                                    }
+                                    $wa_url = "https://wa.me/" . $wa_phone . "?text=" . rawurlencode($wa_msg);
                                     ?>
-                                    <a href="<?php echo $wa_url; ?>" target="_blank"
+                                    <a href="<?= appEscape($wa_url) ?>" target="_blank" rel="noopener noreferrer"
                                         class="text-emerald-600 hover:bg-emerald-600 hover:text-white font-bold text-[10px] uppercase transition bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100 flex items-center gap-1.5 shadow-sm">
                                         <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                                             <path
@@ -203,7 +210,7 @@ $halaqohs = $stmtH->fetchAll();
                                         Kirim WA
                                     </a>
                                 <?php endif; ?>
-                                <a href="form-presensi.php?id=<?php echo $row['halaqoh_id']; ?>&tanggal=<?php echo $row['tanggal']; ?>"
+                                <a href="<?= appEscape('form-presensi.php?' . http_build_query(['id'=>(int) $row['halaqoh_id'],'tanggal'=>$row['tanggal']])) ?>"
                                     class="text-blue-600 hover:bg-blue-600 hover:text-white font-bold text-[10px] uppercase transition bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
                                     Edit
                                 </a>
@@ -211,8 +218,9 @@ $halaqohs = $stmtH->fetchAll();
                                     class="inline-flex">
                                     <?php csrfField(); ?>
                                     <input type="hidden" name="action" value="delete">
-                                    <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
-                                    <button type="submit"
+                                    <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
+                                    <input type="hidden" name="record_fingerprint" value="<?= appEscape(attendanceHistoryHash(attendanceHistoryDecode($row['saved_snapshot']))) ?>">
+                                    <button type="submit" <?= !$historyReady ? 'disabled' : '' ?>
                                         class="text-red-600 hover:bg-red-600 hover:text-white font-bold text-[10px] uppercase transition bg-red-50 px-3 py-1.5 rounded-xl border border-red-100">
                                         Hapus
                                     </button>

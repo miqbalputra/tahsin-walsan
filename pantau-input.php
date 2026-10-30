@@ -29,7 +29,7 @@ $base = filter_var($configuredUrl, FILTER_VALIDATE_URL) && preg_match('#^https?:
 $pageTitle = 'Pemantauan Input';
 require __DIR__ . '/includes/header.php'; require __DIR__ . '/includes/sidebar.php';
 ?>
-<link rel="stylesheet" href="assets/css/tahsin-report.css">
+<link rel="stylesheet" href="<?= appEscape(appAssetUrl('assets/css/tahsin-report.css')) ?>">
 <div class="tahsin-report">
 <div class="tahsin-heading"><div><h2>Pemantauan Input Guru Tahsin</h2><p class="tahsin-note">Semua sesi Ahad dalam rentang ditampilkan, dikelompokkan menurut tanggal.<br>Data kosong belum menunjukkan status wali. Batas input: Senin 10.00 WIB, termasuk sesi pengganti.</p></div><a class="tahsin-button" href="rekap-lengkap.php">Buka Rekap Lengkap</a></div>
 <?php if ($error): ?><div class="tahsin-alert error" role="alert"><?= tahsinH($error) ?></div><?php endif; ?>
@@ -85,5 +85,5 @@ require __DIR__ . '/includes/header.php'; require __DIR__ . '/includes/sidebar.p
 <?php endif; ?>
 </section>
 <?php endforeach; ?>
-</div></div><script src="assets/js/tahsin-report.js"></script>
+</div></div><script src="<?= appEscape(appAssetUrl('assets/js/tahsin-report.js')) ?>"></script>
 <?php require __DIR__ . '/includes/footer.php'; ?>

@@ -158,8 +158,10 @@ CREATE TABLE IF NOT EXISTS pengumuman (
 ) ENGINE=InnoDB;
 
 -- Initial Seed Data
+-- Kolom password dikosongkan: akun tidak dapat login sampai admin dibuat
+-- lewat CLI dengan password_hash() (contoh perintah di komentar database.sql).
 INSERT IGNORE INTO users (username, password, nama_lengkap, role)
-VALUES ('admin', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrator Utama', 'admin');
+VALUES ('admin', '', 'Administrator Utama', 'admin');
 
 INSERT IGNORE INTO settings (setting_key, setting_value) VALUES
 ('pj_tahfidz_name', 'Admin Sekolah'),

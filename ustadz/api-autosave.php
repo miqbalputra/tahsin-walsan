@@ -4,7 +4,8 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, private');
 try {
     if (empty($_SESSION['user_id'])) throw new RuntimeException('Login berakhir. Masuk kembali; draft di HP tetap tersedia.', 401);
-    if (($_SESSION['role'] ?? '') !== 'ustadz') throw new RuntimeException('Akses khusus guru.', 403);
+    require_once __DIR__ . '/../config/database.php';
+    requireApiSession($pdo, ['ustadz']);
     $method = $_SERVER['REQUEST_METHOD'];
     if (!in_array($method, ['GET', 'POST'], true)) { header('Allow: GET, POST'); throw new RuntimeException('Metode tidak didukung.', 405); }
     if ($method === 'POST') {
@@ -16,7 +17,6 @@ try {
     } else $input = $_GET;
     $userId = (int) $_SESSION['user_id'];
     session_write_close();
-    require __DIR__ . '/../config/database.php';
     require_once __DIR__ . '/../includes/autosave_helper.php';
     $groupId = filter_var($input['halaqoh_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     $date = is_string($input['tanggal'] ?? null) ? $input['tanggal'] : '';

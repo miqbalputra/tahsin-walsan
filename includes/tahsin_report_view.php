@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/csv_helper.php';
+
 function tahsinH($value): string { return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 function tahsinQuery(array $filters, array $extra = []): string { return http_build_query(array_merge($filters, $extra)); }
 function tahsinStatusLabel($status): string { return ['H' => 'Hadir', 'S' => 'Sakit', 'I' => 'Izin', 'A' => 'Alfa'][$status] ?? 'Belum Diinput'; }
@@ -36,7 +38,7 @@ function tahsinRenderWaliTable(array $rows, array $filters, bool $excel = false)
     foreach ($rows as $r) {
         $text = static function ($value) use ($excel) {
             $value = (string) $value;
-            if ($excel && preg_match('/^[=+@\-\t\r]/', $value)) $value = "'" . $value;
+            if ($excel) $value = appSpreadsheetSafeText($value);
             return tahsinH($value);
         };
         echo '<tr><td><strong>';
@@ -85,7 +87,7 @@ function tahsinRenderDetails(array $rows, bool $canVerify, bool $print = false):
 function tahsinMeetingText($value, bool $excel = false): string
 {
     $value = (string) $value;
-    if ($excel && preg_match('/^[=+@\-\t\r]/', $value)) $value = "'" . $value;
+    if ($excel) $value = appSpreadsheetSafeText($value);
     return tahsinH($value);
 }
 

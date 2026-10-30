@@ -4,68 +4,72 @@ require_once 'includes/auth_helper.php';
 
 $error = '';
 $warning = '';
+$username = '';
+$loginRedirect = null;
+if (($_GET['session'] ?? '') === 'expired') {
+    $warning = 'Sesi akun berakhir atau akses akun berubah. Silakan masuk kembali. Draft presensi di perangkat tetap tersimpan.';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // CSRF Validation
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
-    }
+    requireValidCsrfToken($_POST['csrf_token'] ?? '');
 
-    $username = $_POST['username'] ?? '';
-    $password = $_POST['password'] ?? '';
+    $password = '';
+    try {
+        $username = appRequestString($_POST, 'username');
+        $password = appRequestString($_POST, 'password', '', false);
+        if (appTextLength($username) > 50 || strlen($password) > 4096) {
+            throw new InvalidArgumentException('Periksa kembali nama pengguna dan kata sandi.');
+        }
+    } catch (InvalidArgumentException $failure) {
+        $error = $failure->getMessage();
+    }
     $remember = isset($_POST['remember']);
     $client_ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 
-    if ($username && $password) {
-        // Rate Limiting: Cek apakah login diblokir
-        $rate_check = checkLoginAttempts($pdo, $username, $client_ip);
-
-        if ($rate_check['blocked']) {
+    if ($username !== '' && $password !== '' && $error === '') {
+        $authentication = authenticateLoginAttempt($pdo, $username, $password, $client_ip);
+        if ($authentication['state'] === 'unavailable') {
+            appRequestError(503, 'Belum dapat memeriksa login', 'Ada proses login lain yang sedang diperiksa. Tunggu sebentar lalu kirim ulang; percobaan ini belum mengubah akun.');
+        } elseif ($authentication['state'] === 'blocked') {
+            $rate_check = $authentication['rate'];
             $error = "Terlalu banyak percobaan login gagal. Coba lagi dalam {$rate_check['retry_after_minutes']} menit.";
             addLog($pdo, 'LOGIN_BLOCKED', "Login diblokir untuk user '{$username}' dari IP {$client_ip} (rate limit).");
+        } elseif ($authentication['state'] === 'success') {
+            $user = $authentication['user'];
+            // Security: Regenerate session ID on login.
+            regenerateSession($remember);
+
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['nama_lengkap'] = $user['nama_lengkap'];
+            $_SESSION['role'] = $user['role'];
+            $_SESSION['auth_password_fingerprint'] = hash('sha256', $user['password']);
+
+            addLog($pdo, 'LOGIN', "User {$_SESSION['username']} berhasil masuk.");
+            $loginRedirect = roleHomePath($user['role']);
         } else {
-            $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
-            $stmt->execute([$username]);
-            $user = $stmt->fetch();
+            $remaining = $authentication['remaining_attempts'];
+            $error = 'Username atau password salah!';
 
-            if ($user && password_verify($password, $user['password'])) {
-                // Login berhasil: hapus catatan percobaan gagal
-                clearLoginAttempts($pdo, $username, $client_ip);
-
-                // Security: Regenerate session ID on login
-                regenerateSession($remember);
-
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['username'] = $user['username'];
-                $_SESSION['nama_lengkap'] = $user['nama_lengkap'];
-                $_SESSION['role'] = $user['role'];
-
-                addLog($pdo, 'LOGIN', "User {$_SESSION['username']} berhasil masuk.");
-
-                redirectTo(roleHomePath($user['role']));
-            } else {
-                // Login gagal: catat percobaan
-                recordFailedLogin($pdo, $username, $client_ip);
-
-                $remaining = $rate_check['remaining_attempts'] - 1;
-                $error = "Username atau password salah!";
-
-                if ($remaining <= 2 && $remaining > 0) {
-                    $warning = "Peringatan: Sisa {$remaining} percobaan sebelum akun dikunci sementara.";
-                } elseif ($remaining <= 0) {
-                    $warning = "Akun dikunci selama " . LOGIN_LOCKOUT_MINUTES . " menit karena terlalu banyak percobaan gagal.";
-                }
-
-                addLog($pdo, 'LOGIN_FAILED', "Login gagal untuk user '{$username}' dari IP {$client_ip}. Sisa percobaan: {$remaining}.");
+            if ($remaining <= 2 && $remaining > 0) {
+                $warning = "Peringatan: Sisa {$remaining} percobaan sebelum akun dikunci sementara.";
+            } elseif ($remaining <= 0) {
+                $warning = 'Akun dikunci selama ' . LOGIN_LOCKOUT_MINUTES . ' menit karena terlalu banyak percobaan gagal.';
             }
+
+            addLog($pdo, 'LOGIN_FAILED', "Login gagal untuk user '{$username}' dari IP {$client_ip}. Sisa percobaan: {$remaining}.");
         }
-    } else {
+    } elseif ($error === '') {
         $error = "Silakan isi semua bidang!";
     }
 }
 
+if ($loginRedirect !== null) redirectTo($loginRedirect);
+
 // Redirect if already logged in
 if (isset($_SESSION['user_id'])) {
+    checkLogin();
     redirectTo(roleHomePath());
 }
 ?>
@@ -80,8 +84,8 @@ if (isset($_SESSION['user_id'])) {
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2563eb">
     <link rel="apple-touch-icon" href="icon-512.png">
-    <link rel="stylesheet" href="assets/css/app.css">
-    <script defer src="assets/js/alpine.min.js"></script>
+    <link rel="stylesheet" href="<?= appEscape(appAssetUrl('assets/css/app.css')) ?>">
+    <script defer src="<?= appEscape(appAssetUrl('assets/js/alpine.min.js')) ?>"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -159,7 +163,7 @@ if (isset($_SESSION['user_id'])) {
                 </div>
                 <h1 class="text-2xl sm:text-3xl font-[900] text-slate-800 tracking-tight leading-none uppercase">
                     Presensi <span class="text-blue-600">Tahsin</span></h1>
-                <p class="text-slate-400 mt-2 sm:mt-3 font-medium text-xs sm:text-sm">Kelompok Tahfidz Griya Qur'an
+                <p class="text-slate-600 mt-2 sm:mt-3 font-medium text-xs sm:text-sm">Kelompok Tahfidz Griya Qur'an
                 </p>
             </div>
 
@@ -171,7 +175,7 @@ if (isset($_SESSION['user_id'])) {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
-                    <?php echo $error; ?>
+                    <?= appEscape($error) ?>
                 </div>
             <?php endif; ?>
 
@@ -183,7 +187,7 @@ if (isset($_SESSION['user_id'])) {
                             d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z">
                         </path>
                     </svg>
-                    <?php echo $warning; ?>
+                    <?= appEscape($warning) ?>
                 </div>
             <?php endif; ?>
 
@@ -193,8 +197,8 @@ if (isset($_SESSION['user_id'])) {
 
                 <!-- Username -->
                 <div class="mb-4 sm:mb-5 relative group">
-                    <label
-                        class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2">Username</label>
+                    <label for="login-username"
+                        class="block text-[10px] font-black text-slate-600 uppercase tracking-widest ml-4 mb-2">Username</label>
                     <div class="relative">
                         <span
                             class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors">
@@ -203,16 +207,16 @@ if (isset($_SESSION['user_id'])) {
                                     d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                             </svg>
                         </span>
-                        <input type="text" name="username" required autocomplete="username"
-                            class="w-full pl-12 pr-6 py-3.5 sm:py-4 rounded-2xl border border-slate-100 bg-white/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold text-slate-700 placeholder:text-slate-300 placeholder:font-normal text-sm sm:text-base"
+                        <input id="login-username" type="text" name="username" maxlength="50" value="<?= appEscape($username) ?>" required autocomplete="username"
+                            class="w-full pl-12 pr-6 py-3.5 sm:py-4 rounded-2xl border border-slate-100 bg-white/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold text-slate-700 placeholder:text-slate-600 placeholder:font-normal text-sm sm:text-base"
                             placeholder="Masukkan username">
                     </div>
                 </div>
 
                 <!-- Password -->
                 <div class="mb-6 sm:mb-8 relative group">
-                    <label
-                        class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2">Password</label>
+                    <label for="login-password"
+                        class="block text-[10px] font-black text-slate-600 uppercase tracking-widest ml-4 mb-2">Password</label>
                     <div class="relative">
                         <span
                             class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors">
@@ -222,11 +226,11 @@ if (isset($_SESSION['user_id'])) {
                                 </path>
                             </svg>
                         </span>
-                        <input :type="showPass ? 'text' : 'password'" name="password" required
+                        <input id="login-password" :type="showPass ? 'text' : 'password'" name="password" required
                             autocomplete="current-password"
-                            class="w-full pl-12 pr-12 py-3.5 sm:py-4 rounded-2xl border border-slate-100 bg-white/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold text-slate-700 placeholder:text-slate-300 text-sm sm:text-base"
+                            class="w-full pl-12 pr-12 py-3.5 sm:py-4 rounded-2xl border border-slate-100 bg-white/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold text-slate-700 placeholder:text-slate-600 text-sm sm:text-base"
                             placeholder="••••••••">
-                        <button type="button" @click="showPass = !showPass"
+                        <button type="button" @click="showPass = !showPass" :aria-label="showPass ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'" :aria-pressed="showPass" aria-controls="login-password"
                             class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-blue-600 transition-colors">
                             <svg x-show="!showPass" class="w-5 h-5" fill="none" stroke="currentColor"
                                 viewBox="0 0 24 24">
@@ -249,7 +253,7 @@ if (isset($_SESSION['user_id'])) {
                 <!-- Auto-persistent Login Notice -->
                 <div class="mb-6 flex justify-center">
                     <p
-                        class="text-[10px] font-bold text-slate-400 italic flex items-center gap-1.5 bg-slate-50 px-4 py-2 rounded-full border border-slate-100">
+                        class="text-[10px] font-bold text-slate-600 italic flex items-center gap-1.5 bg-slate-50 px-4 py-2 rounded-full border border-slate-100">
                         <svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z">
@@ -281,10 +285,10 @@ if (isset($_SESSION['user_id'])) {
                         Install ke Perangkat
                     </button>
                 </div>
-                <p class="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1 italic">
+                <p class="text-[9px] sm:text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] mb-1 italic">
                     &copy; 2026
                     Presensi Tahsin - Wali Santri</p>
-                <p class="text-[9px] sm:text-[10px] text-slate-400 font-medium tracking-wide">Developed by <a
+                <p class="text-[9px] sm:text-[10px] text-slate-600 font-medium tracking-wide">Developed by <a
                         href="https://sistemflow.com" target="_blank"
                         class="text-blue-600 font-bold hover:underline transition-all">SistemFlow</a></p>
             </div>
@@ -292,7 +296,7 @@ if (isset($_SESSION['user_id'])) {
 
         <!-- Helpful text below -->
         <p
-            class="text-center text-slate-400 text-[9px] sm:text-[10px] font-bold mt-6 sm:mt-8 uppercase tracking-[0.3em]">
+            class="text-center text-slate-600 text-[9px] sm:text-[10px] font-bold mt-6 sm:mt-8 uppercase tracking-[0.3em]">
             Bapak Tahsin
             Presensi System v2.0</p>
     </div>

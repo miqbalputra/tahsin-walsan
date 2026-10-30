@@ -1,63 +1,30 @@
 <?php
-require_once '../config/database.php';
-require_once '../includes/auth_helper.php';
-require_once '../includes/attendance_helper.php';
-
-header('Content-Type: application/json');
-
-if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ustadz') {
-    http_response_code(403);
-    echo json_encode(['status' => 'error', 'message' => 'Unauthorized']);
-    exit();
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/auth_helper.php';
+require_once __DIR__ . '/../includes/attendance_form_helper.php';
+header('Content-Type: application/json; charset=utf-8');
+function legacyAttendanceJsonError(int $status, string $message): void {
+    http_response_code($status); echo json_encode(['status'=>'error','message'=>$message],JSON_UNESCAPED_UNICODE); exit;
 }
-
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    header('Allow: POST');
-    echo json_encode(['status' => 'error', 'message' => 'Method not allowed']);
-    exit();
+try { requireApiSession($pdo,['ustadz']); }
+catch (RuntimeException $failure) {
+    $status=in_array($failure->getCode(),[401,403],true)?$failure->getCode():503;
+    if ($status===503) reportApplicationError($failure,'legacy-attendance-session');
+    legacyAttendanceJsonError($status,$status===503?'Akun belum dapat diperiksa. Coba kembali sebentar lagi.':$failure->getMessage());
 }
-
-if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-    http_response_code(403);
-    echo json_encode(['status' => 'error', 'message' => 'Token keamanan tidak valid. Muat ulang halaman lalu coba lagi.']);
-    exit();
-}
-
-$ustadzId = (int) $_SESSION['user_id'];
-$halaqohId = filter_var($_POST['halaqoh_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-$waliId = filter_var($_POST['wali_santri_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-$tanggal = normalizeDateInput($_POST['tanggal'] ?? '', '');
-if ($halaqohId === false || $waliId === false || $tanggal === '') {
-    http_response_code(422);
-    echo json_encode(['status' => 'error', 'message' => 'Data presensi tidak valid.']);
-    exit();
-}
-
-$payload = [
-    'intent' => $_POST['intent'] ?? 'save',
-    'status' => $_POST['status'] ?? '',
-    'alasan' => $_POST['alasan'] ?? '',
-    'jenis_materi' => $_POST['jenis_materi'] ?? '',
-    'jilid' => $_POST['jilid'] ?? '',
-    'nama_surat_dari' => $_POST['nama_surat_dari'] ?? '',
-    'nama_surat_sampai' => $_POST['nama_surat_sampai'] ?? '',
-    'halaman_dari' => $_POST['halaman_dari'] ?? '',
-    'halaman_sampai' => $_POST['halaman_sampai'] ?? '',
-    'hasil_talaqqi' => $_POST['hasil_talaqqi'] ?? '',
-];
-
+if ($_SERVER['REQUEST_METHOD']!=='POST') { header('Allow: POST'); legacyAttendanceJsonError(405,'Gunakan formulir presensi untuk menyimpan.'); }
+if (!verifyCsrfToken($_POST['csrf_token']??null)) legacyAttendanceJsonError(403,'Token keamanan tidak valid. Buka kembali formulir sebelum mencoba lagi.');
 try {
-    $result = attendanceSaveEntries($pdo, $halaqohId, $ustadzId, $tanggal, [$waliId => $payload]);
-    $message = $result['deleted'] > 0 || strtolower((string) $payload['intent']) === 'reset' || strtoupper((string) $payload['status']) === 'RESET'
-        ? 'Presensi dibatalkan'
-        : 'Draft tersimpan otomatis';
-    echo json_encode(['status' => 'success', 'message' => $message, 'saved' => $result['saved'], 'deleted' => $result['deleted']]);
-} catch (AttendanceValidationException $e) {
-    http_response_code(422);
-    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
-} catch (Throwable $e) {
-    reportApplicationError($e, 'api-save-single');
-    http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Gagal menyimpan presensi. Silakan coba lagi.']);
-}
+    $form=attendanceFormGet(appRequestString($_POST,'attendance_form_token'),(int)$_SESSION['user_id']);
+    $group=filter_var(appRequestString($_POST,'halaqoh_id'),FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+    $id=filter_var(appRequestString($_POST,'wali_santri_id'),FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+    $date=appRequestString($_POST,'tanggal');
+    if (!$id || !$group || !tahsinDate($date)) throw new AttendanceFormException('Peserta, halaqoh atau tanggal tidak valid.');
+    if ($group!==$form['group_id'] || $date!==$form['date']) throw new AttendanceFormException('Halaqoh atau tanggal tidak sesuai formulir yang dibuka.',409);
+    $expected=[$id=>appRequestString($_POST,'entry_revision')];
+    $result=attendanceFormSave($pdo,$form,[$id=>attendanceReadPayload($_POST)],$expected,appRequestString($_POST,'operation_id'),false);
+    attendanceFormAccept($form,$expected,$result);
+    echo json_encode(['status'=>'success','message'=>$result['deleted']?'Presensi dibatalkan; versi lama tersimpan.':'Catatan tersimpan.']+$result,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+} catch (AttendanceFormException $failure) { legacyAttendanceJsonError($failure->httpStatus,$failure->getMessage()); }
+catch (AttendanceValidationException|AttendanceHistoryException|InvalidArgumentException $failure) { legacyAttendanceJsonError(422,$failure->getMessage()); }
+catch (Throwable $failure) { reportApplicationError($failure,'legacy-attendance-save'); legacyAttendanceJsonError(503,'Penyimpanan belum dapat dipastikan. Periksa riwayat atau coba ulang pengiriman yang sama.'); }

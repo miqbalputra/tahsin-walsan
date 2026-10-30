@@ -39,7 +39,7 @@ function autosavePayload(array $input): array
         if (!is_scalar($value) && $value !== null) throw new AutosaveException('Format isian tidak valid.');
         $value = (string) $value;
         $limit = $field === 'alasan' ? 500 : (str_starts_with($field, 'nama_surat') ? 100 : 30);
-        if (!preg_match('//u', $value) || preg_match_all('/./us', $value) > $limit) throw new AutosaveException('Isian terlalu panjang atau tidak valid.');
+        if (!preg_match('//u', $value) || preg_match('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/',$value) || preg_match_all('/./us', $value) > $limit) throw new AutosaveException('Isian terlalu panjang atau tidak valid.');
         $payload[$field] = $value;
     }
     foreach (['status' => ['', 'H', 'S', 'I', 'A'], 'jenis_materi' => ['', 'Iqro', 'Al Quran'], 'hasil_talaqqi' => ['', 'Lulus', 'Ulang']] as $field => $allowed) {
@@ -56,8 +56,9 @@ function autosaveMissing(array $p): array
     if ($p['status'] !== 'H') return [];
     if (!in_array($p['jenis_materi'], ['Iqro', 'Al Quran'], true)) $missing[] = 'jenis materi';
     if ($p['jenis_materi'] === 'Iqro' && !preg_match('/^[1-6]$/D', $p['jilid'])) $missing[] = 'jilid 1–6';
-    foreach (['halaman_dari', 'halaman_sampai'] as $field) if (!preg_match('/^[1-9][0-9]{0,3}$/D', $p[$field])) $missing[] = str_replace('_', ' ', $field);
-    if ((int) $p['halaman_dari'] > (int) $p['halaman_sampai'] && ($p['jenis_materi'] === 'Iqro' || $p['nama_surat_dari'] === $p['nama_surat_sampai'])) $missing[] = 'rentang bacaan berurutan';
+    foreach (['halaman_dari', 'halaman_sampai'] as $field) if (!preg_match('/^[1-9][0-9]{0,3}$/D', $p[$field]) && !($p['jenis_materi']==='Iqro' && $p[$field]==='EBTA')) $missing[] = str_replace('_', ' ', $field);
+    $rangeStart=$p['halaman_dari']==='EBTA'?10000:(int)$p['halaman_dari']; $rangeEnd=$p['halaman_sampai']==='EBTA'?10000:(int)$p['halaman_sampai'];
+    if ($rangeStart > $rangeEnd && ($p['jenis_materi'] === 'Iqro' || $p['nama_surat_dari'] === $p['nama_surat_sampai'])) $missing[] = 'rentang bacaan berurutan';
     if ($p['jenis_materi'] === 'Al Quran') foreach (['nama_surat_dari', 'nama_surat_sampai'] as $field) if (trim($p[$field]) === '') $missing[] = str_replace('_', ' ', $field);
     if ($p['jenis_materi'] === 'Al Quran' && preg_match_all('/./us', attendanceCombineRange($p['nama_surat_dari'], $p['nama_surat_sampai'], 's/d')) > 100) $missing[] = 'nama surat lebih singkat';
     if (!in_array($p['hasil_talaqqi'], ['Lulus', 'Ulang'], true)) $missing[] = 'hasil Lulus/Ulang';

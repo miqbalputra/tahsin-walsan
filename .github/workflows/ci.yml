@@ -1,0 +1,209 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'codex/**', 'feat/**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: PHP + Node test suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql, zip, mbstring, gd
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: PHP syntax check
+        run: git ls-files -z '*.php' | xargs -0 -n1 php -l
+
+      - name: Environment file parser checks
+        run: php tests/env-loader-tests.php
+
+      - name: Private import storage checks
+        run: php tests/import-storage-tests.php
+
+      - name: Reminder API authentication isolation
+        run: node tests/tahsin-reminder-auth-http.cjs
+
+      - name: Legacy student CSV checks
+        run: php tests/legacy-student-import-tests.php
+
+      - name: Spreadsheet export escaping checks
+        run: php tests/spreadsheet-export-tests.php
+
+      - name: Legacy destructive generator safety checks
+        run: node tests/legacy-generator-safety-tests.cjs
+
+      - name: Rebuild and verify public assets
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          git diff --exit-code -- assets/css/app.css assets/js/alpine.min.js assets/js/chart.umd.min.js manifest.json sw.js
+
+      # Fixture credentials must match tests/*: root/tahsin_local_test on 127.0.0.1:13317.
+      # MariaDB is installed explicitly (not the preinstalled MySQL) because the suites
+      # are validated against MariaDB.
+      - name: Start MariaDB on 127.0.0.1:13317
+        run: |
+          sudo systemctl stop mysql 2>/dev/null || true
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends mariadb-server
+          printf '[mysqld]\nport=13317\nbind-address=127.0.0.1\n' | sudo tee /etc/mysql/mariadb.conf.d/99-ci-port.cnf >/dev/null
+          # apt postinst already started the service on the default port;
+          # restart so the port override above actually takes effect.
+          sudo systemctl restart mariadb
+          for i in $(seq 1 60); do
+            if sudo mariadb -e 'SELECT 1' >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          sudo mariadb -e "ALTER USER 'root'@'localhost' IDENTIFIED BY 'tahsin_local_test'; CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY 'tahsin_local_test'; GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION; FLUSH PRIVILEGES;"
+          mariadb -h 127.0.0.1 -P 13317 -u root -ptahsin_local_test -e 'SELECT VERSION();'
+
+      - name: PHPUnit unit tests
+        run: |
+          composer install --no-interaction --no-progress
+          vendor/bin/phpunit --configuration phpunit.xml
+
+      - name: PHP integration suites
+        run: |
+          set +e
+          failures=0
+          run_suite() {
+            suite="$1"
+            shift
+            printf '::group::%s\n' "$suite"
+            output_file="$(mktemp)"
+            "$@" >"$output_file" 2>&1
+            suite_status=$?
+            cat "$output_file"
+            printf '::endgroup::\n'
+            if [ "$suite_status" -ne 0 ]; then
+              details="$(tail -n 6 "$output_file" | tr '\r\n' '  ' | cut -c1-700)"
+              details="${details//'%'/'%25'}"
+              details="${details//'::'/'%3A%3A'}"
+              echo "::error title=Failed PHP suite - $suite::exit code $suite_status; output: $details"
+              failures=$((failures + 1))
+            fi
+            rm -f "$output_file"
+          }
+          run_suite tahsin-regression php tests/run-tahsin-tests.php
+          run_suite rapor-regression php tests/rapor-tests.php
+          run_suite tahsin-reminder php tests/tahsin-reminder-tests.php
+          run_suite tahsin-reminder-auth php tests/tahsin-reminder-auth-tests.php
+          run_suite api-rate-limits php tests/api-rate-limit-tests.php
+          run_suite attendance-history php -d memory_limit=256M tests/attendance-history-integration.php
+          run_suite halaqoh-fk-migration php tests/halaqoh-fk-migration-integration.php
+          run_suite attendance-form php -d memory_limit=256M tests/attendance-form-integration.php
+          run_suite security php tests/security-integration.php
+          run_suite backup-recovery php tests/backup-integration.php
+          run_suite tahsin-mysql php -d memory_limit=256M tests/tahsin-mysql-integration.php
+          run_suite autosave php -d memory_limit=256M tests/autosave-integration.php
+          run_suite participant-import php -d memory_limit=256M tests/participant-import-integration.php
+          run_suite participant-management php -d memory_limit=256M tests/participant-management-integration.php
+          run_suite membership php -d memory_limit=256M tests/membership-integration.php
+          run_suite student-progress php -d memory_limit=256M tests/student-progress-integration.php
+          run_suite achievement php -d memory_limit=256M tests/achievement-integration.php
+          run_suite participant-merge php -d memory_limit=256M tests/participant-merge-integration.php
+          run_suite family php -d memory_limit=256M tests/family-integration.php
+          run_suite data-induk-archive php -d memory_limit=256M tests/data-induk-archive-integration.php
+          run_suite data-induk-migration php -d memory_limit=256M tests/data-induk-migration-integration.php
+          exit "$failures"
+
+      - name: Data Induk roster sync integration
+        run: node tests/data-induk-sync-http-tests.cjs
+
+      - name: Asset, service worker, and workflow suites
+        run: |
+          set -e
+          php tests/asset-tests.php
+          node tests/autosave-storage-tests.cjs
+          node tests/legacy-attendance-queue-tests.cjs
+          node tests/service-worker-tests.cjs
+          node tests/n8n-reminder-workflow.cjs
+
+      - name: Security HTTP suite
+        run: node tests/security-http-tests.cjs
+
+      - name: Migration HTTP isolation suite
+        run: node tests/migration-http-tests.cjs
+
+      - name: Attendance recovery HTTP suite
+        run: node tests/attendance-history-http-tests.cjs
+
+      - name: Achievement HTTP suite
+        run: node tests/achievement-http-tests.cjs
+
+      - name: Legacy attendance HTTP suite
+        run: node tests/legacy-attendance-http-tests.cjs
+
+      - name: Membership HTTP suite
+        run: node tests/membership-http-tests.cjs
+
+      - name: Create weekly reminder HTTP fixture
+        run: |
+          set -e
+          mariadb -h 127.0.0.1 -P 13317 -u root -ptahsin_local_test -e "DROP DATABASE IF EXISTS tahsin_test_weekly_reminder_ci"
+          php tests/tahsin-reminder-mysql-integration.php tahsin_test_weekly_reminder_ci
+
+      - name: Weekly reminder HTTP checks
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 13317
+          DB_DATABASE: tahsin_test_weekly_reminder_ci
+          DB_USERNAME: root
+          DB_PASSWORD: tahsin_local_test
+          N8N_API_KEY: tahsin-test-api
+          HERMES_API_KEY: tahsin-test-api
+        run: node tests/tahsin-reminder-http-runner.cjs
+
+      - name: Build and smoke-test Apache image
+        run: |
+          set -euo pipefail
+          image="presensi-tahsin:audit-${GITHUB_SHA}"
+          session_probe="sess_codex_audit_${GITHUB_RUN_ID}"
+          private_doc="docs/codex-audit-private-${GITHUB_RUN_ID}.md"
+          container_id=""
+          mkdir -p docs
+          printf 'must not enter the image\n' > "$session_probe"
+          printf 'must not enter the image\n' > "$private_doc"
+          cleanup() {
+            if [ -n "$container_id" ]; then docker rm -f "$container_id" >/dev/null 2>&1 || true; fi
+            rm -f "$session_probe" "$private_doc"
+            rmdir docs 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          docker build --tag "$image" .
+          docker run --rm --entrypoint apache2ctl "$image" -t
+          docker run --rm --entrypoint sh "$image" -ec \
+            "test ! -e /var/www/html/$session_probe && test ! -e /var/www/html/docs/codex-audit-private-${GITHUB_RUN_ID}.md && test ! -e /var/www/html/temp_excel && test -f /var/www/html/manifest.json && test -f /var/www/html/assets/css/app.css"
+
+          container_id="$(docker run -d -p 127.0.0.1::80 --entrypoint /bin/sh "$image" -c 'mkdir -p /var/www/html/audit_probe && printf session-secret > /var/www/html/audit_probe/sess_probe && exec apache2ctl -D FOREGROUND')"
+          host_port="$(docker port "$container_id" 80/tcp | awk -F: '{print $NF}')"
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail "http://127.0.0.1:$host_port/manifest.json" >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent "http://127.0.0.1:$host_port/manifest.json" >/dev/null
+          curl --fail --silent "http://127.0.0.1:$host_port/assets/css/app.css" >/dev/null
+          session_status="$(curl --silent --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:$host_port/audit_probe/sess_probe")"
+          test "$session_status" = 403
+          for path in /.env.example /config/ /includes/ /tests/ /docs/ /scripts/ /temp_excel/ /.sessions/ /migrate.php; do
+            status="$(curl --silent --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:$host_port$path")"
+            test "$status" = 403
+          done

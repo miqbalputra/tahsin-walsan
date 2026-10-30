@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/tahsin_report_helper.php';
 require_once __DIR__ . '/family_helper.php';
+require_once __DIR__ . '/attendance_history_helper.php';
 /**
  * Shared attendance persistence rules.
  *
@@ -11,6 +12,16 @@ require_once __DIR__ . '/family_helper.php';
 
 class AttendanceValidationException extends RuntimeException
 {
+}
+
+function attendancePrepareHistory(PDO $pdo, int $actorId): void
+{
+    try {
+        attendanceHistoryRequireReady($pdo);
+        attendanceHistoryActor($pdo, $actorId, ['ustadz']);
+    } catch (AttendanceHistoryException $failure) {
+        throw new AttendanceValidationException($failure->getMessage());
+    }
 }
 
 /**
@@ -209,71 +220,78 @@ function attendanceFetchSessionAttendance(PDO $pdo, $halaqohId, $ustadzId, strin
     return ['entries' => $entries, 'conflicts' => $conflicts];
 }
 
+function attendanceReadPayload($data): array
+{
+    if (!is_array($data)) throw new AttendanceValidationException('Data peserta presensi tidak valid.');
+    $limits = ['intent'=>10,'status'=>10,'alasan'=>500,'jenis_materi'=>20,'jilid'=>2,'nama_surat_dari'=>100,'nama_surat_sampai'=>100,'halaman_dari'=>10,'halaman_sampai'=>10,'hasil_talaqqi'=>10];
+    $raw=[];
+    foreach ($limits as $field=>$limit) {
+        $value=$data[$field]??($field==='intent'?'save':'');
+        if (!is_string($value) && !is_int($value)) throw new AttendanceValidationException('Format isian presensi tidak valid.');
+        $value=(string)$value;
+        if (!preg_match('//u',$value) || preg_match('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/',$value) || appTextLength($value)>$limit) throw new AttendanceValidationException('Isian presensi terlalu panjang atau mengandung karakter tidak valid.');
+        $raw[$field]=trim($value);
+    }
+    return $raw;
+}
+
 function attendanceNormalizePayload($data, $allowReset = false)
 {
-    if (!is_array($data)) {
-        throw new AttendanceValidationException('Data peserta presensi tidak valid.');
-    }
-
-    $intent = strtolower(trim((string) ($data['intent'] ?? 'save')));
-    $status = strtoupper(trim((string) ($data['status'] ?? '')));
-    if ($intent === 'reset' || ($allowReset && $status === 'RESET')) {
-        return ['intent' => 'reset'];
-    }
-
-    if ($intent !== 'save' || !in_array($status, ['H', 'S', 'I', 'A'], true)) {
-        throw new AttendanceValidationException('Status presensi tidak valid.');
-    }
-
-    $alasan = ($status === 'S' || $status === 'I') ? trim((string) ($data['alasan'] ?? '')) : null;
-    $jenisMateri = null;
-    $jilid = null;
-    $namaSurat = null;
-    $halaman = null;
-    $hasilTalaqqi = null;
-
-    if ($status === 'H') {
-        $jenisMateri = trim((string) ($data['jenis_materi'] ?? ''));
-        if (!in_array($jenisMateri, ['Iqro', 'Al Quran'], true)) {
-            throw new AttendanceValidationException('Jenis materi wajib dipilih untuk peserta yang hadir.');
+    $data=attendanceReadPayload($data);
+    $intent=strtolower($data['intent']); $status=strtoupper($data['status']);
+    if ($intent==='reset' || ($allowReset && $status==='RESET')) return ['intent'=>'reset'];
+    if ($intent!=='save' || !in_array($status,['H','S','I','A'],true)) throw new AttendanceValidationException('Status presensi tidak valid.');
+    $alasan=in_array($status,['S','I'],true)?$data['alasan']:null;
+    $jenisMateri=$jilid=$namaSurat=$halaman=$hasilTalaqqi=null;
+    if ($status==='H') {
+        $jenisMateri=$data['jenis_materi'];
+        if (!in_array($jenisMateri,['Iqro','Al Quran'],true)) throw new AttendanceValidationException('Jenis materi wajib dipilih untuk peserta yang hadir.');
+        $jilid=$jenisMateri==='Iqro'?$data['jilid']:null;
+        $namaSurat=$jenisMateri==='Al Quran'?attendanceCombineRange($data['nama_surat_dari'],$data['nama_surat_sampai'],'s/d'):null;
+        if ($jenisMateri==='Iqro' && !preg_match('/^[1-6]$/D',$jilid)) throw new AttendanceValidationException('Pilih jilid Iqro 1 sampai 6.');
+        if ($jenisMateri==='Al Quran' && ($data['nama_surat_dari']==='' || $data['nama_surat_sampai']==='' || appTextLength($namaSurat)>100)) throw new AttendanceValidationException('Nama surat dari-sampai wajib diisi, maksimal 100 karakter gabungan.');
+        foreach (['halaman_dari','halaman_sampai'] as $field) {
+            if (!preg_match('/^[1-9][0-9]{0,3}$/D',$data[$field]) && !($jenisMateri==='Iqro' && $data[$field]==='EBTA')) throw new AttendanceValidationException('Isi halaman/ayat dengan nomor yang valid, atau EBTA untuk Iqro.');
         }
+        $start=$data['halaman_dari']==='EBTA'?10000:(int)$data['halaman_dari']; $end=$data['halaman_sampai']==='EBTA'?10000:(int)$data['halaman_sampai'];
+        if ($start>$end && ($jenisMateri==='Iqro' || $data['nama_surat_dari']===$data['nama_surat_sampai'])) throw new AttendanceValidationException('Rentang halaman/ayat harus berurutan pada bacaan yang sama.');
+        $halaman=attendanceCombineRange($data['halaman_dari'],$data['halaman_sampai']); $hasilTalaqqi=$data['hasil_talaqqi'];
+        if (!in_array($hasilTalaqqi,['Lulus','Ulang'],true)) throw new AttendanceValidationException('Hasil talaqqi wajib dipilih untuk peserta Hadir.');
+    } elseif (in_array($status,['S','I'],true) && $alasan==='') throw new AttendanceValidationException('Alasan atau keterangan wajib diisi jika status Sakit atau Izin.');
+    return ['intent'=>'save','status'=>$status,'alasan'=>$alasan,'jenis_materi'=>$jenisMateri,'jilid'=>$jilid,'nama_surat'=>$namaSurat,'halaman'=>$halaman,'hasil_talaqqi'=>$hasilTalaqqi];
+}
 
-        $jilid = $jenisMateri === 'Iqro' ? trim((string) ($data['jilid'] ?? '')) : null;
-        $namaSurat = $jenisMateri === 'Al Quran'
-            ? attendanceCombineRange($data['nama_surat_dari'] ?? '', $data['nama_surat_sampai'] ?? '', 's/d')
-            : null;
-        $halaman = attendanceCombineRange($data['halaman_dari'] ?? '', $data['halaman_sampai'] ?? '', '-');
-        $hasilTalaqqi = trim((string) ($data['hasil_talaqqi'] ?? ''));
-
-        if ($halaman === '' || !in_array($hasilTalaqqi, ['Lulus', 'Ulang'], true)) {
-            throw new AttendanceValidationException('Data pencapaian materi dan hasil talaqqi wajib diisi untuk yang hadir.');
+/** Preserve raw legacy text and unused fields when their meaning did not change. */
+function attendanceRecordChanges(array $target, array $entry): array
+{
+    unset($entry['intent'],$entry['automatic_alpha']);
+    if ($target['status']===$entry['status']) {
+        if ($entry['status']==='H') {
+            unset($entry['alasan']);
+            if ($target['jenis_materi']===$entry['jenis_materi']) unset($entry[$entry['jenis_materi']==='Iqro'?'nama_surat':'jilid']);
+        } else {
+            foreach (['jenis_materi','jilid','nama_surat','halaman','hasil_talaqqi'] as $field) unset($entry[$field]);
+            if ($entry['status']==='A') unset($entry['alasan']);
         }
-        if ($jenisMateri === 'Iqro' && ($jilid === '' || empty($data['halaman_dari']) || empty($data['halaman_sampai']))) {
-            throw new AttendanceValidationException('Jilid dan halaman Iqro dari-sampai wajib dipilih.');
-        }
-        if ($jenisMateri === 'Al Quran' && ($namaSurat === '' || empty($data['nama_surat_dari']) || empty($data['nama_surat_sampai']) || empty($data['halaman_dari']) || empty($data['halaman_sampai']))) {
-            throw new AttendanceValidationException('Nama surat dan ayat Al Quran dari-sampai wajib dipilih.');
-        }
-    } elseif (($status === 'S' || $status === 'I') && $alasan === '') {
-        throw new AttendanceValidationException('Alasan atau keterangan wajib diisi jika status Sakit atau Izin.');
     }
-
-    return [
-        'intent' => 'save',
-        'status' => $status,
-        'alasan' => $alasan,
-        'jenis_materi' => $jenisMateri,
-        'jilid' => $jilid === '' ? null : $jilid,
-        'nama_surat' => $namaSurat,
-        'halaman' => $halaman,
-        'hasil_talaqqi' => $hasilTalaqqi === '' ? null : $hasilTalaqqi,
-    ];
+    foreach ($entry as $field=>$value) {
+        if (($target[$field]===null)!==($value===null)) continue;
+        $previous=trim((string)$target[$field]); $next=trim((string)$value);
+        if (in_array($field,['halaman','nama_surat'],true)) {
+            $delimiter=$field==='halaman'?'-':' s/d ';
+            $parts=explode($delimiter,$previous,2);
+            $previous=attendanceCombineRange($parts[0],$parts[1]??$parts[0],$field==='halaman'?'-':'s/d');
+        }
+        if ($previous===$next) unset($entry[$field]);
+    }
+    return $entry;
 }
 
 /** Blank draft entries become Alfa only on an explicit full-form finalization. */
 function attendanceNormalizeSubmission($data, string $tanggal, bool $finalize, ?DateTimeImmutable $now = null): array
 {
-    if (is_array($data) && $finalize && strtolower(trim((string) ($data['intent'] ?? 'save'))) === 'save'
+    $data = attendanceReadPayload($data);
+    if ($finalize && strtolower($data['intent']) === 'save'
         && trim((string) ($data['status'] ?? '')) === '') {
         $now = $now ?? tahsinNow();
         $cutoff = new DateTimeImmutable(tahsinSessionDate($tanggal) . ' 07:30:00', new DateTimeZone('Asia/Jakarta'));
@@ -339,11 +357,6 @@ function attendanceSaveEntries(PDO $pdo, $halaqohId, $ustadzId, $tanggal, $entri
             }
         }
 
-        $update = $pdo->prepare("UPDATE presensi
-            SET status = :status, alasan = :alasan, jenis_materi = :jenis_materi,
-                jilid = :jilid, nama_surat = :nama_surat, halaman = :halaman,
-                hasil_talaqqi = :hasil_talaqqi
-            WHERE id = :target_id");
         $insert = $pdo->prepare("INSERT INTO presensi
             (halaqoh_id, wali_santri_id, tanggal, status, alasan, jenis_materi, jilid, nama_surat, halaman, hasil_talaqqi)
             VALUES (:halaqoh_id, :wali_santri_id, :tanggal, :status, :alasan, :jenis_materi, :jilid, :nama_surat, :halaman, :hasil_talaqqi)");
@@ -354,8 +367,16 @@ function attendanceSaveEntries(PDO $pdo, $halaqohId, $ustadzId, $tanggal, $entri
         $deletedCount = 0;
         $autoAlphaCount = 0;
         $supportsVerification = tahsinSchemaReady($pdo);
+        $historyPrepared = false;
+        $prepareHistory = static function () use ($pdo, $ustadzId, &$historyPrepared): void {
+            if (!$historyPrepared) {
+                attendancePrepareHistory($pdo, (int) $ustadzId);
+                $historyPrepared = true;
+            }
+        };
         foreach ($normalizedEntries as $waliId => $entry) {
             if ($entry['intent'] === 'reset') {
+                $prepareHistory();
                 $delete->execute([$halaqohId, $waliId, $weekStart, $weekEnd]);
                 $deletedCount += $delete->rowCount();
                 continue;
@@ -396,16 +417,18 @@ function attendanceSaveEntries(PDO $pdo, $halaqohId, $ustadzId, $tanggal, $entri
                     $savedCount++;
                     continue;
                 }
-                $updateParams = $params;
-                unset($updateParams[':halaqoh_id'], $updateParams[':wali_santri_id'], $updateParams[':tanggal']);
                 // Update identical copies together, but preserve verified conflicting sources.
                 $targets = $verification ? [$resolved['record']] : $source;
+                $prepareHistory();
                 foreach ($targets as $target) {
                     if ((int) $target['halaqoh_id'] !== (int) $halaqohId) continue;
-                    $updateParams[':target_id'] = (int) $target['id'];
-                    $update->execute($updateParams);
+                    $changes=attendanceRecordChanges($target,$entry);
+                    if ($changes) {
+                        $columns=implode(',',array_map(static fn($field)=>attendanceHistoryQuote($field).'=?',array_keys($changes)));
+                        $pdo->prepare('UPDATE presensi SET '.$columns.' WHERE id=?')->execute([...array_values($changes),(int)$target['id']]);
+                    }
                 }
-                if (function_exists('addLog')) addLog($pdo, 'UPDATE_TAHSIN_ATTENDANCE', json_encode(['wali_id' => $waliId, 'sesi' => $weekStart, 'before' => $source, 'after' => $entry], JSON_UNESCAPED_UNICODE));
+                if (function_exists('addLog')) addLog($pdo, 'UPDATE_TAHSIN_ATTENDANCE', json_encode(['wali_id' => $waliId, 'sesi' => $weekStart, 'history' => 'presensi_history'], JSON_UNESCAPED_UNICODE));
             } else {
                 $insert->execute($params);
                 if (!empty($entry['automatic_alpha'])) $autoAlphaCount++;

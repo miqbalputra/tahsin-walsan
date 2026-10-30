@@ -5,7 +5,8 @@
   "scripts": {
     "build:css": "tailwindcss -i ./assets/src/app.css -o ./assets/css/app.css --minify",
     "build:vendor": "node ./scripts/copy-vendor-assets.js",
-    "build": "npm run build:css && npm run build:vendor"
+    "build:public": "node ./scripts/build-public-assets.cjs",
+    "build": "npm run build:css && npm run build:vendor && npm run build:public"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.17"

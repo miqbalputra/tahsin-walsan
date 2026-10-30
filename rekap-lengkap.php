@@ -17,12 +17,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Anda tidak berwenang atau token keamanan tidak valid.';
     } elseif (($_POST['action'] ?? '') === 'verify') {
         try {
-            if (!isset($_POST['selected_id']) || !preg_match('/^\d+$/', (string) $_POST['selected_id'])) throw new InvalidArgumentException('Pilih catatan yang sah.');
-            tahsinSaveVerification($pdo, (int) ($_POST['wali_id'] ?? 0), (string) ($_POST['session'] ?? ''), (string) ($_POST['fingerprint'] ?? ''), (int) $_POST['selected_id'] ?: null, $userId, (string) ($_POST['note'] ?? ''));
-            addLog($pdo, 'VERIFY_TAHSIN_SESSION', 'Wali ID ' . (int) $_POST['wali_id'] . ', sesi ' . $_POST['session'] . ', pilihan #' . (int) $_POST['selected_id']);
+            $verification = tahsinVerificationRequestValues($_POST);
+            tahsinSaveVerification(
+                $pdo,
+                $verification['wali_id'],
+                $verification['session'],
+                $verification['fingerprint'],
+                $verification['selected_id'],
+                $userId,
+                $verification['note']
+            );
+            addLog($pdo, 'VERIFY_TAHSIN_SESSION', 'Wali ID ' . $verification['wali_id'] . ', sesi ' . $verification['session'] . ', pilihan #' . ($verification['selected_id'] ?? 0));
             redirectTo('rekap-lengkap.php?' . http_build_query(array_merge($_GET, ['msg' => 'verified'])) . '#detail-wali');
         } catch (PDOException $e) { reportApplicationError($e, 'verify-tahsin-database'); $error = 'Verifikasi gagal disimpan. Silakan coba kembali.'; }
-        catch (InvalidArgumentException | RuntimeException $e) { $error = $e->getMessage(); }
+        catch (InvalidArgumentException $e) { http_response_code(422); $error = $e->getMessage(); }
+        catch (RuntimeException $e) { http_response_code(409); $error = $e->getMessage(); }
         catch (Throwable $e) { reportApplicationError($e, 'verify-tahsin'); $error = 'Verifikasi gagal disimpan. Silakan coba kembali.'; }
     }
 }
@@ -77,7 +86,7 @@ if (($_GET['export'] ?? '') === 'excel') {
     foreach ($report['rows'] as $r) foreach ($r['details'] as $cell) foreach ($cell['records'] ?: [null] as $record) {
         echo '<tr>';
         foreach ([$r['nama_bapak'], $cell['session_date'], tahsinCellLabel($cell), $record['tanggal'] ?? '—', $record['status'] ?? '—', $record ? ($record['status'] === 'H' ? tahsinMaterial($record) : ($record['alasan'] ?? '—')) : 'Belum diinput'] as $value) {
-            if (preg_match('/^[=+@\-\t\r]/', (string) $value)) $value = "'" . $value;
+            $value = appSpreadsheetSafeText($value);
             echo '<td>' . tahsinH($value) . '</td>';
         }
         echo '</tr>';
@@ -88,7 +97,7 @@ $pageTitle = $tahsinPageTitle ?? 'Rekap Lengkap';
 require __DIR__ . '/includes/header.php';
 require __DIR__ . '/includes/sidebar.php';
 ?>
-<link rel="stylesheet" href="assets/css/tahsin-report.css">
+<link rel="stylesheet" href="<?= appEscape(appAssetUrl('assets/css/tahsin-report.css')) ?>">
 <?php if ($meeting): ?><script>document.body.classList.add('tahsin-meeting');</script><?php endif; ?>
 <?php if ($summaryOnly): ?><script>document.body.classList.add('tahsin-summary-print');</script>
 <div class="tahsin-report tahsin-summary-page">
@@ -102,7 +111,7 @@ require __DIR__ . '/includes/sidebar.php';
 </div>
 <script type="application/json" id="tahsin-chart-data"><?= json_encode($meetingReport['trend'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
 <script type="application/json" id="tahsin-meeting-export-data"><?= json_encode(['payload' => tahsinMeetingPayload($meetingReport), 'start_date' => $summaryFilters['start_date'], 'end_date' => $summaryFilters['end_date']], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
-<script src="assets/js/chart.umd.min.js"></script><script src="assets/js/tahsin-report.js"></script>
+<script src="<?= appEscape(appAssetUrl('assets/js/chart.umd.min.js')) ?>"></script><script src="<?= appEscape(appAssetUrl('assets/js/tahsin-report.js')) ?>"></script>
 <?php require __DIR__ . '/includes/footer.php'; exit; endif; ?>
 <div class="tahsin-report">
 <div class="tahsin-heading"><div><h2><?= tahsinH($pageTitle) ?> Tahsin Wali Santri</h2><p class="tahsin-note">Periode sesi <?= tahsinH($filters['start_date']) ?> s/d <?= tahsinH($filters['end_date']) ?> · Dibuat <?= tahsinNow()->format('d/m/Y H:i') ?> WIB<br>Hadir dan Alfa berdasarkan catatan guru. Data kosong tidak dinilai sebagai ketidakhadiran.</p></div>
@@ -139,5 +148,5 @@ require __DIR__ . '/includes/sidebar.php';
 </div>
 <script type="application/json" id="tahsin-chart-data"><?= json_encode($meetingReport['trend'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
 <script type="application/json" id="tahsin-meeting-export-data"><?= json_encode(['payload' => tahsinMeetingPayload($meetingReport), 'start_date' => $summaryFilters['start_date'], 'end_date' => $summaryFilters['end_date']], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
-<script src="assets/js/chart.umd.min.js"></script><script src="assets/js/tahsin-report.js"></script>
+<script src="<?= appEscape(appAssetUrl('assets/js/chart.umd.min.js')) ?>"></script><script src="<?= appEscape(appAssetUrl('assets/js/tahsin-report.js')) ?>"></script>
 <?php require __DIR__ . '/includes/footer.php'; ?>

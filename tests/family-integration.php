@@ -5,6 +5,7 @@ putenv('DATA_INDUK_ENABLED=0');
 foreach (['family_helper','family_migration_helper','alumni_archive_helper','attendance_helper','report_helper'] as $file) require_once __DIR__ . '/../includes/' . $file . '.php';
 $db='tahsin_test_family_'.getmypid();
 $pdo=new PDO('mysql:host=127.0.0.1;port=13317;charset=utf8mb4','root','tahsin_local_test',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_EMULATE_PREPARES=>false]);
+$pdo->exec("SET time_zone = '+07:00'");
 $pdo->exec("CREATE DATABASE `$db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"); $pdo->exec("USE `$db`");
 $pdo->exec(file_get_contents(__DIR__.'/fixtures/tahsin-schema.sql'));
 $pdo->exec('ALTER TABLE halaqoh_members ADD archived_at DATETIME NULL, ADD archive_reason VARCHAR(100) NULL');
@@ -18,6 +19,7 @@ $checks=0;
 function fmCheck(bool $ok,string $message): void { global $checks; if (!$ok) throw new RuntimeException($message); $checks++; }
 function fmReject(callable $fn,string $message): void { try { $fn(); } catch (Throwable $e) { fmCheck(true,$message); return; } throw new RuntimeException($message); }
 function fmLegacy(PDO $p): string { $r=[]; foreach(['wali_santri','santri_detail','halaqoh','halaqoh_members','presensi'] as $t) $r[$t]=$p->query("SELECT * FROM `$t` ORDER BY id")->fetchAll(); return json_encode($r); }
+function fmImportSnapshot(PDO $p): string { $r=[]; foreach(['wali_santri','santri_detail','halaqoh_members','presensi','family_guardians','family_students','family_relations','family_legacy_children','family_import_state'] as $t) $r[$t]=$p->query("SELECT * FROM `$t` ORDER BY 1")->fetchAll(); return serialize($r); }
 $before=fmLegacy($pdo);
 fmCheck(familyChildrenTable($pdo)==='santri_detail','Legacy fallback');
 familyApplyMigration($pdo); familyApplyMigration($pdo);
@@ -93,4 +95,16 @@ familyImportApply($pdo,$next);
 fmCheck((int)$pdo->query("SELECT COUNT(*) FROM family_children WHERE wali_santri_id=7 AND nama_anak='Hasan'")->fetchColumn()===0,'Removed source relation cannot reappear through legacy row');
 fmCheck($pdo->query("SELECT school_status FROM family_students WHERE source_student_id='202'")->fetchColumn()==='withdrawn','School status preserved explicitly');
 fmCheck($official===$pdo->query('SELECT * FROM presensi')->fetchAll(),'All imports leave attendance byte-identical');
+
+// Simulate an old database reusing an ID previously retained as a merge alias.
+$pdo->exec("CREATE TABLE participant_merge_aliases(source_id INT PRIMARY KEY,target_id INT NOT NULL) ENGINE=InnoDB; INSERT INTO participant_merge_aliases VALUES(1000,7); ALTER TABLE wali_santri AUTO_INCREMENT=1000");
+$aliasPackage=['format'=>'tahsin-family-v1','source'=>'alias-safety','snapshot_date'=>'2026-10-20',
+ 'guardians'=>[$g('900','Bapak Alias','father','08999999999')],
+ 'students'=>[$s('901','Anak Alias')], 'links'=>[$l('900','901','father')]];
+$aliasBefore=fmImportSnapshot($pdo);
+fmReject(fn()=>familyImportApply($pdo,$aliasPackage),'Family import rejects an allocator that reuses a merged guardian ID');
+fmCheck($aliasBefore===fmImportSnapshot($pdo),'Rejected alias collision rolls back the guardian and all family snapshot rows');
+$aliasRetry=familyImportApply($pdo,$aliasPackage);
+$newAliasGuardian=(int)$pdo->query("SELECT wali_santri_id FROM family_guardians WHERE source_namespace='alias-safety' AND source_parent_id='900'")->fetchColumn();
+fmCheck($aliasRetry['created']===1 && $newAliasGuardian>1000,'Family import retry allocates a fresh local identity after the alias collision');
 echo "PASS $checks family integration assertions\nSTAGING_DATABASE=$db\n";

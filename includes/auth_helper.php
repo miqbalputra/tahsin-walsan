@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/security_helper.php';
 if (ob_get_level() === 0) {
     ob_start();
 }
@@ -22,6 +23,7 @@ if (!headers_sent()) {
     header('X-Frame-Options: SAMEORIGIN');
     header('Referrer-Policy: strict-origin-when-cross-origin');
     header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
+    header('Cache-Control: no-store, private');
 }
 
 if (getenv('APP_PERF_LOG') === '1') {
@@ -30,7 +32,7 @@ if (getenv('APP_PERF_LOG') === '1') {
         $durationMs = round((hrtime(true) - $request_started_at) / 1e6, 2);
         error_log('[perf] ' . json_encode([
             'method' => $_SERVER['REQUEST_METHOD'] ?? 'CLI',
-            'uri' => $_SERVER['REQUEST_URI'] ?? '',
+            'path' => parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH),
             'status' => http_response_code(),
             'duration_ms' => $durationMs,
             'memory_peak_bytes' => memory_get_peak_usage(true),
@@ -96,7 +98,8 @@ if (isset($_SESSION['user_id'])) {
  */
 function generateCsrfToken()
 {
-    if (empty($_SESSION['csrf_token'])) {
+    if (!isset($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token'])
+        || !preg_match('/^[a-f0-9]{64}$/D', $_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     }
     return $_SESSION['csrf_token'];
@@ -104,7 +107,8 @@ function generateCsrfToken()
 
 function verifyCsrfToken($token)
 {
-    if (!isset($_SESSION['csrf_token']) || empty($token)) {
+    if (!isset($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token'])
+        || !is_string($token) || $token === '') {
         return false;
     }
     return hash_equals($_SESSION['csrf_token'], $token);
@@ -129,7 +133,8 @@ function regenerateSession($persistent = false)
  */
 function normalizeDateInput($value, $fallback)
 {
-    $value = trim((string) $value);
+    if (!is_string($value)) return $fallback;
+    $value = trim($value);
     $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
     $errors = DateTimeImmutable::getLastErrors();
 
@@ -185,10 +190,62 @@ function roleHomePath($role = null)
  * Check if the user is logged in
  * If not, redirect to login page
  */
+function refreshAuthenticatedSession(PDO $pdo): bool
+{
+    $id = filter_var($_SESSION['user_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    if (!$id) return false;
+    $statement = $pdo->prepare('SELECT id, username, nama_lengkap, role, password FROM users WHERE id=?');
+    $statement->execute([$id]);
+    $user = $statement->fetch(PDO::FETCH_ASSOC);
+    if (!$user || !in_array($user['role'], APP_USER_ROLES, true)) return false;
+    $fingerprint = hash('sha256', $user['password']);
+    if (isset($_SESSION['auth_password_fingerprint'])
+        && (!is_string($_SESSION['auth_password_fingerprint'])
+            || !hash_equals($fingerprint, $_SESSION['auth_password_fingerprint']))) {
+        return false;
+    }
+    // Existing sessions adopt the fingerprint once, preserving valid logins.
+    $_SESSION['user_id'] = (int) $user['id'];
+    $_SESSION['username'] = $user['username'];
+    $_SESSION['nama_lengkap'] = $user['nama_lengkap'];
+    $_SESSION['role'] = $user['role'];
+    $_SESSION['auth_password_fingerprint'] = $fingerprint;
+    if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
+        $pdo->prepare('SET @tahsin_actor_id=?,@tahsin_actor_name=?')->execute([(int) $user['id'], $user['nama_lengkap']]);
+    }
+    return true;
+}
+
 function checkLogin()
 {
-    if (!isset($_SESSION['user_id'])) {
-        redirectTo('login.php');
+    static $checkedUserId;
+    if (!isset($_SESSION['user_id'])) redirectTo('login.php');
+    if ($checkedUserId === $_SESSION['user_id']) return;
+    global $pdo;
+    if (!isset($pdo) || !$pdo instanceof PDO) require_once __DIR__ . '/../config/database.php';
+    try {
+        $valid = refreshAuthenticatedSession($pdo);
+    } catch (PDOException $error) {
+        reportApplicationError($error, 'session-refresh');
+        appRequestError(503, 'Belum dapat memeriksa akun', 'Layanan sedang tidak tersedia. Tunggu sebentar lalu buka kembali halaman.');
+    }
+    if (!$valid) {
+        $_SESSION = [];
+        session_regenerate_id(true);
+        redirectTo('login.php?session=expired');
+    }
+    $checkedUserId = $_SESSION['user_id'];
+}
+
+function requireApiSession(PDO $pdo, array $allowedRoles): void
+{
+    if (empty($_SESSION['user_id']) || !refreshAuthenticatedSession($pdo)) {
+        $_SESSION = [];
+        session_regenerate_id(true);
+        throw new RuntimeException('Login berakhir. Masuk kembali; draft di perangkat tetap tersedia.', 401);
+    }
+    if (!in_array($_SESSION['role'], $allowedRoles, true)) {
+        throw new RuntimeException('Akun Anda tidak memiliki izin untuk fitur ini.', 403);
     }
 }
 
@@ -217,7 +274,7 @@ function addLog($pdo, $action, $description = '')
 function checkRole($allowed_roles)
 {
     checkLogin();
-    if (!in_array($_SESSION['role'], $allowed_roles)) {
+    if (!in_array($_SESSION['role'] ?? '', $allowed_roles, true)) {
         redirectTo(roleHomePath());
     }
 }
@@ -302,6 +359,98 @@ function clearLoginAttempts($pdo, $username, $ip)
         WHERE ip_address = ? OR username = ?
     ");
     $stmt->execute([$ip, $username]);
+}
+
+function loginAttemptLockName(string $scope, string $identity): string
+{
+    return 'pres_login_' . $scope . '_' . substr(hash('sha256', $identity), 0, 44);
+}
+
+/** Lock both dimensions used by the rate query, always in the same order. */
+function loginAcquireAttemptLocks(PDO $pdo, string $username, string $ip, int $waitSeconds = 5): ?array
+{
+    $normalizedUsername = function_exists('mb_strtolower') ? mb_strtolower(trim($username), 'UTF-8') : strtolower(trim($username));
+    $locks = array_values(array_unique([
+        loginAttemptLockName('ip', trim($ip)),
+        loginAttemptLockName('user', $normalizedUsername),
+    ]));
+    sort($locks, SORT_STRING);
+    $held = [];
+    try {
+        foreach ($locks as $name) {
+            $statement = $pdo->prepare('SELECT GET_LOCK(?, ?)');
+            $statement->execute([$name, max(0, min(10, $waitSeconds))]);
+            if ((int)$statement->fetchColumn() !== 1) {
+                loginReleaseAttemptLocks($pdo, $held);
+                return null;
+            }
+            $held[] = $name;
+        }
+        return $held;
+    } catch (Throwable $error) {
+        loginReleaseAttemptLocks($pdo, $held);
+        throw $error;
+    }
+}
+
+/** Existing usernames may compare equal under the database collation; serialize by stable user ID too. */
+function loginAcquireAccountLock(PDO $pdo, int $userId, int $waitSeconds = 5): bool
+{
+    $statement = $pdo->prepare('SELECT GET_LOCK(?, ?)');
+    $statement->execute([loginAttemptLockName('id', (string)$userId), max(0, min(10, $waitSeconds))]);
+    return (int)$statement->fetchColumn() === 1;
+}
+
+function loginReleaseNamedLock(PDO $pdo, string $name): void
+{
+    try {
+        $statement = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+        $statement->execute([$name]);
+    } catch (Throwable $error) {
+        error_log('Login rate-limit lock cleanup failed.');
+    }
+}
+
+function loginReleaseAttemptLocks(PDO $pdo, array $locks): void
+{
+    foreach (array_reverse($locks) as $name) loginReleaseNamedLock($pdo, (string)$name);
+}
+
+/** Make check, password verification, and attempt write atomic per IP/account. */
+function authenticateLoginAttempt(PDO $pdo, string $username, string $password, string $ip): array
+{
+    $locks = loginAcquireAttemptLocks($pdo, $username, $ip);
+    if ($locks === null) return ['state'=>'unavailable'];
+    try {
+        $rate = checkLoginAttempts($pdo, $username, $ip);
+        if ($rate['blocked']) return ['state'=>'blocked', 'rate'=>$rate];
+
+        $statement = $pdo->prepare('SELECT * FROM users WHERE username=? LIMIT 1');
+        $statement->execute([$username]);
+        $user = $statement->fetch(PDO::FETCH_ASSOC);
+        $accountLock = false;
+        if ($user) {
+            $accountLock = loginAcquireAccountLock($pdo, (int)$user['id']);
+            if (!$accountLock) return ['state'=>'unavailable'];
+        }
+        try {
+            // An equivalent username under the DB collation may have queued on the ID lock.
+            if ($user) {
+                $rate = checkLoginAttempts($pdo, $username, $ip);
+                if ($rate['blocked']) return ['state'=>'blocked', 'rate'=>$rate];
+            }
+            if ($user && in_array($user['role'], APP_USER_ROLES, true) && password_verify($password, $user['password'])) {
+                clearLoginAttempts($pdo, $username, $ip);
+                return ['state'=>'success', 'user'=>$user];
+            }
+            recordFailedLogin($pdo, $username, $ip);
+            return ['state'=>'failed', 'remaining_attempts'=>max(0, (int)$rate['remaining_attempts'] - 1)];
+        } finally {
+            if ($accountLock) loginReleaseNamedLock($pdo, loginAttemptLockName('id', (string)$user['id']));
+        }
+    } finally {
+        loginReleaseAttemptLocks($pdo, $locks);
+    }
 }
 
 /**
