@@ -21,16 +21,30 @@ next/
 **/__pycache__/
 dev-router.php
 
-# Local data files that must never ship in an image (audit 2026-10-24).
-Reminder*.json
-/n8n_workflow_laporan_admin_tahsin.json
-data_santri_baru.csv
-Bapak\ Wali\ Santri\ Baru.xlsx
-/DAFTAR_AKUN_USTADZ.md
-/teacher-credentials.json
-/scripts/database-snapshot.php
-/scripts/production-baseline.php
+# Development, personal-data exports, and test fixtures do not belong in the runtime image.
 /docs/
 /tests/
+/vendor/
+/scripts/database-snapshot.php
+/scripts/production-baseline.php
+/n8n_workflow_laporan_admin_tahsin.json
+/DAFTAR_AKUN_USTADZ.md
+/teacher-credentials.json
+/.phpunit.cache/
+/.phpunit.result.cache
+
+# Keep only app templates and the PWA manifest from user-data file formats.
+*.csv
+!template_*.csv
+*.json
+!manifest.json
+*.xlsx
+*.md
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+*.log
+*.phar
 *.pdf
 assets/go-vue/

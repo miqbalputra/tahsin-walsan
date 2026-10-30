@@ -26,13 +26,29 @@ const dockerIgnore = fs.readFileSync(path.join(root, '.dockerignore'), 'utf8')
 for (const artifact of [
   '/DAFTAR_AKUN_USTADZ.md',
   '/teacher-credentials.json',
-  '/n8n_workflow_laporan_admin_tahsin.json',
   '/scripts/database-snapshot.php',
   '/scripts/production-baseline.php',
   '/docs/',
-  '/tests/'
+  '/tests/',
+  '/vendor/',
+  '*.csv',
+  '!template_*.csv',
+  '*.json',
+  '!manifest.json',
+  '*.xlsx',
+  '*.md',
+  '*.db',
+  '*.sqlite',
+  '*.sqlite3',
+  '*.bak',
+  '*.log',
+  '*.phar',
+  '*.pdf'
 ]) {
   check(dockerIgnore.includes(artifact), artifact + ' is excluded from Docker image context');
+}
+for (const publicAsset of ['manifest.json', 'template_import_peserta.csv', 'template_santri_baru.csv']) {
+  check(fs.existsSync(path.join(root, publicAsset)), publicAsset + ' remains available in the Docker build context');
 }
 
 check(!safety.isFullReplacementApproved([], {}), 'No arguments cannot approve a full replacement');
