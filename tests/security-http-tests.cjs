@@ -157,7 +157,11 @@ const importGroup = body => body.match(/name="targets\[([a-f0-9]{64})\]"/)?.[1];
   check(ownReport.body.includes('Sakit: <b>1</b>') && !ownReport.body.includes('Sakit: <b>2</b>'),'Identical source records count as one canonical session in the report');
   check(/script-src 'self'/.test(ownReport.headers.get('content-security-policy')) && /no-store/.test(ownReport.headers.get('cache-control')),'Printed report has restrictive CSP and is never cached');
   const legacyTeacherReport=await req('/ustadz/laporan.php?start_date=2026-10-01&end_date=2026-10-31',reportTeacher);
-  check(legacyTeacherReport.status===200 && legacyTeacherReport.body.includes('&lt;svg onload=alert()&gt;') && !legacyTeacherReport.body.includes('<svg onload=alert()>'),'Teacher report list escapes legacy page text before rendering');
+  const teacherReportHasEscapedPage=legacyTeacherReport.body.includes('&lt;svg onload=alert()&gt;');
+  const teacherReportHasRawPage=legacyTeacherReport.body.includes('<svg onload=alert()>');
+  const teacherReportShowsError=legacyTeacherReport.body.includes('Kesalahan saat mengambil laporan');
+  check(legacyTeacherReport.status===200 && teacherReportHasEscapedPage && !teacherReportHasRawPage,
+    `Teacher report list escapes legacy page text before rendering (status=${legacyTeacherReport.status}, escaped=${teacherReportHasEscapedPage}, raw=${teacherReportHasRawPage}, error=${teacherReportShowsError})`);
   const teacherHistory=await req('/ustadz/riwayat.php?start_date=2026-10-01&end_date=2026-10-31',reportTeacher);
   check(teacherHistory.status===200 && teacherHistory.body.includes('&lt;svg onload=alert()&gt;') && !teacherHistory.body.includes('<svg onload=alert()>'),'Teacher attendance history escapes legacy page text before rendering');
   localSql("UPDATE users SET nama_lengkap='"+xssName+"' WHERE id=3");
