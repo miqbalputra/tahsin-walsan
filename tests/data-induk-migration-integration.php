@@ -78,7 +78,7 @@ try {
     $uuidBaseline = dimLegacyDigest($pdo);
     $uuidRows = $pdo->query('SELECT id,data_induk_guardian_id FROM wali_santri ORDER BY id')->fetchAll();
     $uuidError = dimReject(fn() => dataIndukMigrationPlan($pdo), 'Duplicate existing UUID values block migration planning');
-    dimCheck(str_contains($uuidError->getMessage(), 'Duplicate values exist'), 'UUID collision error explains the mapping that needs review');
+    dimCheck(str_contains($uuidError->getMessage(), 'Duplicate values exist'), 'UUID collision error explains the mapping that needs review: ' . $uuidError->getMessage());
     dimCheck(dimLegacyDigest($pdo) === $uuidBaseline && $pdo->query('SELECT id,data_induk_guardian_id FROM wali_santri ORDER BY id')->fetchAll() === $uuidRows,
         'UUID preflight preserves all source and mapping values');
     dimCheck(!dimColumnExists($pdo, 'santri_detail', 'data_induk_student_id') && !dimTableExists($pdo, 'data_induk_sync_state'),
