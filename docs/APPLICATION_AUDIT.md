@@ -68,6 +68,9 @@ PHP tidak mengganti prototipe tersebut.
     dapat membuat histori lama terbaca sebagai milik orang lain. Beberapa
     generator juga memakai kata sandi guru yang dapat ditebak dan menulis daftar
     password teks biasa ke webroot.
+12. Peran PJ dapat mengunggah dan memulihkan ZIP backup yang mencakup tabel
+    `users`. Karena checksum ZIP tidak ditandatangani, arsip valid yang dibuat
+    khusus dapat menambahkan akun admin dan menaikkan hak akses PJ.
 
 ## Dasar keselamatan dan baseline
 
@@ -1046,3 +1049,20 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   backup, dan data lama tidak dipindah atau dihapus. Verifikasi deployment
   cPanel/hosting produksi, pemulihan dari backup nyata, pemeriksaan visual
   lintas perangkat, dan matriks seluruh fitur masih belum lengkap.
+
+## Pembatasan pemulihan backup ke admin — 30 Oktober 2026
+
+- Temuan: PJ dapat mengunggah arsip restore yang checksum-nya dibuat ulang,
+  termasuk baris `users` dengan peran `admin` dan hash kata sandi baru. Merge
+  backup memasukkan baris pengguna yang belum ada, sehingga jalur ini dapat
+  menaikkan hak akses di luar pengelolaan akun biasa.
+- Pratinjau dan pemulihan backup kini hanya tersedia bagi admin, baik pada
+  pemeriksaan request maupun antarmuka. PJ tetap dapat mengekspor salinan
+  backup yang kolom kata sandinya dikosongkan; unduhan safety backup juga tetap
+  admin-only. Tidak ada perubahan skema database.
+- Regresi HTTP memakai fixture sintetis yang arsipnya valid dan memuat calon
+  akun admin baru. Fixture membuktikan preview hanya memvalidasi arsip, request
+  PJ ditolak sebelum file dipindahkan atau restore dijalankan, serta baris akun
+  dan presensi tetap sama. Rangkaian Security HTTP dan seluruh CI lulus pada
+  commit `d4709f7` (run `41025520849` dan `41025528938`). Database produksi dan
+  file backup lokal tidak dipakai atau diubah.
