@@ -814,6 +814,7 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
 - Fixture baru membandingkan seluruh isi presensi sebelum/sesudah migrasi,
   pengulangan, penghapusan halaqoh (baris presensi bertahan dengan relasi `NULL`),
   dan penolakan orphan tanpa perubahan skema/data. Suite CI untuk fixture ini
-  ditambahkan; hasil CI masih menunggu.
+  ditambahkan dan lulus pada workflow `41011240257`, termasuk seluruh suite
+  integrasi MariaDB dan HTTP.
 - Migrasi tidak dijalankan pada database produksi; hasilnya hanya diverifikasi
   pada basis kode dan lint lokal.
