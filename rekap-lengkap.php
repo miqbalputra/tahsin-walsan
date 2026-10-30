@@ -86,7 +86,7 @@ if (($_GET['export'] ?? '') === 'excel') {
     foreach ($report['rows'] as $r) foreach ($r['details'] as $cell) foreach ($cell['records'] ?: [null] as $record) {
         echo '<tr>';
         foreach ([$r['nama_bapak'], $cell['session_date'], tahsinCellLabel($cell), $record['tanggal'] ?? '—', $record['status'] ?? '—', $record ? ($record['status'] === 'H' ? tahsinMaterial($record) : ($record['alasan'] ?? '—')) : 'Belum diinput'] as $value) {
-            if (preg_match('/^[=+@\-\t\r]/', (string) $value)) $value = "'" . $value;
+            $value = appSpreadsheetSafeText($value);
             echo '<td>' . tahsinH($value) . '</td>';
         }
         echo '</tr>';

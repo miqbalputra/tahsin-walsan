@@ -1238,3 +1238,15 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   harus mendapat 429. Permintaan memakai fixture loopback dan tidak mencapai
   koneksi database API.
 - Pemeriksaan syntax JavaScript dan hasil CI untuk regresi ini belum dicatat.
+
+## Keamanan ekspor spreadsheet — 30 Oktober 2026
+
+- Audit menemukan beberapa ekspor Excel/CSV belum menangani formula yang
+  disamarkan spasi atau karakter kontrol di awal sel. Baris CSV untuk
+  spreadsheet kini selalu dikutip dan teks berisiko diberi awalan tab; ekspor
+  HTML Excel memakai helper bersama yang menambahkan apostrof. Ekspor CSV
+  alumni juga memakai `Cache-Control: no-store`.
+- Perubahan hanya pada berkas unduhan. Database, skema, migrasi, riwayat
+  presensi, dan arsip backup ZIP untuk pemulihan tidak diubah; backup ZIP tetap
+  menyimpan nilai mentah dengan checksum agar pemulihan data lama tetap utuh.
+- Pemeriksaan syntax dan hasil CI untuk perubahan ini belum dicatat.

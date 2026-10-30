@@ -14,6 +14,7 @@ require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
 require_once 'includes/alumni_archive_helper.php';
 require_once 'includes/student_progress_helper.php';
+require_once __DIR__ . '/includes/csv_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
@@ -25,8 +26,9 @@ $pageTitle = 'Naik Kelas & Arsip Lulusan';
 if (($_GET['export'] ?? '') === 'backup') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="backup_santri_detail_' . date('Y-m-d_His') . '.csv"');
+    header('Cache-Control: no-store');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['santri_detail_id', 'wali_santri_id', 'nama_bapak', 'nama_anak', 'kelas']);
+    appSpreadsheetCsvRow($out, ['santri_detail_id', 'wali_santri_id', 'nama_bapak', 'nama_anak', 'kelas']);
     $rows = $pdo->query("
         SELECT sd.id, sd.wali_santri_id, w.nama_bapak, sd.nama_anak, sd.kelas
         FROM santri_detail sd
@@ -34,7 +36,7 @@ if (($_GET['export'] ?? '') === 'backup') {
         ORDER BY sd.id
     ")->fetchAll(PDO::FETCH_ASSOC);
     foreach ($rows as $r) {
-        fputcsv($out, [$r['id'], $r['wali_santri_id'], $r['nama_bapak'], $r['nama_anak'], $r['kelas']]);
+        appSpreadsheetCsvRow($out, [$r['id'], $r['wali_santri_id'], $r['nama_bapak'], $r['nama_anak'], $r['kelas']]);
     }
     fclose($out);
     exit;
@@ -275,10 +277,11 @@ $terarsip = $pdo->query("
 if (($_GET['export'] ?? '') === 'alumni-backfill') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="preview_alumni_backfill_' . date('Y-m-d_His') . '.csv"');
+    header('Cache-Control: no-store');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['wali_id', 'nama_bapak', 'no_hp', 'kategori', 'total_anak', 'lulus_count', 'daftar_anak', 'halaqoh']);
+    appSpreadsheetCsvRow($out, ['wali_id', 'nama_bapak', 'no_hp', 'kategori', 'total_anak', 'lulus_count', 'daftar_anak', 'halaqoh']);
     foreach ($kandidatArsip as $row) {
-        fputcsv($out, [$row['id'], $row['nama_bapak'], $row['no_hp'], $row['kategori'], $row['total_anak'], $row['lulus_count'], $row['daftar_anak'], $row['nama_halaqoh']]);
+        appSpreadsheetCsvRow($out, [$row['id'], $row['nama_bapak'], $row['no_hp'], $row['kategori'], $row['total_anak'], $row['lulus_count'], $row['daftar_anak'], $row['nama_halaqoh']]);
     }
     fclose($out);
     exit;
@@ -288,8 +291,9 @@ if (($_GET['export'] ?? '') === 'alumni-backfill') {
 if (($_GET['export'] ?? '') === 'alumni-archive-state') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="alumni_archive_state_' . date('Y-m-d_His') . '.csv"');
+    header('Cache-Control: no-store');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['wali_id', 'nama_bapak', 'status_aktif', 'daftar_anak', 'membership_id', 'halaqoh_id', 'archived_at', 'archive_reason']);
+    appSpreadsheetCsvRow($out, ['wali_id', 'nama_bapak', 'status_aktif', 'daftar_anak', 'membership_id', 'halaqoh_id', 'archived_at', 'archive_reason']);
     $stateStmt = $pdo->query("
         SELECT w.id, w.nama_bapak, w.status_aktif,
                (SELECT GROUP_CONCAT(CONCAT(sd.nama_anak, ' [', sd.kelas, ']') SEPARATOR ' | ') FROM santri_detail sd WHERE sd.wali_santri_id = w.id) AS daftar_anak,
@@ -300,7 +304,7 @@ if (($_GET['export'] ?? '') === 'alumni-archive-state') {
         ORDER BY w.id, hm.id
     ");
     while ($row = $stateStmt->fetch(PDO::FETCH_ASSOC)) {
-        fputcsv($out, [$row['id'], $row['nama_bapak'], $row['status_aktif'], $row['daftar_anak'], $row['membership_id'], $row['halaqoh_id'], $row['archived_at'], $row['archive_reason']]);
+        appSpreadsheetCsvRow($out, [$row['id'], $row['nama_bapak'], $row['status_aktif'], $row['daftar_anak'], $row['membership_id'], $row['halaqoh_id'], $row['archived_at'], $row['archive_reason']]);
     }
     fclose($out);
     exit;

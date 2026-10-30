@@ -2,6 +2,7 @@
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
 require_once 'includes/report_helper.php';
+require_once __DIR__ . '/includes/csv_helper.php';
 
 checkLogin();
 $allowed_roles = ['admin', 'pj_tahfidz', 'kepsek', 'ustadz'];
@@ -16,16 +17,12 @@ $end_date = $filters['end_date'];
 $results = fetchPresensiReport($pdo, $filters, $role, $user_id);
 
 /**
- * Sel data aman untuk .xls berbasis HTML: tanda kutip + HTML di-escape, dan
- * nilai berawalan =,+, - ,@ diberi awalan apostrof agar tidak dieksekusi
- * sebagai formula saat dibuka di Excel (formula/CSV injection).
+ * Sel data aman untuk .xls berbasis HTML: HTML di-escape dan teks yang diawali
+ * whitespace tersembunyi lalu karakter formula diberi awalan apostrof.
  */
 function excelSafeCell($value): string
 {
-    $value = (string) ($value ?? '');
-    if (isset($value[0]) && strpbrk($value[0], '=+-@') !== false) {
-        $value = "'" . $value;
-    }
+    $value = appSpreadsheetSafeText($value);
     return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 

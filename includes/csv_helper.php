@@ -1,4 +1,41 @@
 <?php
+/** Return spreadsheet-facing HTML/XLS text as text when whitespace hides a formula. */
+function appSpreadsheetSafeText($value): string
+{
+    $value = (string) ($value ?? '');
+    $candidate = ltrim($value, "\x00..\x20");
+    if ($candidate !== '' && preg_match('/\A[=+\-@＝＋－＠]/', $candidate)) {
+        return "'" . $value;
+    }
+    return $value;
+}
+
+/** Write a fully quoted, spreadsheet-safe CSV row for human viewing. */
+function appSpreadsheetCsvRow($stream, array $fields): bool
+{
+    $cells = [];
+    foreach ($fields as $value) {
+        $value = (string) ($value ?? '');
+        $candidate = ltrim($value, "\x00..\x20");
+        if (($candidate !== '' && preg_match('/\A[=+\-@＝＋－＠]/', $candidate))
+            || ($value !== '' && str_contains("\t\r\n", $value[0]))) {
+            // A tab inside a quoted CSV field is the Excel-resistant mitigation.
+            $value = "\t" . $value;
+        }
+        $cells[] = '"' . str_replace('"', '""', $value) . '"';
+    }
+
+    $line = implode(',', $cells) . "\r\n";
+    $offset = 0;
+    $length = strlen($line);
+    while ($offset < $length) {
+        $written = fwrite($stream, substr($line, $offset));
+        if ($written === false || $written === 0) return false;
+        $offset += $written;
+    }
+    return true;
+}
+
 /** Streaming CSV reader: bounded logical records, complete quotes, no truncation. */
 function appCsvRows($stream, string $delimiter = ',', string $escape = '', int $maxRowBytes = 1048576): Generator
 {
