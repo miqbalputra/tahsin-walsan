@@ -69,13 +69,19 @@ jobs:
             suite="$1"
             shift
             printf '::group::%s\n' "$suite"
-            "$@"
+            output_file="$(mktemp)"
+            "$@" >"$output_file" 2>&1
             suite_status=$?
+            cat "$output_file"
             printf '::endgroup::\n'
             if [ "$suite_status" -ne 0 ]; then
-              echo "::error title=Failed PHP suite - $suite::exit code $suite_status"
+              details="$(tail -n 6 "$output_file" | tr '\r\n' '  ' | cut -c1-700)"
+              details="${details//'%'/'%25'}"
+              details="${details//'::'/'%3A%3A'}"
+              echo "::error title=Failed PHP suite - $suite::exit code $suite_status; output: $details"
               failures=$((failures + 1))
             fi
+            rm -f "$output_file"
           }
           run_suite tahsin-regression php tests/run-tahsin-tests.php
           run_suite rapor-regression php tests/rapor-tests.php
