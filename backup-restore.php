@@ -110,6 +110,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
         http_response_code(403);
         $err = 'Sesi keamanan formulir berubah. Buka kembali halaman dan pilih ulang berkas cadangan. Permintaan ini belum diproses.';
+    } elseif (in_array($action, ['preview', 'restore'], true) && ($_SESSION['role'] ?? '') !== 'admin') {
+        http_response_code(403);
+        $err = 'Pratinjau dan pemulihan cadangan penuh hanya dapat dijalankan oleh admin. Data belum diubah.';
     } elseif ($action === 'preview') {
         $previousUpload = $_SESSION['restore_zip'] ?? '';
         if (is_string($previousUpload) && dirname($previousUpload) === $TEMP_DIR && str_starts_with(basename($previousUpload), 'restore_') && !is_link($previousUpload) && is_file($previousUpload)) @unlink($previousUpload);
@@ -281,6 +284,17 @@ require_once 'includes/sidebar.php';
             </p>
         </div>
         <div class="p-5">
+            <?php if (($_SESSION['role'] ?? '') !== 'admin'): ?>
+                <p class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    Pratinjau dan pemulihan cadangan penuh hanya tersedia untuk admin. Anda tetap dapat mengunduh cadangan tanpa hash kata sandi akun.
+                </p>
+                <?php if (!empty($_SESSION['restore_zip'])): ?>
+                    <form method="post" action="backup-restore.php" class="mt-3">
+                        <?php csrfField(); ?>
+                        <button type="submit" name="action" value="cancel" class="border border-slate-300 rounded-xl px-5 py-3">Hapus unggahan pratinjau tertunda</button>
+                    </form>
+                <?php endif; ?>
+            <?php else: ?>
             <?php if ($preview): ?>
                 <!-- Hasil preview -->
                 <div class="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-800 mb-4">
@@ -363,11 +377,12 @@ require_once 'includes/sidebar.php';
                     </button>
                 </form>
             <?php endif; ?>
+            <?php endif; ?>
         </div>
     </div>
 
     <!-- Kartu 3: Safety Backup tersedia -->
-    <?php if (!empty($safetyFiles)): ?>
+    <?php if (($_SESSION['role'] ?? '') === 'admin' && !empty($safetyFiles)): ?>
         <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
             <div class="p-5 border-b border-slate-100">
                 <h3 class="font-bold text-slate-800">Cadangan sebelum pemulihan</h3>
@@ -396,7 +411,7 @@ require_once 'includes/sidebar.php';
     <div class="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-sm text-amber-800">
         <strong>ℹ️ Catatan:</strong> Menu ini menambahkan baris yang belum ada; ID yang sudah ada dilewati.
         Cadangan kondisi awal dibuat sebelum pemulihan. Untuk mengembalikan seluruh database ke kondisi awal, hubungi pengelola.
-        Unduh salinan cadangan sebelum server diganti atau dideploy ulang. Hanya admin / pj_tahfidz.
+        Unduh salinan cadangan sebelum server diganti atau dideploy ulang. Ekspor tersedia untuk admin dan PJ tanpa hash kata sandi; pratinjau, pemulihan, dan unduhan safety backup hanya untuk admin.
         Riwayat export/restore tercatat di <strong>Log Aktivitas</strong>.
     </div>
 </div>
