@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {spawn, spawnSync} = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..');
 const php = process.env.TEST_PHP_BINARY || 'php';
@@ -16,12 +17,13 @@ assert.ok(database, 'Only a newly generated isolated fixture is allowed');
 const port = 18086;
 const base = `http://127.0.0.1:${port}`;
 const environmentFile = path.join(root,'.sessions','audit-20261023',`http-env-${process.pid}.env`);
+const backupDirectory = path.join(os.tmpdir(),`tahsin-http-backups-${process.pid}-${crypto.randomBytes(8).toString('hex')}`);
 fs.mkdirSync(path.dirname(environmentFile),{recursive:true});
 fs.writeFileSync(environmentFile,`APP_VERSION=http-env-${process.pid}\n`,{mode:0o600});
 const env = {...process.env, DB_HOST:'127.0.0.1', DB_PORT:'13317', DB_DATABASE:database,
   DB_USERNAME:'root', DB_PASSWORD:'tahsin_local_test', DATA_INDUK_ENABLED:'0',
   SESSION_SAVE_PATH:path.join(root,'.sessions','audit-20261023',`http-sessions-${process.pid}`),
-  BACKUP_STORAGE_PATH:path.join(root,'.sessions','audit-20261023',`http-backups-${process.pid}`),
+  BACKUP_STORAGE_PATH:backupDirectory,
   APP_ENV_FILE:environmentFile, HERMES_API_KEY:'audit-fixture-key', N8N_API_KEY:'audit-fixture-key', TAHSIN_AUTOSAVE_ENABLED:'1'};
 delete env.APP_VERSION;
 fs.mkdirSync(env.SESSION_SAVE_PATH,{recursive:true});
@@ -266,7 +268,6 @@ const importGroup = body => body.match(/name="targets\[([a-f0-9]{64})\]"/)?.[1];
   const exported = await fetch(base+'/backup-restore.php?export=1',{headers:{Cookie:admin.cookie},redirect:'manual'});
   const backupBytes = Buffer.from(await exported.arrayBuffer());
   check(exported.status===200 && /application\/zip/.test(exported.headers.get('content-type')) && backupBytes.subarray(0,2).toString()==='PK','Authenticated export returns a nonempty ZIP download');
-  const backupDirectory = env.BACKUP_STORAGE_PATH;
   const beforeUploads = new Set(fs.readdirSync(backupDirectory));
   const backupPreview = await previewBackup(admin,backupCsrf,backupBytes);
   check(backupPreview.status===200 && backupPreview.body.includes('for="restore-confirm"') && backupPreview.body.includes('Data belum dipulihkan'),'Uploaded ZIP is validated before an accessible inline confirmation is shown');
@@ -298,7 +299,9 @@ const importGroup = body => body.match(/name="targets\[([a-f0-9]{64})\]"/)?.[1];
   const safetyName = fs.readdirSync(backupDirectory).find(name=>name.startsWith('backup_pre_restore_') && !beforeSafety.has(name));
   check(Boolean(safetyName),'A separate safety backup exists before successful merge');
   check((await req('/backup-restore.php?download='+safetyName,admin)).status===200,'Safety backup is downloadable through the authorized controller');
-  check((await req('/.sessions/audit-20261023/http-backups-'+process.pid+'/'+safetyName,admin)).status===403,'Backup archive cannot be fetched directly as a public static file');
+  const backupRelativeToWebroot=path.relative(root,backupDirectory);
+  check(backupRelativeToWebroot==='..' || backupRelativeToWebroot.startsWith('..'+path.sep) || path.isAbsolute(backupRelativeToWebroot),
+    'Backup archive storage is outside the webroot and cannot be fetched as a public static file');
   check((await req('/backup-restore.php',admin,{csrf_token:backupCsrf,action:'restore',restore_token:freshToken,confirm_text:'RESTORE'})).status===422,'A completed restore token cannot be replayed');
   check((await previewBackup(admin,backupCsrf,Buffer.from('not-a-zip'))).status===422,'Invalid ZIP upload returns a visible validation error');
   check((await req('/backup-restore.php',admin,{csrf_token:backupCsrf,'action[]':'restore'})).status===422,'Malformed restore action does not crash');
@@ -625,4 +628,16 @@ require 'includes/participant_merge_helper.php'; participantMergeApplyMigration(
   check(offlineDatabase.status===1 && offlineDatabase.stderr.includes('Layanan database belum tersedia'),'CLI operations fail clearly when the database cannot be reached');
   console.log(`PASS ${checks} security HTTP assertions`);
   fs.writeFileSync(path.join(root,'.sessions','audit-20261023','http-results.json'),JSON.stringify({database,checks,passed:true},null,2));
-})().catch(error=>{console.error(error);console.error(serverErrors);process.exitCode=1;}).finally(()=>{server.kill();fs.rmSync(environmentFile,{force:true});});
+})().catch(error=>{console.error(error);console.error(serverErrors);process.exitCode=1;}).finally(()=>{
+  server.kill();
+  fs.rmSync(environmentFile,{force:true});
+  try {
+    const tempRoot=fs.realpathSync(os.tmpdir());
+    const resolvedBackupDirectory=fs.realpathSync(backupDirectory);
+    const relative=path.relative(tempRoot,resolvedBackupDirectory);
+    if (path.basename(resolvedBackupDirectory).startsWith(`tahsin-http-backups-${process.pid}-`)
+      && relative!=='' && relative!=='..' && !relative.startsWith('..'+path.sep) && !path.isAbsolute(relative)) {
+      fs.rmSync(resolvedBackupDirectory,{recursive:true,force:true});
+    }
+  } catch (_) {}
+});
