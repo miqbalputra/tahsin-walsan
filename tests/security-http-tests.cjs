@@ -597,6 +597,7 @@ require 'includes/participant_merge_helper.php'; participantMergeApplyMigration(
   check((await req('/naik-kelas.php',admin,{csrf_token:progressCsrf,action:'set_kelas',progress_token:restoreProgressToken,santri_id:'30002',kelas:'Mustawa 1 Akhwat'})).status===302,'Graduate correction uses the same protected class workflow');
   const holidayPage=await req('/libur.php',admin);
   check(holidayPage.status===200 && !/name="clean_alfa"[^>]*\bchecked\b/.test(holidayPage.body),'Saving a holiday no longer opts into deletion of old Alfa by default');
+  check(/name="confirmed" value="1" required/.test(holidayPage.body),'Bulk Alfa cleanup requires a deliberate confirmation in the form');
   localSql("INSERT INTO presensi(halaqoh_id,wali_santri_id,tanggal,status) VALUES(1,30001,'2026-10-25','A')");
   const beforeHolidaySave=domainDigest();
   check((await req('/libur.php',admin,{csrf_token:progressCsrf,action:'add',tanggal:'2026-10-25',keterangan:'Libur Uji'})).status===200 && domainDigest()===beforeHolidaySave,'Default holiday save preserves every existing attendance row');

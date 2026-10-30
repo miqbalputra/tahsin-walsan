@@ -1139,3 +1139,13 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   menerapkan 120 request per menit per IP.
 - Dokumentasi kini menyamakan aturan origin, batas request, dan respons 503
   saat penyimpanan penghitung tidak tersedia dengan perilaku endpoint.
+
+## Konfirmasi pembersihan Alfa massal — 30 Oktober 2026
+
+- Audit alur libur menemukan tombol pembersihan Alfa untuk rentang tanggal
+  langsung menjalankan penghapusan setelah tanggal diisi. Walau catatan
+  dipulihkan melalui riwayat, langkah konfirmasi eksplisit belum ada.
+- Form kini meminta konfirmasi kedua setelah rentang ditinjau dan server
+  menolak permintaan tanpa konfirmasi. Regresi HTTP memastikan data tidak
+  berubah pada permintaan tanpa konfirmasi dan snapshot dibuat pada pembersihan
+  yang disetujui.

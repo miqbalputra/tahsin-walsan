@@ -74,8 +74,12 @@ const nonce=body=>body.match(/name="restore_token" value="([a-f0-9]{32})"/)?.[1]
   sql("INSERT INTO wali_santri(id,nama_bapak) VALUES(10,'Alfa Libur'),(11,'Hadir Libur'),(12,'Izin Libur'),(13,'Alfa Biasa'); INSERT INTO presensi(id,halaqoh_id,wali_santri_id,tanggal,status) VALUES(10,1,10,'2026-10-25','A'),(11,1,11,'2026-10-25','H'),(12,1,12,'2026-10-25','I'),(13,1,13,'2026-10-26','A');");
   check((await req('/libur.php',admin,{csrf_token:token,action:'add',tanggal:'2026-10-25',keterangan:'Libur Uji',clean_alfa:'1'})).status===200,'Holiday save and selected cleanup commit together');
   check(sql('SELECT id FROM presensi WHERE id IN (10,11,12,13) ORDER BY id').map(row=>Number(row.id)).join(',')==='11,12,13'&&latestDelete(10)>0,'Cleanup snapshots only Alfa on the exact holiday and preserves other statuses/dates');
+  sql("INSERT INTO presensi(id,halaqoh_id,wali_santri_id,tanggal,status) VALUES(14,1,10,'2026-10-25','A')");
+  const beforeUnconfirmedCleanup=allRecoveryData();
+  check((await req('/libur.php',admin,{csrf_token:token,action:'clean_bulk',start_date:'2026-10-25',end_date:'2026-10-25'})).status===422&&allRecoveryData()===beforeUnconfirmedCleanup,'Bulk Alfa cleanup requires explicit confirmation and preserves every row otherwise');
+  check((await req('/libur.php',admin,{csrf_token:token,action:'clean_bulk',start_date:'2026-10-25',end_date:'2026-10-25',confirmed:'1'})).status===200&&sql('SELECT id FROM presensi WHERE id=14').length===0&&latestDelete(14)>0,'Confirmed bulk cleanup snapshots the affected Alfa before removing it');
   const beforeBadHoliday=allRecoveryData();
-  check((await req('/libur.php',admin,{csrf_token:token,action:'clean_bulk','start_date[]':'bad',end_date:'2026-10-25'})).status===422&&allRecoveryData()===beforeBadHoliday,'Malformed cleanup filters cannot remove data');
+  check((await req('/libur.php',admin,{csrf_token:token,action:'clean_bulk','start_date[]':'bad',end_date:'2026-10-25',confirmed:'1'})).status===422&&allRecoveryData()===beforeBadHoliday,'Malformed cleanup filters cannot remove data');
   sql("CREATE TRIGGER reject_holiday_log BEFORE INSERT ON activity_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Synthetic holiday audit failure'");
   const beforeLogFailure=allRecoveryData();
   check((await req('/libur.php',admin,{csrf_token:token,action:'add',tanggal:'2026-10-26',keterangan:'Rollback Uji',clean_alfa:'1'})).status===503&&allRecoveryData()===beforeLogFailure,'Required calendar audit failure rolls back the holiday, cleanup, snapshots and revisions');

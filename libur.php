@@ -188,6 +188,10 @@ require_once 'includes/sidebar.php';
                             class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold">
                     </div>
                 </div>
+                <label class="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 mb-6 text-sm text-amber-900">
+                    <input type="checkbox" name="confirmed" value="1" required class="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500">
+                    <span>Saya sudah memeriksa rentang tanggal. Data Alfa yang cocok akan dihapus dan salinannya tersedia di Riwayat Pemulihan.</span>
+                </label>
                 <div class="flex gap-3">
                     <button type="button" @click="showCleanModal = false"
                         class="flex-1 px-6 py-4 rounded-2xl border border-slate-200 font-bold text-slate-400 hover:bg-slate-50 transition uppercase text-[10px] tracking-widest">Tutup</button>

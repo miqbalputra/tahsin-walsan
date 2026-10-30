@@ -25,6 +25,7 @@ function holidayApply(PDO $pdo, int $actorId, array $input): string
     } elseif ($action === 'clean_bulk') {
         $values = ['start_date' => holidayDate($input, 'start_date'), 'end_date' => holidayDate($input, 'end_date')];
         if ($values['start_date'] > $values['end_date']) throw new AttendanceHistoryException('Tanggal akhir harus sama atau setelah tanggal awal.');
+        if (appRequestString($input, 'confirmed', '0') !== '1') throw new AttendanceHistoryException('Konfirmasikan pembersihan setelah memeriksa rentang tanggal.');
     } else {
         $values['id'] = filter_var(appRequestString($input, 'id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         if (!$values['id']) throw new AttendanceHistoryException('ID libur tidak valid.');
