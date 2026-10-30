@@ -700,7 +700,8 @@ termasuk suite integrasi PHP, roster Data Induk, dan pemeriksaan HTTP keamanan.
 - Regresi HTTP mengirim payload scalar dan array bertingkat, lalu membandingkan
   hash tabel wali, anak, halaqoh, membership, dan presensi sebelum/sesudah.
   Pemeriksaan lokal lulus untuk lint PHP, 48 tes rapor, 204 tes tahsin/reminder,
-  dan 78 tes HTTP migrasi. CI fixture MariaDB masih menunggu untuk batch ini.
+  dan 78 tes HTTP migrasi. CI `41009495401` lulus, termasuk fixture MariaDB,
+  suite keamanan HTTP, dan tes integrasi lainnya.
 
 ## Menjalankan pemeriksaan lokal
 
