@@ -54,12 +54,20 @@ function dataIndukMigrationColumnMatches(array $actual, array $expected): bool
         && strtolower((string) $actual['extra']) === strtolower((string) ($expected['extra'] ?? ''));
 }
 
+function dataIndukMigrationColumnDescription(array $column): string
+{
+    return 'type=' . (string) $column['column_type']
+        . ', nullable=' . (string) $column['is_nullable']
+        . ', default=' . var_export($column['column_default'], true)
+        . ', extra=' . (string) $column['extra'];
+}
+
 function dataIndukMigrationAssertColumns(string $table, array $actualColumns, array $expectedColumns): void
 {
     foreach ($expectedColumns as $column => $expected) {
         if (!isset($actualColumns[$column])) throw new RuntimeException("Existing Data Induk table {$table} is missing required column {$column}; inspect it before changing the schema.");
         if (!dataIndukMigrationColumnMatches($actualColumns[$column], $expected)) {
-            throw new RuntimeException("Existing Data Induk column {$table}.{$column} has a different definition; migration stopped without changing the database.");
+            throw new RuntimeException("Existing Data Induk column {$table}.{$column} has a different definition (" . dataIndukMigrationColumnDescription($actualColumns[$column]) . "); migration stopped without changing the database.");
         }
     }
 }
@@ -85,7 +93,7 @@ function dataIndukMigrationAddColumn(PDO $pdo, array &$operations, string $table
     $actual = $info['columns'][$column] ?? null;
     if ($actual !== null) {
         if (!dataIndukMigrationColumnMatches($actual, $expected)) {
-            throw new RuntimeException("Existing column {$table}.{$column} has a different definition; migration stopped without changing the database.");
+            throw new RuntimeException("Existing column {$table}.{$column} has a different definition (" . dataIndukMigrationColumnDescription($actual) . "); migration stopped without changing the database.");
         }
         return;
     }
@@ -228,7 +236,7 @@ function dataIndukMigrationPlan(PDO $pdo): array
         $info = dataIndukMigrationTable($pdo, $table);
         foreach ($columns as $column => $definition) {
             if (isset($info['columns'][$column]) && !dataIndukMigrationColumnMatches($info['columns'][$column], $definition['expected'])) {
-                throw new RuntimeException("Existing column {$table}.{$column} has a different definition; migration stopped before changing the database.");
+                throw new RuntimeException("Existing column {$table}.{$column} has a different definition (" . dataIndukMigrationColumnDescription($info['columns'][$column]) . "); migration stopped before changing the database.");
             }
             $allColumns[$table][$column] = isset($info['columns'][$column]);
         }

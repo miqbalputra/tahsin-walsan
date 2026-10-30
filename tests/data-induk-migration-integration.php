@@ -71,6 +71,19 @@ try {
         dimCheck(!dimTableExists($pdo, $table), 'Duplicate preflight runs before new tables are created');
     }
 
+    // Existing duplicate remote IDs must also block the complete plan up front.
+    $uuidDb = dimDatabase($pdo); $databases[] = $uuidDb;
+    $pdo->exec("ALTER TABLE wali_santri ADD data_induk_guardian_id VARCHAR(36) NULL;
+        UPDATE wali_santri SET data_induk_guardian_id='duplicate-master-id' WHERE id IN (1,2)");
+    $uuidBaseline = dimLegacyDigest($pdo);
+    $uuidRows = $pdo->query('SELECT id,data_induk_guardian_id FROM wali_santri ORDER BY id')->fetchAll();
+    $uuidError = dimReject(fn() => dataIndukMigrationPlan($pdo), 'Duplicate existing UUID values block migration planning');
+    dimCheck(str_contains($uuidError->getMessage(), 'Duplicate values exist'), 'UUID collision error explains the mapping that needs review');
+    dimCheck(dimLegacyDigest($pdo) === $uuidBaseline && $pdo->query('SELECT id,data_induk_guardian_id FROM wali_santri ORDER BY id')->fetchAll() === $uuidRows,
+        'UUID preflight preserves all source and mapping values');
+    dimCheck(!dimColumnExists($pdo, 'santri_detail', 'data_induk_student_id') && !dimTableExists($pdo, 'data_induk_sync_state'),
+        'UUID preflight runs before the rest of the schema is changed');
+
     // A partially applied historical migration is completed one object at a time.
     $partialDb = dimDatabase($pdo); $databases[] = $partialDb;
     $pdo->exec("ALTER TABLE wali_santri ADD data_induk_guardian_id VARCHAR(36) NULL, ADD UNIQUE KEY uq_wali_data_induk_guardian (data_induk_guardian_id);
