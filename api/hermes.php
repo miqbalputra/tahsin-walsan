@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/security_helper.php';
+require_once __DIR__ . '/../includes/database_connection_helper.php';
 require_once __DIR__ . '/../includes/tahsin_report_helper.php';
 /**
  * ============================================================
@@ -239,20 +240,17 @@ foreach ($_GET as $queryValue) {
 
 try {
     date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'Asia/Jakarta');
-    $host = getenv('DB_HOST') ?: 'localhost';
-    $port = getenv('DB_PORT') ?: '3306';
-    $db   = getenv('DB_DATABASE') ?: 'presensi_tahsin';
-    $user = getenv('DB_USERNAME') ?: 'root';
-    $pass = getenv('DB_PASSWORD') ?: '';
-    $charset = getenv('DB_CHARSET') ?: 'utf8mb4';
-    $dsn = "mysql:host={$host};port={$port};dbname={$db};charset={$charset}";
-    $pdo = new PDO($dsn, $user, $pass, [
+    $databaseSettings = appDatabaseConnectionSettings();
+    $pdo = new PDO($databaseSettings['dsn'], $databaseSettings['username'], $databaseSettings['password'], [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
-        PDO::ATTR_TIMEOUT => max(1, (int) (getenv('DB_CONNECT_TIMEOUT') ?: 5)),
+        PDO::ATTR_TIMEOUT => $databaseSettings['timeout'],
     ]);
     $pdo->exec("SET time_zone = '+07:00'");
+} catch (AppDatabaseConfigurationException $e) {
+    error_log('Hermes API database configuration error: ' . $e->getMessage());
+    jsonError(503, 'Layanan data belum siap. Periksa konfigurasi koneksi database.');
 } catch (\PDOException $e) {
     error_log('Hermes API DB Error: ' . $e->getMessage());
     jsonError(500, 'Gagal terhubung ke database. Periksa konfigurasi koneksi.');

@@ -92,6 +92,7 @@ cd tahsin-walsan
 # 2. Copy environment
 cp .env.example .env
 # Edit .env sesuai database Anda
+# Selain APP_ENV=local/development/testing, DB_HOST, DB_DATABASE, DB_USERNAME, dan DB_PASSWORD wajib terisi.
 # Permintaan web PHP membaca .env secara otomatis. Perintah CLI memakai
 # variabel environment proses; tambahkan APP_LOAD_ENV_FILE=1 bila ingin CLI
 # membaca file yang sama.

@@ -25,6 +25,7 @@ if (PHP_SAPI !== 'cli') {
 }
 
 require_once __DIR__ . '/../includes/security_helper.php';
+require_once __DIR__ . '/../includes/database_connection_helper.php';
 require_once __DIR__ . '/../includes/backup_helper.php';
 
 const BACKUP_AUTO_PREFIX = 'backup_auto';
@@ -49,16 +50,11 @@ function backupAutoRecordFailure(array $status, ?string $dir): void
 try {
     $dir = resolveTempDir();
     purgeBackupStagingFiles($dir);
-    $probe = new PDO(
-        sprintf('mysql:host=%s;port=%s;dbname=%s;charset=%s',
-            getenv('DB_HOST') ?: 'localhost',
-            getenv('DB_PORT') ?: '3306',
-            getenv('DB_DATABASE') ?: 'presensi_tahsin',
-            getenv('DB_CHARSET') ?: 'utf8mb4'),
-        getenv('DB_USERNAME') ?: 'root',
-        getenv('DB_PASSWORD') ?: '',
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 5]
-    );
+    $databaseSettings = appDatabaseConnectionSettings();
+    $probe = new PDO($databaseSettings['dsn'], $databaseSettings['username'], $databaseSettings['password'], [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_TIMEOUT => $databaseSettings['timeout'],
+    ]);
     unset($probe);
     // Koneksi sudah terbukti bisa; config/database.php menyediakan $pdo
     // (termasuk timezone WIB) tanpa risiko exit di tengah proses.

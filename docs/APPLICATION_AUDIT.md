@@ -1176,3 +1176,19 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   terbuka; permintaan sah tetap memakai batas 120 per menit.
 - Perubahan hanya memakai penghitung file privat dan tidak menyentuh tabel
   aplikasi atau data lama. Hasil pemeriksaan otomatis/CI belum dicatat.
+
+## Koneksi database produksi eksplisit — 30 Oktober 2026
+
+- Temuan: bila konfigurasi koneksi tidak terbaca, aplikasi web, Hermes dan
+  backup CLI dapat memakai default `localhost/root` tanpa kata sandi. Backup
+  bisa membaca database yang keliru dan memberi kesan keliru bahwa data lama
+  sudah dicadangkan.
+- Resolver koneksi kini dipakai bersama oleh halaman web, API Hermes dan cron
+  backup. Host, nama database, username dan password wajib terisi, termasuk
+  ketika `APP_ENV` hilang; default localhost hanya tersedia bila `APP_ENV`
+  secara eksplisit bernilai `local`, `development`, `testing`, `dev`, atau
+  `test`.
+  Koneksi berhenti dengan pesan aman bila konfigurasi tidak lengkap. Panduan
+  Coolify dan instalasi menjelaskan pengaturan tersebut.
+- Perubahan tidak membuka koneksi ke database saat diedit. Pemeriksaan sintaks
+  dan CI untuk perubahan ini belum dicatat.

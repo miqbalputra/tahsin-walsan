@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/security_helper.php';
+require_once __DIR__ . '/../includes/database_connection_helper.php';
 /**
  * Database Connection using PDO
  */
@@ -7,27 +8,18 @@ require_once __DIR__ . '/../includes/security_helper.php';
 // Set timezone ke WIB agar semua fungsi date() menggunakan waktu Indonesia.
 date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'Asia/Jakarta');
 
-$host = getenv('DB_HOST') ?: 'localhost';
-$port = getenv('DB_PORT') ?: '3306';
-$db = getenv('DB_DATABASE') ?: 'presensi_tahsin';
-$user = getenv('DB_USERNAME') ?: 'root';
-$pass = getenv('DB_PASSWORD') ?: '';
-$charset = getenv('DB_CHARSET') ?: 'utf8mb4';
-$connectTimeout = max(1, (int) (getenv('DB_CONNECT_TIMEOUT') ?: 5));
-
-$dsn = "mysql:host={$host};port={$port};dbname={$db};charset={$charset}";
-$options = [
-    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    PDO::ATTR_EMULATE_PREPARES => false,
-    PDO::ATTR_TIMEOUT => $connectTimeout,
-];
-
 try {
-    $pdo = new PDO($dsn, $user, $pass, $options);
+    $databaseSettings = appDatabaseConnectionSettings();
+    $options = [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES => false,
+        PDO::ATTR_TIMEOUT => $databaseSettings['timeout'],
+    ];
+    $pdo = new PDO($databaseSettings['dsn'], $databaseSettings['username'], $databaseSettings['password'], $options);
     // History and audit timestamps must use the same WIB clock as PHP.
     $pdo->exec("SET time_zone = '+07:00'");
-} catch (\PDOException $e) {
+} catch (\Throwable $e) {
     // Log error internally
     error_log("Database Connection Error: " . $e->getMessage());
     // A failed database connection must never be mistaken for a healthy HTTP 200.
