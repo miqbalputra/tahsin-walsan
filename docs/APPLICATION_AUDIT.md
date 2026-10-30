@@ -1066,3 +1066,21 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   dan presensi tetap sama. Rangkaian Security HTTP dan seluruh CI lulus pada
   commit `d4709f7` (run `41025520849` dan `41025528938`). Database produksi dan
   file backup lokal tidak dipakai atau diubah.
+
+## Publikasi backup atomik — 30 Oktober 2026
+
+- ZIP backup kini ditulis ke berkas staging privat, lalu dipublikasikan sebagai
+  berkas final hanya setelah penulisan selesai. Publikasi memakai hard link
+  atomik yang menolak nama tujuan yang sudah ada; file staging yatim yang cocok
+  dengan pola khusus dibersihkan setelah 24 jam. Backup final lama tidak pernah
+  menjadi target pembersihan staging.
+- Pemeriksaan CI awal menemukan cache metadata izin setelah `chmod`; pengecekan
+  kini menyegarkan cache sebelum memastikan mode `0600`. CI juga mendorong
+  penggantian publikasi dari `rename` ke `link` agar pemeriksaan nama tujuan
+  tidak memiliki celah balapan yang dapat menimpa backup lama.
+- Suite pemulihan membandingkan seluruh isi tabel fixture sebelum/sesudah
+  ekspor, memulihkan arsip ke database sintetis terpisah, dan memastikan
+  kegagalan/ekspor ulang tidak menghapus atau menimpa arsip yang sudah ada.
+  Seluruh CI lulus pada commit `af89e02` (run `41026792627`). Ini membuktikan
+  perilaku pada fixture CI; pemulihan backup produksi dan verifikasi hosting
+  tetap harus dilakukan terpisah sebelum audit dinyatakan lengkap.
