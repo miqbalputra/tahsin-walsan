@@ -46,5 +46,13 @@ const csrf=html=>html.match(/name="csrf_token"[^>]*value="([^"]+)"/)?.[1];
  check(after.summary.complete_participant_sessions===4,'Complete response proves coverage of four participants');
  const unauthorized=await fetch(base+'/api/daily-reminder.php');
  check(unauthorized.status===401,'Reminder API continues to require authentication');
+ for(let attempt=0;attempt<9;attempt++) {
+   const failed=await fetch(base+'/api/daily-reminder.php',{headers:{'X-API-Key':'invalid-reminder-key'}});
+   check(failed.status===401,'Wrong reminder API keys are rejected before the failure limit ('+(attempt+2)+'/10)');
+ }
+ const sharedLimit=await fetch(base+'/api/notifications-pending.php',{headers:{'X-API-Key':'invalid-reminder-key'}});
+ check(sharedLimit.status===429,'The eleventh failed key is throttled across both reminder endpoints');
+ const validAfterFailures=await fetch(base+'/api/daily-reminder.php',{headers:{'X-API-Key':'tahsin-test-api'}}).then(r=>r.json());
+ check(validAfterFailures.status==='success','Failed-key throttling does not consume the valid-key request budget');
  console.log('PASS '+checks+' isolated HTTP checks; no production writes or messages sent');
 })().catch(error=>{console.error(error);process.exitCode=1});

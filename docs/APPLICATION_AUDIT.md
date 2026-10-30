@@ -1250,3 +1250,32 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   presensi, dan arsip backup ZIP untuk pemulihan tidak diubah; backup ZIP tetap
   menyimpan nilai mentah dengan checksum agar pemulihan data lama tetap utuh.
 - Pemeriksaan syntax dan hasil CI untuk perubahan ini belum dicatat.
+
+## Isi image produksi — 30 Oktober 2026
+
+- Pemeriksaan image menemukan utilitas generator SQL lama ikut disalin ke image
+  Docker meski sudah ditolak oleh Apache. Direktori `temp_excel/` kini
+  dikecualikan dari konteks/image produksi, dengan assertion di tes keselamatan
+  generator dan pemeriksaan smoke image.
+- Dua berkas lokal `import_mustawa_*.sql` memuat `TRUNCATE`, tetapi diabaikan
+  Git dan tidak masuk image karena aturan `*.sql` pada `.dockerignore`. Berkas
+  lokal tersebut sengaja tidak diubah agar arsip sumber tetap tersedia; jangan
+  jalankan pada database yang berisi data aktif.
+- Tidak ada database yang dibuka atau diubah. Pemeriksaan syntax, tes lokal,
+  dan hasil CI untuk perubahan image belum dicatat. Tes keselamatan generator
+  lokal lulus 55 assertion; build Docker belum dapat dijalankan di lingkungan ini.
+
+## Percobaan key endpoint pengingat — 30 Oktober 2026
+
+- Kedua endpoint pengingat membatasi trafik setelah key benar, tetapi percobaan
+  key salah tidak dibatasi dan tetap membuka koneksi database.
+- Endpoint kini memeriksa key dan menerapkan batas 10 kegagalan per IP selama
+  lima menit sebelum koneksi database dibuka. Kegagalan penyimpanan penghitung
+  menolak request dengan 503; dua URL memakai scope yang sama. Runner HTTP
+  fixture tanpa database memastikan batas bersama 401/429 dan bahwa key sah
+  tidak memakai penghitung kegagalan.
+- Perubahan tidak mengubah database maupun perilaku penyimpanan presensi.
+  Tes unit autentikasi (13 assertion), HTTP tanpa database (12 assertion),
+  rate limit (10 assertion), suite Tahsin (172 assertion), suite pengingat
+  (39 assertion) lulus. HTTP integration berbasis MariaDB dan hasil CI setelah
+  push masih perlu diverifikasi.

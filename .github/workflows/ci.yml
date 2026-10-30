@@ -37,6 +37,9 @@ jobs:
       - name: Private import storage checks
         run: php tests/import-storage-tests.php
 
+      - name: Reminder API authentication isolation
+        run: node tests/tahsin-reminder-auth-http.cjs
+
       - name: Legacy student CSV checks
         run: php tests/legacy-student-import-tests.php
 
@@ -98,6 +101,7 @@ jobs:
           run_suite tahsin-regression php tests/run-tahsin-tests.php
           run_suite rapor-regression php tests/rapor-tests.php
           run_suite tahsin-reminder php tests/tahsin-reminder-tests.php
+          run_suite tahsin-reminder-auth php tests/tahsin-reminder-auth-tests.php
           run_suite api-rate-limits php tests/api-rate-limit-tests.php
           run_suite attendance-history php -d memory_limit=256M tests/attendance-history-integration.php
           run_suite halaqoh-fk-migration php tests/halaqoh-fk-migration-integration.php
@@ -184,7 +188,7 @@ jobs:
           docker build --tag "$image" .
           docker run --rm --entrypoint apache2ctl "$image" -t
           docker run --rm --entrypoint sh "$image" -ec \
-            "test ! -e /var/www/html/$session_probe && test ! -e /var/www/html/docs/codex-audit-private-${GITHUB_RUN_ID}.md && test -f /var/www/html/manifest.json && test -f /var/www/html/assets/css/app.css"
+            "test ! -e /var/www/html/$session_probe && test ! -e /var/www/html/docs/codex-audit-private-${GITHUB_RUN_ID}.md && test ! -e /var/www/html/temp_excel && test -f /var/www/html/manifest.json && test -f /var/www/html/assets/css/app.css"
 
           container_id="$(docker run -d -p 127.0.0.1::80 --entrypoint /bin/sh "$image" -c 'mkdir -p /var/www/html/audit_probe && printf session-secret > /var/www/html/audit_probe/sess_probe && exec apache2ctl -D FOREGROUND')"
           host_port="$(docker port "$container_id" 80/tcp | awk -F: '{print $NF}')"

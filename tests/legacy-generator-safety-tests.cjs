@@ -30,6 +30,7 @@ for (const artifact of [
   '/scripts/production-baseline.php',
   '/docs/',
   '/tests/',
+  '/temp_excel/',
   '/vendor/',
   '*.csv',
   '!template_*.csv',

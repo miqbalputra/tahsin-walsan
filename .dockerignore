@@ -26,6 +26,7 @@ dev-router.php
 # Development, personal-data exports, and test fixtures do not belong in the runtime image.
 /docs/
 /tests/
+/temp_excel/
 /vendor/
 /scripts/database-snapshot.php
 /scripts/production-baseline.php
