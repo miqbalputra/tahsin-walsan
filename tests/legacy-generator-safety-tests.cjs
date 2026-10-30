@@ -21,6 +21,12 @@ function check(condition, message) {
   checks++;
 }
 
+const dockerIgnore = fs.readFileSync(path.join(root, '.dockerignore'), 'utf8')
+  .split(/\r?\n/).map(line => line.trim());
+for (const artifact of ['/DAFTAR_AKUN_USTADZ.md', '/teacher-credentials.json']) {
+  check(dockerIgnore.includes(artifact), artifact + ' is excluded from Docker image context');
+}
+
 check(!safety.isFullReplacementApproved([], {}), 'No arguments cannot approve a full replacement');
 check(!safety.isFullReplacementApproved([safety.REPLACEMENT_FLAG], {}), 'CLI flag alone cannot approve a full replacement');
 check(!safety.isFullReplacementApproved([], { TAHSIN_FULL_REPLACEMENT_CONFIRMATION: safety.REPLACEMENT_CONFIRMATION }), 'Environment confirmation alone cannot approve a full replacement');

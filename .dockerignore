@@ -25,5 +25,7 @@ dev-router.php
 Reminder*.json
 data_santri_baru.csv
 Bapak\ Wali\ Santri\ Baru.xlsx
+/DAFTAR_AKUN_USTADZ.md
+/teacher-credentials.json
 *.pdf
 assets/go-vue/
