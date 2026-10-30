@@ -825,7 +825,10 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   `41011633058`, `41012425535`, dan `41012684184` berhenti pada langkah PHP
   integration suites; penyebab di runner CI belum diketahui. Seluruh perintah
   pada langkah itu lulus lokal pada fixture MariaDB 12.3.3. Suite HTTP terkait
-  juga lulus lokal, tetapi CI tetap harus diperiksa pada runner-nya.
+  juga lulus lokal. Diagnosis berikutnya menemukan benturan nama constraint pada
+  MariaDB runner. Setelah target migrasi memakai nama unik, uji lokal lulus
+  dengan 10 assertion dan workflow CI `41015588101` pada commit `ca671b0`
+  lulus seluruh rangkaian PHP dan Node.
 - Migrasi tidak dijalankan pada database produksi; seluruh uji memakai
   database sintetis terisolasi.
 
@@ -843,9 +846,9 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   dan suite HTTP keamanan 226 assertion lulus. Suite HTTP mengirim ID wali dan
   catatan berbentuk array lalu membandingkan hash isi tabel sebelum/sesudah.
 - Seluruh rangkaian PHP integration pada workflow lulus lokal pada MariaDB
-  12.3.3; CI `41012684184` masih berhenti pada langkah tersebut sebelum suite
-  HTTP berjalan. Run hijau `41011240257` berasal dari commit lama sebelum batch
-  ini. Diagnosis lintas-runner CI masih diperlukan.
+  12.3.3. Setelah benturan nama constraint migrasi diperbaiki, workflow CI
+  `41015588101` pada commit `ca671b0` lulus seluruh rangkaian PHP dan Node,
+  termasuk suite yang sebelumnya berhenti.
 - Tidak ada migrasi, deployment, atau koneksi/perubahan ke database produksi.
 
 ## Pelestarian pengumuman lama — 30 Oktober 2026
@@ -861,9 +864,9 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   `delete`, dan input ID/teks array ditolak tanpa perubahan. Sintaks PHP dan
   JavaScript lulus. Suite HTTP keamanan 226 assertion juga lulus lokal dengan
   fixture; termasuk pelestarian pengumuman, wali, anak, membership, dan presensi.
-- CI `41012684184` berhenti di PHP integration suites sebelum suite HTTP.
-  Tidak ada penghapusan baris pengumuman, migrasi, atau perubahan database
-  produksi.
+- CI `41015588101` pada commit `ca671b0` lulus seluruh rangkaian PHP dan Node,
+  termasuk suite HTTP pelestarian pengumuman. Tidak ada penghapusan baris,
+  migrasi, atau perubahan database produksi.
 
 ## Retensi backup pemulihan — 30 Oktober 2026
 
