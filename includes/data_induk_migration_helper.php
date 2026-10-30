@@ -48,9 +48,18 @@ function dataIndukMigrationColumnMatches(array $actual, array $expected): bool
     $nullable = strtoupper((string) $actual['is_nullable']) === 'YES';
     $default = $actual['column_default'];
     $expectedDefault = $expected['default'];
+    if ($expectedDefault === null) {
+        // MariaDB exposes SQL DEFAULT NULL as the unquoted string "NULL";
+        // a literal string default is quoted in COLUMN_DEFAULT.
+        $defaultMatches = $default === null || (string) $default === 'NULL';
+    } else {
+        $expectedDefault = (string) $expectedDefault;
+        $quotedDefault = "'" . str_replace("'", "''", $expectedDefault) . "'";
+        $defaultMatches = (string) $default === $expectedDefault || (string) $default === $quotedDefault;
+    }
     return $type === $normalizeType($expected['type'])
         && $nullable === $expected['nullable']
-        && ($default === null ? null : (string) $default) === $expectedDefault
+        && $defaultMatches
         && strtolower((string) $actual['extra']) === strtolower((string) ($expected['extra'] ?? ''));
 }
 
