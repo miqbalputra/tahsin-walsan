@@ -1204,3 +1204,14 @@ Fixture database disimpan untuk diagnosis; belum ada penghapusan otomatis.
   baris akun tetap ada.
 - Tidak ada akun yang dihapus dalam audit. Pemeriksaan sintaks dan CI untuk
   perubahan ini belum dicatat.
+
+## Migrasi kolom access_code — 30 Oktober 2026
+
+- Temuan: migrasi `migrate.php` langsung menjalankan `ALTER TABLE`, gagal pada
+  pengulangan, lalu tetap berakhir dengan exit code sukses. Otomasi deploy dapat
+  mengira migrasi berhasil meski kolom tidak tersedia.
+- Migrasi kini memeriksa tabel dan prasyarat kolom sebelum DDL, memvalidasi
+  definisi kolom jika sudah ada, dan dapat dijalankan ulang tanpa menulis ulang
+  baris lama. Kegagalan dicatat dan mengembalikan exit code 1.
+- Tidak ada migrasi yang dijalankan pada database selama audit. Pemeriksaan
+  sintaks dan CI untuk perubahan ini belum dicatat.
