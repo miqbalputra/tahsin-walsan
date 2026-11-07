@@ -104,7 +104,8 @@ function generateCsrfToken()
 
 function verifyCsrfToken($token)
 {
-    if (!isset($_SESSION['csrf_token']) || empty($token)) {
+    if (!isset($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token'])
+        || !is_string($token) || $token === '') {
         return false;
     }
     return hash_equals($_SESSION['csrf_token'], $token);
@@ -226,30 +227,30 @@ function checkRole($allowed_roles)
  * ==============================================
  * Rate Limiting (Anti Brute-Force) Functions
  * ==============================================
- * Aturan: Maksimal 5 percobaan gagal dalam 15 menit.
- * Setelah itu, login diblokir sementara.
+ * Maksimal 5 kegagalan per username dalam 15 menit, termasuk dari IP berbeda.
+ * Guru lain pada IP Wi-Fi atau reverse proxy yang sama tidak ikut diblokir.
  */
 
 define('MAX_LOGIN_ATTEMPTS', 5);
 define('LOGIN_LOCKOUT_MINUTES', 15);
 
 /**
- * Cek apakah IP/username sudah diblokir karena terlalu banyak percobaan gagal.
+ * Cek apakah username diblokir karena terlalu banyak percobaan gagal.
  * @return array ['blocked' => bool, 'remaining_attempts' => int, 'retry_after_minutes' => int]
  */
-function checkLoginAttempts($pdo, $username, $ip)
+function checkLoginAttempts($pdo, $username)
 {
     $lockout_seconds = LOGIN_LOCKOUT_MINUTES * 60;
     $since = date('Y-m-d H:i:s', time() - $lockout_seconds);
 
-    // Hitung percobaan gagal dari IP ATAU username dalam periode lockout
+    // IP tetap dicatat untuk audit; hitungan kegagalan hanya milik akun ini.
     $stmt = $pdo->prepare("
         SELECT COUNT(*) as attempt_count, MAX(attempted_at) as last_attempt
         FROM login_attempts 
-        WHERE (ip_address = ? OR username = ?) 
+        WHERE username = ?
         AND attempted_at > ?
     ");
-    $stmt->execute([$ip, $username, $since]);
+    $stmt->execute([$username, $since]);
     $result = $stmt->fetch();
 
     $attempt_count = (int) $result['attempt_count'];
@@ -293,15 +294,15 @@ function recordFailedLogin($pdo, $username, $ip)
 }
 
 /**
- * Hapus catatan percobaan setelah login berhasil.
+ * Bersihkan kegagalan akun ini tanpa membuka kunci akun lain pada IP yang sama.
  */
-function clearLoginAttempts($pdo, $username, $ip)
+function clearLoginAttempts($pdo, $username)
 {
     $stmt = $pdo->prepare("
         DELETE FROM login_attempts 
-        WHERE ip_address = ? OR username = ?
+        WHERE username = ?
     ");
-    $stmt->execute([$ip, $username]);
+    $stmt->execute([$username]);
 }
 
 /**

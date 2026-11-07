@@ -4,21 +4,24 @@ require_once 'includes/auth_helper.php';
 
 $error = '';
 $warning = '';
+$username = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // CSRF Validation
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
+    $validCsrf = verifyCsrfToken($_POST['csrf_token'] ?? '');
+    if (!$validCsrf) {
+        http_response_code(403);
+        $error = 'Sesi keamanan formulir berubah atau kedaluwarsa. Buka kembali halaman atau coba masuk melalui formulir di bawah.';
     }
 
-    $username = $_POST['username'] ?? '';
-    $password = $_POST['password'] ?? '';
+    $username = is_string($_POST['username'] ?? '') ? trim($_POST['username'] ?? '') : '';
+    $password = is_string($_POST['password'] ?? '') ? ($_POST['password'] ?? '') : '';
     $remember = isset($_POST['remember']);
     $client_ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 
-    if ($username && $password) {
+    if ($validCsrf && $username !== '' && $password !== '') {
         // Rate Limiting: Cek apakah login diblokir
-        $rate_check = checkLoginAttempts($pdo, $username, $client_ip);
+        $rate_check = checkLoginAttempts($pdo, $username);
 
         if ($rate_check['blocked']) {
             $error = "Terlalu banyak percobaan login gagal. Coba lagi dalam {$rate_check['retry_after_minutes']} menit.";
@@ -30,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($user && password_verify($password, $user['password'])) {
                 // Login berhasil: hapus catatan percobaan gagal
-                clearLoginAttempts($pdo, $username, $client_ip);
+                clearLoginAttempts($pdo, $username);
 
                 // Security: Regenerate session ID on login
                 regenerateSession($remember);
@@ -59,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 addLog($pdo, 'LOGIN_FAILED', "Login gagal untuk user '{$username}' dari IP {$client_ip}. Sisa percobaan: {$remaining}.");
             }
         }
-    } else {
+    } elseif ($validCsrf) {
         $error = "Silakan isi semua bidang!";
     }
 }
@@ -71,6 +74,7 @@ if (isset($_SESSION['user_id'])) {
 ?>
 <!DOCTYPE html>
 <html lang="id" x-data="{ canInstall: false, showPass: false, loading: false }"
+    @pageshow.window="loading = false"
     @pwa-install-available.window="canInstall = true" @pwa-installed.window="canInstall = false">
 
 <head>
@@ -222,7 +226,7 @@ if (isset($_SESSION['user_id'])) {
                                 </path>
                             </svg>
                         </span>
-                        <input :type="showPass ? 'text' : 'password'" name="password" required
+                        <input type="password" :type="showPass ? 'text' : 'password'" name="password" required
                             autocomplete="current-password"
                             class="w-full pl-12 pr-12 py-3.5 sm:py-4 rounded-2xl border border-slate-100 bg-white/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold text-slate-700 placeholder:text-slate-300 text-sm sm:text-base"
                             placeholder="••••••••">
