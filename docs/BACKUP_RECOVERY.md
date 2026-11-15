@@ -1,5 +1,10 @@
 # Cadangan dan pemulihan
 
+Pemeriksaan duplikat dan undo merge versi 2 dijelaskan pada
+[DATA_QUALITY_AND_UNDO.md](DATA_QUALITY_AND_UNDO.md). Tabel review, receipt undo,
+dan revisi per program ikut backup penuh. Setelah restore terpisah, pasang ulang
+migrasi quality selain migrasi existing yang dijelaskan di bawah.
+
 ## Menu aplikasi
 
 Admin dapat mengunggah ZIP untuk pratinjau, lalu mengetik `RESTORE` untuk

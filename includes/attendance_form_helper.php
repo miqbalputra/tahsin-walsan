@@ -50,7 +50,7 @@ function attendanceFormState(PDO $pdo, int $actorId, int $groupId, string $date,
         foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) $sources[(int)$row['wali_santri_id']][]=$row;
         if (tahsinSchemaReady($pdo)) {
             $statement=$pdo->prepare("SELECT * FROM tahsin_verifications WHERE wali_santri_id IN ($in) AND session_date=? ORDER BY id".$suffix); $statement->execute([...$ids,$session]);
-            foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) $decisions[(int)$row['wali_santri_id']]=$row;
+            foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) $decisions[(int)$row['wali_santri_id']][]=$row;
         }
         foreach (['drafts'=>['SELECT * FROM tahsin_autosave_drafts WHERE wali_id IN ('.$in.') AND session_date=? ORDER BY user_id,halaqoh_id,wali_id','wali_id'],
                   'revisions'=>['SELECT * FROM tahsin_autosave_revisions WHERE wali_id IN ('.$in.') AND session_date=? ORDER BY wali_id','wali_id']] as $kind=>[$query,$key]) {
@@ -67,8 +67,10 @@ function attendanceFormState(PDO $pdo, int $actorId, int $groupId, string $date,
     $contextRevision=hash('sha256',serialize([$group,$date,$ids,$identities,$holidays,attendanceHistoryBoundary($pdo,$date)]));
     $entries=[]; $entryRevisions=[]; $conflicts=0;
     $allSuspects=tahsinSuspectIds($pdo,array_merge(...array_values($sources)));
+    $programs=tahsinGroupPrograms($pdo); $program=$programs[$groupId]??'unknown';
     foreach ($ids as $id) {
-        $source=$sources[$id]??[]; $decision=$decisions[$id]??null;
+        $all=$sources[$id]??[]; $decision=tahsinDecisionForProgram($decisions[$id]??[],$all,$programs,$program);
+        $source=tahsinRecordsForProgram($all,$programs,$program); $sources[$id]=$source;
         $suspects=array_intersect_key($allSuspects,array_fill_keys(array_column($source,'id'),true)); ksort($suspects);
         $entryRevisions[$id]=hash('sha256',serialize([$source,$decision,$suspects,$history[$id]??null,$drafts[$id]??[],$revisions[$id]??[]]));
         $resolved=tahsinResolveSession($source,$decision,$suspects,$holidays);

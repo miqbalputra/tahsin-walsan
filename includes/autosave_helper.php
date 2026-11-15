@@ -97,27 +97,41 @@ function autosaveContext(PDO $pdo, int $userId, int $groupId, string $date, bool
 
 function autosaveEntry(PDO $pdo, int $userId, array $ctx, int $waliId, bool $lock = false): array
 {
-    $end = (new DateTimeImmutable($ctx['session']))->modify('+6 days')->format('Y-m-d');
-    $stmt = $pdo->prepare('SELECT * FROM presensi WHERE wali_santri_id=? AND tanggal BETWEEN ? AND ? ORDER BY id' . ($lock ? ' FOR UPDATE' : ''));
-    $stmt->execute([$waliId, $ctx['session'], $end]);
-    $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    $verification = null;
-    if ($ctx['reportingReady']) {
-        $stmt = $pdo->prepare('SELECT * FROM tahsin_verifications WHERE wali_santri_id=? AND session_date=? ORDER BY id DESC LIMIT 1');
-        $stmt->execute([$waliId, $ctx['session']]);
-        $verification = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
-    }
+    $scoped=tahsinScopedSession($pdo,$waliId,$ctx['session'],$ctx['program'],$lock);
+    $records=$scoped['records']; $verification=$scoped['verification'];
     $resolved = tahsinResolveSession($records, $verification, tahsinSuspectIds($pdo, $records), $ctx['holidays']);
-    $stmt = $pdo->prepare('SELECT revision FROM tahsin_autosave_revisions WHERE wali_id=? AND session_date=?');
-    $stmt->execute([$waliId, $ctx['session']]);
+    try {
+        $stmt=$pdo->prepare('SELECT revision FROM tahsin_program_revisions WHERE wali_id=? AND program_code=? AND session_date=?');
+        $stmt->execute([$waliId,$ctx['program'],$ctx['session']]);
+    } catch (PDOException $e) {
+        if ($e->getCode()!=='42S02') throw $e;
+        $stmt = $pdo->prepare('SELECT revision FROM tahsin_autosave_revisions WHERE wali_id=? AND session_date=?');
+        $stmt->execute([$waliId, $ctx['session']]);
+    }
     $officialRevision = autosaveHash([$resolved['fingerprint'], $verification, (int) $stmt->fetchColumn()]);
     $stmt = $pdo->prepare('SELECT * FROM tahsin_autosave_drafts WHERE user_id=? AND halaqoh_id=? AND session_date=? AND wali_id=?' . ($lock ? ' FOR UPDATE' : ''));
     $stmt->execute([$userId, $ctx['group']['id'], $ctx['session'], $waliId]);
     $draft = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     $stale = $draft && ($draft['official_revision'] !== $officialRevision || $draft['context_revision'] !== $ctx['revision']);
     $wrongGroup = $resolved['record'] && (int) $resolved['record']['halaqoh_id'] !== (int) $ctx['group']['id'];
-    $conflict = in_array($resolved['state'], ['conflict', 'invalid_date', 'baseline'], true) || $wrongGroup;
+    $programs=tahsinGroupPrograms($pdo);
+    $placements=$pdo->prepare('SELECT hm.halaqoh_id FROM halaqoh_members hm WHERE hm.wali_santri_id=?'.(attendanceSupportsMemberArchiving($pdo)?' AND hm.archived_at IS NULL':''));
+    $placements->execute([$waliId]);
+    $activeGroups=array_unique(array_filter($placements->fetchAll(PDO::FETCH_COLUMN),static fn($id)=>($programs[(int)$id]??'unknown')===$ctx['program']));
+    $rosterConflict=count($activeGroups)>1;
+    $conflict = in_array($resolved['state'], ['conflict', 'invalid_date', 'baseline'], true) || $wrongGroup || $rosterConflict;
+    $conflictType=$rosterConflict?'roster_conflict':($wrongGroup?'wrong_halaqoh':(['conflict'=>'attendance_conflict','invalid_date'=>'invalid_date','baseline'=>'baseline_review'][$resolved['state']]??($stale?'draft_stale':null)));
+    $messages=['roster_conflict'=>'Peserta memiliki lebih dari satu halaqoh aktif pada program ini. Admin perlu meninjau penempatan.',
+        'wrong_halaqoh'=>'Catatan resmi sesi ini berasal dari halaqoh lain. Admin perlu memeriksa penempatan dan catatan yang sah.',
+        'attendance_conflict'=>'Ada catatan resmi berbeda atau keputusan verifikasi kedaluwarsa. Admin perlu meninjau sumber.',
+        'invalid_date'=>'Tanggal catatan jatuh pada hari libur dan perlu diperiksa admin.',
+        'baseline_review'=>'Catatan ditetapkan sebagai capaian awal, bukan kehadiran. Minta admin meninjau sesi.',
+        'draft_stale'=>'Catatan resmi atau daftar peserta berubah sejak draft dibuat. Bandingkan kedua versi.'];
+    $sourceGroup=null;
+    if ($resolved['record']) { $q=$pdo->prepare('SELECT nama_halaqoh FROM halaqoh WHERE id=?'); $q->execute([$resolved['record']['halaqoh_id']]); $sourceGroup=$q->fetchColumn()?:null; }
     $payload = $draft ? json_decode($draft['payload_json'], true, 32, JSON_THROW_ON_ERROR) : autosaveFromRecord($resolved['record']);
+    if (!is_array($payload)) throw new AutosaveException('Format draft server perlu ditinjau admin. Salinan asal tetap disimpan.',409);
+    $payload=autosavePayload($payload);
     return [
         'wali_id' => $waliId, 'payload' => $payload, 'official_payload' => autosaveFromRecord($resolved['record']),
         'official_revision' => $officialRevision, 'draft_revision' => (int) ($draft['revision'] ?? 0),
@@ -125,6 +139,9 @@ function autosaveEntry(PDO $pdo, int $userId, array $ctx, int $waliId, bool $loc
         'official_complete' => $resolved['complete'] && !$wrongGroup && !$conflict,
         'missing_fields' => autosaveMissing($payload), 'updated_at' => $draft['updated_at'] ?? null,
         'blocked' => $conflict, 'stale_draft' => (bool) $stale,
+        'conflict_type'=>$conflictType, 'conflict_message'=>$messages[$conflictType]??null,
+        'review_url'=>'../ustadz/riwayat.php?'.http_build_query(['wali_santri_id'=>$waliId,'start_date'=>$ctx['session'],'end_date'=>$ctx['session']]),
+        'official_source'=>$resolved['record']?['record_id'=>(int)$resolved['record']['id'],'halaqoh_id'=>(int)$resolved['record']['halaqoh_id'],'halaqoh_name'=>$sourceGroup,'tanggal'=>$resolved['record']['tanggal']]:null,
     ];
 }
 

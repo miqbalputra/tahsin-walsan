@@ -1,5 +1,11 @@
 # Penggabungan peserta duplikat
 
+Pembaruan pemeriksaan/undo: lihat [DATA_QUALITY_AND_UNDO.md](DATA_QUALITY_AND_UNDO.md).
+Merge baru memerlukan `migrate_data_quality.php --apply` dan jurnal pemulihan
+presensi. Snapshot versi 2 mendukung pembatalan melalui aplikasi; penjelasan
+pemulihan manual di bawah tetap berlaku untuk merge lama tanpa snapshot tersebut.
+Satu peserta hanya boleh memiliki satu halaqoh aktif per program pada hasil merge.
+
 ## Persiapan
 
 Jalankan pada staging setelah cadangan tersedia, kemudian pada produksi saat rilis:
@@ -28,7 +34,8 @@ pekerjaan lain. Tidak ada peserta/presensi/anak yang diubah oleh migrasi.
    dapat dipilih masing-masing dari salah satu identitas. ID dan waktu
    pembuatan peserta yang dipertahankan tetap digunakan; sumber utuh dijurnal.
 4. Jika kedua peserta mempunyai halaqoh berbeda pada program yang sama,
-   pilih penempatan peserta dipertahankan, sumber, atau gabungan keduanya.
+   pilih penempatan peserta dipertahankan atau sumber. Gabungan hanya berlaku
+   jika hasilnya tetap paling banyak satu halaqoh aktif pada program tersebut.
    Program Bapak/Ibu ditangani terpisah. Keanggotaan lama tidak dihapus;
    duplikasi aktif pada halaqoh yang sama diarsipkan pada ID membership lama.
 5. Jika ada dua capaian awal atau draft dengan payload berbeda pada akun,

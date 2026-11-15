@@ -79,7 +79,9 @@ function achievementContext(PDO $pdo, string $mode, int $waliId, ?int $recordId,
         $statement = $pdo->prepare('SELECT * FROM presensi WHERE wali_santri_id=? AND tanggal BETWEEN ? AND ? ORDER BY id' . $suffix); $statement->execute([$waliId,$session,$end]); $records = $statement->fetchAll(PDO::FETCH_ASSOC);
         foreach ($records as $record) if ((int) $record['id'] === $recordId) $selected = $record;
         if (!$selected || $selected['status'] !== 'H' || $selected['halaqoh_id'] !== $initial['halaqoh_id'] || $selected['tanggal'] !== $initial['tanggal']) throw new AchievementException('Catatan berpindah atau berubah sejak editor dibuka. Buka kembali daftar capaian.');
-        $statement = $pdo->prepare('SELECT * FROM tahsin_verifications WHERE wali_santri_id=? AND session_date=? ORDER BY id DESC LIMIT 1' . $suffix); $statement->execute([$waliId,$session]); $verification = $statement->fetch(PDO::FETCH_ASSOC) ?: null;
+        $programs=tahsinGroupPrograms($pdo);
+        $scope=tahsinScopedSession($pdo,$waliId,$session,$programs[(int)($initial['halaqoh_id']??0)]??'unknown',$lock);
+        $records=$scope['records']; $verification=$scope['verification'];
         foreach (tahsinHolidayMap($pdo) as $date => $label) if ($date >= $session && $date <= $end) $holidays[$date] = $label;
         $suspects = tahsinSuspectIds($pdo,$records); ksort($suspects);
         $resolved = tahsinResolveSession($records,$verification,$suspects,$holidays);

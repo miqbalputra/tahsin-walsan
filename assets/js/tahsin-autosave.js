@@ -151,11 +151,11 @@
         tx.onerror = tx.onabort = () => reject(tx.error || new Error('Draft belum dapat dihapus.'));
       });
     }
-    /** Buang salinan perangkat berumur lebih dari 30 hari (PII tidak menetap). */
+    /** Bersihkan salinan terkonfirmasi; draft tertunda/konflik tidak kedaluwarsa. */
     async purgeExpired(userId, maxAgeMs = 30 * 24 * 60 * 60 * 1000) {
       const records = await this.readUser(userId);
       const cutoff = Date.now() - maxAgeMs;
-      const stale = records.filter(record => (record.saved_at || record.archived_at || 0) < cutoff).map(record => record.key);
+      const stale = records.filter(record => !pendingRecord(record) && !record.conflict && (record.saved_at || record.archived_at || 0) < cutoff).map(record => record.key);
       if (!stale.length) return 0;
       return new Promise((resolve, reject) => {
         const tx = this.db.transaction('drafts', 'readwrite'), store = tx.objectStore('drafts');
@@ -333,6 +333,8 @@
         }
       } catch (_) { this.banner('Penyimpanan HP belum tersedia. Autosave ke server tetap dicoba; perhatikan status setiap peserta.'); this.rows.forEach(r => { r.localError = true; }); }
       this.rows.forEach(row => { this.hydrate(row); this.render(row); if (row.dirty && !row.conflict) this.schedule(row, true); });
+      const firstConflict=[...this.rows.values()].find(row=>row.conflict);
+      if (firstConflict) this.toggle(firstConflict,true);
       this.renderOrphans();
       this.refreshOverview();
       this.root.inert = false;
@@ -568,9 +570,20 @@
       row.el.querySelector('[data-save-status]').textContent = status;
       row.el.querySelector('[data-retry]').hidden = !row.dirty || row.conflict || this.paused || row.inFlight;
       row.el.querySelector('[data-conflict]').hidden = !row.conflict;
-      row.el.querySelector('[data-conflict-message]').textContent = row.error || 'Draft dan catatan resmi berbeda. Tinjau versi yang ingin digunakan.';
-      const serverPayload = row.serverEntry?.stale_draft ? row.serverEntry.official_payload : row.serverEntry?.payload;
-      row.el.querySelector('[data-server-version]').textContent = serverPayload ? 'Versi server: ' + this.describe(serverPayload) : 'Muat ulang halaman atau hubungi admin untuk meninjau keadaan server.';
+      row.el.querySelector('[data-conflict-message]').textContent = row.serverEntry?.conflict_message || row.error || 'Draft dan catatan resmi berbeda. Tinjau versi yang ingin digunakan.';
+      const serverPayload = row.serverEntry?.official_payload;
+      const source=row.serverEntry?.official_source;
+      row.el.querySelector('[data-server-version]').textContent = row.serverEntry?.blocked && !source ? 'Catatan resmi belum dapat ditentukan; sumber perlu ditinjau admin.' : serverPayload ? 'Catatan resmi: ' + this.describe(serverPayload) + (source ? ` · ${source.halaqoh_name || 'halaqoh ID '+source.halaqoh_id} · ${source.tanggal}` : '') : 'Catatan resmi belum dapat diperiksa. Hubungi admin; draft tetap tersedia.';
+      const mine=row.el.querySelector('[data-local-version]');
+      if (mine) mine.textContent='Isian di HP: '+this.describe(row.payload);
+      const draft=row.el.querySelector('[data-server-draft]');
+      if (draft) { draft.hidden=!row.serverEntry?.draft_revision; draft.textContent='Draft server: '+this.describe(row.serverEntry?.payload || {}); }
+      const help=row.el.querySelector('[data-admin-review]');
+      if (help) { help.hidden=!row.serverEntry?.blocked; help.textContent='Perlu bantuan admin. Sampaikan nama peserta, kelompok, tanggal sesi, dan unduh cadangan isian sebelum meninggalkan perangkat.'; }
+      const reviewLink=row.el.querySelector('[data-review-link]');
+      if (reviewLink) { reviewLink.hidden=!row.serverEntry?.blocked; if (row.serverEntry?.review_url) reviewLink.href=row.serverEntry.review_url; }
+      row.el.querySelector('[data-resolve="mine"]').disabled=!!row.serverEntry?.blocked;
+      row.el.querySelector('[data-resolve="server"]').textContent=row.serverEntry?.draft_revision && !row.serverEntry?.stale_draft ? 'Gunakan draft server' : 'Gunakan catatan resmi';
       row.el.querySelectorAll('[data-resolve]').forEach(b => { b.hidden = !row.serverEntry || row.serverEntry.blocked; });
       row.el.querySelectorAll('[data-field],[data-status],[data-result]').forEach(el => { el.disabled = !this.boot.state.active || this.contextChanged || row.detached; });
       row.el.dataset.savingState = row.conflict ? 'conflict' : row.dirty ? 'pending' : row.entry.state;
@@ -594,7 +607,7 @@
       const conflicts = rows.filter(r => r.conflict).length;
       this.root.querySelector('[data-progress]').textContent = `${complete} dari ${rows.length} peserta lengkap`;
       this.root.querySelector('[data-pending]').textContent = [pending && `${pending} perubahan menunggu server`, drafts && `${drafts} draft belum lengkap`, conflicts && `${conflicts} perlu ditinjau`].filter(Boolean).join(' · ');
-      this.root.querySelector('[data-bottom-state]').textContent = this.completed ? '✓ Sesi selesai' : pending ? `${pending} perubahan menunggu server` : 'Perubahan disimpan otomatis';
+      this.root.querySelector('[data-bottom-state]').textContent = conflicts ? `${conflicts} perlu ditinjau`+(pending?` · ${pending} menunggu server`:'') : pending ? `${pending} perubahan menunggu server` : drafts ? `${drafts} draft belum lengkap` : this.completed ? '✓ Sesi selesai' : '✓ Semua perubahan diterima server';
       const counts = { H: 0, S: 0, I: 0, A: 0 };
       rows.forEach(r => { if (r.entry.official_complete && counts[r.entry.official_payload.status] !== undefined) counts[r.entry.official_payload.status]++; });
       this.root.querySelector('[data-summary-counts]').textContent = Object.keys(counts).map(k => `${labels[k]}: ${counts[k]}`).join(' · ');

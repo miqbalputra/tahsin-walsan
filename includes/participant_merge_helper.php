@@ -2,6 +2,7 @@
 require_once __DIR__ . '/participant_helper.php';
 require_once __DIR__ . '/tahsin_report_helper.php';
 require_once __DIR__ . '/attendance_history_helper.php';
+require_once __DIR__ . '/participant_merge_undo_helper.php';
 
 const PARTICIPANT_MERGE_FIELDS = ['nama_bapak','no_hp','alamat','kategori','tempat_tahsin','ustadz_luar','status_aktif','lanjut_tahsin'];
 
@@ -44,6 +45,7 @@ function participantMergeSpecs(): array
         'tahsin_capaian_awal'=>['wali_santri_id','wali_santri_id'],
         'tahsin_autosave_drafts'=>['wali_id','user_id,halaqoh_id,session_date,wali_id'],
         'tahsin_autosave_revisions'=>['wali_id','session_date,wali_id'],
+        'tahsin_program_revisions'=>['wali_id','program_code,session_date,wali_id'],
         'participant_changes'=>['wali_id','operation_id'],
         'participant_merge_aliases'=>['target_id','source_id'],
         'data_induk_sync_conflicts'=>['local_id','id'],
@@ -132,9 +134,9 @@ function participantMergePlan(PDO $pdo, int $keepId, int $sourceId, bool $lock=f
     $records=$related['presensi']??[];
     $suspects=tahsinSuspectIds($pdo,$records); ksort($suspects);
     $plan=['version'=>1,'keep_id'=>$keepId,'source_id'=>$sourceId,'keep'=>$keep,'source'=>$source,'related'=>$related,'suspects'=>$suspects];
-    $json=json_encode($plan,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+    $json=mergeUndoJson($plan);
     if (strlen($json)>4*1024*1024) throw new ParticipantManagementException('Riwayat kedua peserta terlalu besar untuk halaman ini. Hubungi pengelola untuk penggabungan dengan cadangan terpisah. Data belum diubah.');
-    $plan['fingerprint']=hash('sha256',$json);
+    $plan['fingerprint']=hash('sha256',serialize($plan));
     return $plan;
 }
 
@@ -168,6 +170,8 @@ function participantMergeChoices(array $plan, array $input): array
         $conflict=$active['keep'] && $active['source'] && $active['keep']!==$active['source'];
         $memberships[$program]=appRequestString($memberships,$program,$conflict?'':'combine');
         if (!in_array($memberships[$program],['keep','source','combine'],true)) throw new ParticipantManagementException('Tentukan penempatan program '.ucfirst($program).' karena kedua peserta memiliki halaqoh berbeda.');
+        $selectedGroups=$memberships[$program]==='combine'?array_unique(array_merge($active['keep'],$active['source'])):$active[$memberships[$program]];
+        if (count($selectedGroups)>1) throw new ParticipantManagementException('Pilih satu halaqoh aktif pada program '.ucfirst($program).'. Tinjau penempatan asal sebelum merge jika salah satu peserta sudah memiliki beberapa halaqoh.');
     }
     $pairs=participantMergeDrafts($plan);
     if (array_diff(array_keys($drafts),array_keys($pairs))) throw new ParticipantManagementException('Pilihan draft tidak ditemukan pada pratinjau.');
@@ -214,6 +218,8 @@ function participantMergeApply(PDO $pdo, int $actorId, array $plan, array $input
     if ($pdo->inTransaction()) throw new RuntimeException('Selesaikan transaksi lain sebelum menggabungkan peserta.');
     if (($plan['version']??0)!==1 || !preg_match('/^[a-f0-9]{32}$/D',$operationId) || !preg_match('/^[a-f0-9]{64}$/D',$plan['fingerprint']??'')) throw new ParticipantManagementException('Pratinjau tidak valid. Pilih ulang peserta.');
     if (appRequestString($input,'confirmed')!=='1') throw new ParticipantManagementException('Centang konfirmasi setelah memeriksa kedua identitas dan pilihan data.');
+    if (!dataQualitySchemaReady($pdo)) throw new ParticipantManagementException('Pengelola perlu memasang migrasi pemeriksaan data dan undo sebelum merge baru. Data belum diubah.');
+    if (!attendanceHistoryReady($pdo)) throw new ParticipantManagementException('Pengelola perlu menyiapkan jurnal pemulihan presensi sebelum merge baru. Data belum diubah.');
     $choices=participantMergeChoices($plan,$input);
     $requestHash=hash('sha256',json_encode([$plan['keep_id'],$plan['source_id'],$plan['fingerprint'],$choices],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
     $lockName=participantWriteLockName($pdo); $statement=$pdo->prepare('SELECT GET_LOCK(?,5)'); $statement->execute([$lockName]);
@@ -232,7 +238,8 @@ function participantMergeApply(PDO $pdo, int $actorId, array $plan, array $input
         if (!hash_equals($fresh['fingerprint'],$plan['fingerprint'])) throw new ParticipantManagementException('Data berubah sejak pratinjau. Buat pratinjau baru sebelum menggabungkan.');
         $keepId=$fresh['keep_id']; $sourceId=$fresh['source_id'];
         $before=$fresh['keep']; $before['merge_source']=$fresh['source']; $before['merge_related']=$fresh['related']; $before['merge_choices']=$choices;
-        $beforeJson=json_encode($before,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $before['undo_state']=mergeUndoCapture($pdo,$keepId,$sourceId,$operationId,true);
+        $beforeJson=mergeUndoJson($before);
         $values=[];
         foreach ($choices['fields'] as $field=>$side) $values[$field]=$fresh[$side]['parent'][$field];
         // Move children in place; matching names never prove the same child.
@@ -276,6 +283,11 @@ function participantMergeApply(PDO $pdo, int $actorId, array $plan, array $input
             foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $revision) $pdo->prepare('INSERT INTO tahsin_autosave_revisions(wali_id,session_date,revision) VALUES(?,?,?) ON DUPLICATE KEY UPDATE revision=GREATEST(revision,VALUES(revision))+1')->execute([$keepId,$revision['session_date'],(int)$revision['revision']+1]);
             $pdo->prepare('DELETE FROM tahsin_autosave_revisions WHERE wali_id=?')->execute([$sourceId]);
         }
+        if (isset($fresh['related']['tahsin_program_revisions'])) {
+            $q=$pdo->prepare('SELECT * FROM tahsin_program_revisions WHERE wali_id=? ORDER BY program_code,session_date FOR UPDATE'); $q->execute([$sourceId]);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $pdo->prepare('INSERT INTO tahsin_program_revisions(wali_id,program_code,session_date,revision) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE revision=GREATEST(revision,VALUES(revision))+1')->execute([$keepId,$r['program_code'],$r['session_date'],(int)$r['revision']+1]);
+            $pdo->prepare('DELETE FROM tahsin_program_revisions WHERE wali_id=?')->execute([$sourceId]);
+        }
         $reviewSessions=[];
         foreach ($fresh['related']['presensi']??[] as $record) if (isset($fresh['suspects'][(int)$record['id']])) $reviewSessions[tahsinSessionDate($record['tanggal'])]=true;
         if ($reviewSessions && !isset($fresh['related']['tahsin_verifications'])) throw new ParticipantManagementException('Riwayat capaian awal memerlukan fitur verifikasi sebelum dapat digabung.');
@@ -299,8 +311,9 @@ function participantMergeApply(PDO $pdo, int $actorId, array $plan, array $input
         $after=participantSnapshot($pdo,$keepId,true);
         $after['merge_related']=participantMergeRelated($pdo,$keepId,$sourceId,true,$operationId);
         $after['merge_result']=$result;
-        $afterJson=json_encode($after,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-        if (strlen($beforeJson)+strlen($afterJson)>8*1024*1024) throw new ParticipantManagementException('Jurnal penggabungan melebihi batas halaman ini. Hubungi pengelola; seluruh perubahan dibatalkan.');
+        $after['undo_state']=mergeUndoCapture($pdo,$keepId,$sourceId,$operationId,true);
+        $afterJson=mergeUndoJson($after);
+        if (strlen($beforeJson)+strlen($afterJson)>16*1024*1024) throw new ParticipantManagementException('Jurnal penggabungan melebihi batas halaman ini. Hubungi pengelola; seluruh perubahan dibatalkan.');
         $pdo->prepare('UPDATE participant_changes SET after_json=? WHERE operation_id=?')->execute([$afterJson,$operationId]);
         $pdo->commit(); return $result;
     } catch (Throwable $error) {

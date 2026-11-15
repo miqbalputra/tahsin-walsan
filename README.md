@@ -48,6 +48,7 @@ Admin/PJ Tahfidz dapat memantau progress, mencetak rapor, dan mendapatkan pering
 | 🔔 **Pemantauan Input Guru** | Kekurangan presensi/capaian dan konflik per guru/halaqoh/sesi; pengingat WhatsApp siap kirim |
 | 📊 **Dashboard Admin** | Statistik, grafik tren, peringatan dini |
 | 👥 **Manajemen Peserta** | CRUD wali santri + data anak + import CSV |
+| 🔎 **Pemeriksaan Data Ganda** | Deteksi identitas, keanggotaan, presensi dan konflik draft; merge dengan pratinjau undo. [Panduan](docs/DATA_QUALITY_AND_UNDO.md) |
 | 🏫 **Manajemen Halaqoh** | Kelompok belajar dengan ustadz pembimbing |
 | 📈 **Progress Wali** | Pantau kehadiran & capaian per peserta |
 | ⚠️ **Peringatan Dini** | Deteksi otomatis alpha >= 3x |

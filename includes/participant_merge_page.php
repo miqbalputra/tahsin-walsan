@@ -8,7 +8,7 @@ $error=''; $input=[]; $keepId=null; $query=''; $page=1; $duplicatePage=1;
 $actorId=(int)$_SESSION['user_id'];
 $pending=$_SESSION['participant_merge_pending']??null;
 if ($pending && (($pending['actor']??0)!==$actorId || ($pending['expires']??0)<time())) { unset($_SESSION['participant_merge_pending']); $pending=null; }
-$ready=participantMergeSchemaReady($pdo);
+$ready=participantMergeSchemaReady($pdo)&&dataQualitySchemaReady($pdo);
 try {
     if ($_SERVER['REQUEST_METHOD']==='POST') {
         requireValidCsrfToken($_POST['csrf_token']??null);
@@ -75,6 +75,7 @@ $pageTitle='Gabung Peserta Duplikat'; require __DIR__.'/header.php'; require __D
 <div class="max-w-5xl mx-auto">
 <a href="peserta.php" class="inline-block underline text-blue-700 py-3">Kembali ke daftar peserta</a>
 <h1 class="text-2xl font-bold mb-4">Gabung peserta duplikat</h1>
+<a class="underline text-blue-700 inline-block py-3" href="periksa-data.php">Periksa identitas, keanggotaan, dan presensi ganda</a>
 <p class="text-slate-600 mb-5">Gunakan hanya jika dua ID benar-benar milik orang yang sama. Nama yang sama belum membuktikan identitas. Anak dan presensi mempertahankan ID; data yang berbeda ditinjau sebelum disimpan.</p>
 <?php if ($error): ?><p role="alert" class="rounded-xl bg-red-50 text-red-800 p-4 mb-5"><?= appEscape($error) ?> <a href="peserta-riwayat.php" class="underline">Buka riwayat perubahan</a></p><?php endif; ?>
 <?php if (!$ready): ?><p class="rounded-xl bg-amber-50 text-amber-900 p-4 mb-5">Pengelola perlu menyiapkan jurnal dan pengalihan ID penggabungan. Data peserta yang sudah ada tetap tersedia.</p><?php endif; ?>
@@ -93,7 +94,7 @@ $pageTitle='Gabung Peserta Duplikat'; require __DIR__.'/header.php'; require __D
         </fieldset>
         <fieldset class="rounded-xl border border-slate-200 p-4 bg-white"><legend class="font-bold px-2">Keanggotaan aktif sesudah digabung</legend>
             <?php foreach (['bapak','ibu'] as $program): $groups=[]; foreach (['keep','source'] as $side) { $groups[$side]=[]; foreach ($plan[$side]['memberships'] as $row) if ($row['participant_program']===$program && $row['archived_at']===null) $groups[$side][(int)$row['halaqoh_id']]=$row['participant_group_name']; ksort($groups[$side]); } $conflict=$groups['keep'] && $groups['source'] && array_keys($groups['keep'])!==array_keys($groups['source']); $selected=is_string($input['memberships'][$program]??null)?$input['memberships'][$program]:($conflict?'':'combine'); ?>
-                <div class="mb-4"><label for="merge-program-<?= $program ?>" class="font-bold block mb-2">Program <?= ucfirst($program) ?></label><p class="text-sm mb-2">Dipertahankan: <?= appEscape(implode(', ',$groups['keep'])?:'belum ditempatkan') ?>. Sumber: <?= appEscape(implode(', ',$groups['source'])?:'belum ditempatkan') ?>.</p><select id="merge-program-<?= $program ?>" name="memberships[<?= $program ?>]" required class="w-full border border-slate-300 p-3 rounded-xl"><option value="">Pilih penempatan program ini</option><?php foreach (['keep'=>'Gunakan penempatan peserta yang dipertahankan','source'=>'Gunakan penempatan peserta sumber','combine'=>'Pertahankan gabungan penempatan kedua peserta'] as $value=>$label): ?><option value="<?= $value ?>" <?= $selected===$value?'selected':'' ?>><?= $label ?></option><?php endforeach; ?></select></div>
+                <div class="mb-4"><label for="merge-program-<?= $program ?>" class="font-bold block mb-2">Program <?= ucfirst($program) ?></label><p class="text-sm mb-2">Dipertahankan: <?= appEscape(implode(', ',$groups['keep'])?:'belum ditempatkan') ?>. Sumber: <?= appEscape(implode(', ',$groups['source'])?:'belum ditempatkan') ?>.</p><select id="merge-program-<?= $program ?>" name="memberships[<?= $program ?>]" required class="w-full border border-slate-300 p-3 rounded-xl"><option value="">Pilih penempatan program ini</option><?php foreach (['keep'=>'Gunakan penempatan peserta yang dipertahankan','source'=>'Gunakan penempatan peserta sumber','combine'=>'Gabungkan jika tetap satu halaqoh aktif'] as $value=>$label): $count=$value==='combine'?count(array_unique(array_merge(array_keys($groups['keep']),array_keys($groups['source'])))):count($groups[$value]); ?><option value="<?= $value ?>" <?= $count>1?'disabled':($selected===$value?'selected':'') ?>><?= $label ?><?= $count>1?' — perlu meninjau penempatan':'' ?></option><?php endforeach; ?></select></div>
             <?php endforeach; ?><p class="text-sm text-slate-600">Keanggotaan lama tetap tercatat. Keanggotaan ganda pada halaqoh yang sama diarsipkan. Jika status hasil Arsip atau seluruh anak Lulus, seluruh keanggotaan aktif ditutup.</p>
         </fieldset>
         <?php $baselines=[]; foreach ($plan['related']['tahsin_capaian_awal']??[] as $row) $baselines[(int)$row['wali_santri_id']===$plan['keep_id']?'keep':'source']=$row; ?>

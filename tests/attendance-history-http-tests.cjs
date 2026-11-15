@@ -45,7 +45,7 @@ const nonce=body=>body.match(/name="restore_token" value="([a-f0-9]{32})"/)?.[1]
   check((await req('/presensi-riwayat.php?id='+deletion,admin,{restore_token:restoreToken,confirmed:'1'})).status===403&&domain()===deletedState,'Recovery enforces CSRF before writes');
   check((await req('/presensi-riwayat.php?id='+deletion,admin,{csrf_token:token,restore_token:restoreToken})).status===422&&domain()===deletedState,'Recovery requires explicit confirmation');
   const otherAdmin=await login('audit_admin');
-  check((await req('/presensi-riwayat.php',otherAdmin,{csrf_token:csrf((await req('/laporan.php',otherAdmin)).body),restore_token:restoreToken,confirmed:'1'})).status===422&&domain()===deletedState,'A recovery token cannot be reused from another session');
+  check((await req('/presensi-riwayat.php',otherAdmin,{csrf_token:csrf((await req('/presensi-riwayat.php?id='+deletion,otherAdmin)).body),restore_token:restoreToken,confirmed:'1'})).status===422&&domain()===deletedState,'A recovery token cannot be reused from another session');
   const restoreBody={csrf_token:token,restore_token:restoreToken,confirmed:'1'};
   check((await req('/presensi-riwayat.php?id='+deletion,admin,restoreBody)).status===302&&domain()===original,'HTTP recovery restores all original domain rows and drafts');
   const recoveredHistory=JSON.stringify(sql('SELECT * FROM presensi_history ORDER BY id'));

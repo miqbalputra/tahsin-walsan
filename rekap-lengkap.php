@@ -25,7 +25,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $verification['fingerprint'],
                 $verification['selected_id'],
                 $userId,
-                $verification['note']
+                $verification['note'],
+                appRequestString($_POST,'program')?:null,
+                appRequestString($_POST,'operation')?:null
             );
             addLog($pdo, 'VERIFY_TAHSIN_SESSION', 'Wali ID ' . $verification['wali_id'] . ', sesi ' . $verification['session'] . ', pilihan #' . ($verification['selected_id'] ?? 0));
             redirectTo('rekap-lengkap.php?' . http_build_query(array_merge($_GET, ['msg' => 'verified'])) . '#detail-wali');

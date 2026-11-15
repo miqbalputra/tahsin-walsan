@@ -16,6 +16,7 @@ function fakeDatabase(initial=[],failAt=0){
         if(done)return;
         try{
           if(kind==='get')req.result=copy(staged.get(value));
+          else if(kind==='delete')staged.delete(value);
           else {
             writeCount++;
             if(failAt && writeCount===failAt)throw Error('Synthetic quota failure');
@@ -29,7 +30,7 @@ function fakeDatabase(initial=[],failAt=0){
       });
       return req;
     };
-    const store={get:key=>request('get',key),put:value=>request('put',value),add:value=>request('add',value)};
+    const store={get:key=>request('get',key),put:value=>request('put',value),add:value=>request('add',value),delete:key=>request('delete',key)};
     return tx;
   }};
 }
@@ -46,6 +47,9 @@ const source={key:'1:bapak:3:2026-10-18:7:original-tab',scope:'1:bapak:3:2026-10
   check(exported.user_id===1 && exported.records[0].payload.alasan===source.payload.alasan,'Device backup retains original Unicode and inert text');
   check(!('csrf_token' in exported.records[0].flight.body) && source.flight.body.csrf_token==='private-csrf','Backup omits session CSRF without changing the original immutable request');
   const db=fakeDatabase([source]), store=new DraftStore(); store.db=db;
+  const expired=[{...source,key:'old-pending',saved_at:1},{...source,key:'old-conflict',dirty:false,conflict:true,saved_at:1},{...source,key:'old-confirmed',dirty:false,flight:null,saved_at:1}];
+  const purgeStore=new DraftStore(); purgeStore.db=fakeDatabase(expired); purgeStore.readUser=async()=>copy(expired);
+  check(await purgeStore.purgeExpired(1)===1 && purgeStore.db.data.has('old-pending') && purgeStore.db.data.has('old-conflict') && !purgeStore.db.data.has('old-confirmed'),'Expiry removes only confirmed copies and preserves unsent/conflicted drafts older than 30 days');
   const archived=await store.archive(source,'before_conflict_resolution');
   check(db.data.has(source.key) && db.data.has(archived.key) && archived.key!==source.key,'Conflict backup adds a new key without replacing the active draft');
   check(archived.kind==='archive' && archived.dirty===false && archived.flight.body.operation_id===source.flight.body.operation_id,'Archive preserves the original request while excluding it from automatic send');

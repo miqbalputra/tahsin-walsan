@@ -9,7 +9,7 @@ final class ParticipantManagementException extends RuntimeException {}
 
 function participantActionLabel(string $action): string
 {
-    return ['merge' => 'Gabung peserta', 'archive' => 'Arsipkan peserta', 'save' => 'Simpan peserta',
+    return ['merge' => 'Gabung peserta', 'merge_undo'=>'Batalkan penggabungan', 'archive' => 'Arsipkan peserta', 'save' => 'Simpan peserta',
         'class_promote' => 'Naikkan kelas', 'class_graduate' => 'Luluskan anak',
         'class_restore' => 'Kembalikan kelas anak', 'achievement' => 'Ubah capaian catatan',
         'baseline' => 'Ubah capaian awal', 'membership_add' => 'Tambahkan keanggotaan',

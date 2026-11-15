@@ -82,6 +82,7 @@ require __DIR__ . '/../includes/sidebar.php';
                 <p data-missing class="tas-missing"></p>
                 <p data-official-note class="tas-missing" hidden>Laporan masih memakai catatan resmi sebelumnya sampai perubahan ini lengkap.</p>
                 <div data-conflict class="tas-conflict" hidden><strong>Perubahan perlu ditinjau</strong><p data-conflict-message></p><p data-server-version></p>
+                    <p data-local-version></p><p data-server-draft hidden></p><p data-admin-review hidden></p><a data-review-link class="tas-button" hidden>Buka riwayat sesi</a>
                     <button type="button" data-resolve="server" class="tas-button">Gunakan versi server</button>
                     <button type="button" data-resolve="mine" class="tas-button">Pertahankan isian saya</button>
                 </div>
