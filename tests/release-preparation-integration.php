@@ -20,6 +20,12 @@ try {
     autosaveApplyMigration($pdo); familyApplyMigration($pdo);
     $pdo->exec("INSERT INTO tahsin_autosave_revisions VALUES(1,'2026-11-15',7)");
     $original=releaseDatabaseSnapshot($pdo);
+    $cliEnv=getenv();
+    foreach (['DB_HOST'=>'127.0.0.1','DB_PORT'=>'13317','DB_DATABASE'=>$source,'DB_USERNAME'=>'root','DB_PASSWORD'=>'tahsin_local_test'] as $key=>$value) $cliEnv[$key]=$value;
+    $cli=proc_open([PHP_BINARY,'-d','extension=pdo_mysql',__DIR__.'/../scripts/prepare-data-quality-release.php','--verify','--state='.__DIR__.'/../cli-denied-state.json'],[1=>['pipe','w'],2=>['pipe','w']],$pipes,null,$cliEnv);
+    $output=stream_get_contents($pipes[1]).stream_get_contents($pipes[2]); fclose($pipes[1]); fclose($pipes[2]); $exit=proc_close($cli);
+    rc($exit===1 && str_contains($output,'State dan backup harus di luar webroot.') && !str_contains($output,'Undefined array key'),'CLI keeps parsed arguments after loading database config and rejects public state');
+    rc(releaseDatabaseSnapshot($pdo)===$original,'Rejected CLI changes no source data');
     $pdo->exec("CREATE DATABASE `$target`");
     $stage=new PDO('mysql:host=127.0.0.1;port=13317;dbname='.$target.';charset=utf8mb4','root','tahsin_local_test',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_EMULATE_PREPARES=>false]);
     $proof=releaseVerifyClone($pdo,$stage,sys_get_temp_dir().'/tahsin-release-test-'.$suffix);

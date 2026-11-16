@@ -1,13 +1,13 @@
 <?php
 if (PHP_SAPI!=='cli') { http_response_code(404); exit; }
-$options=getopt('',['verify','apply','state:']);
-if ((!isset($options['verify']) && !isset($options['apply'])) || isset($options['verify'],$options['apply']) || empty($options['state'])) {
+$releaseOptions=getopt('',['verify','apply','state:']);
+if ((!isset($releaseOptions['verify']) && !isset($releaseOptions['apply'])) || isset($releaseOptions['verify'],$releaseOptions['apply']) || empty($releaseOptions['state'])) {
     echo "Verify backup + migrations in a NEW isolated schema: --verify --state=/private/path/release.json\n";
     echo "Apply verified metadata migrations: --apply --state=/private/path/release.json\n"; exit(2);
 }
 require_once __DIR__.'/../config/database.php';
 require_once __DIR__.'/../includes/release_preparation_helper.php';
-$stateFile=$options['state'];
+$stateFile=$releaseOptions['state'];
 try {
     // State and ZIP contain private data; refuse all application webroot paths.
     $directory=dirname($stateFile);
@@ -17,7 +17,7 @@ try {
     chmod($directory,0700);
     $code=[]; foreach (glob(__DIR__.'/../includes/*.php') as $file) $code[basename($file)]=hash_file('sha256',$file);
     $codeHash=hash('sha256',serialize($code));
-    if (isset($options['verify'])) {
+    if (isset($releaseOptions['verify'])) {
         if (file_exists($stateFile)) throw new RuntimeException('State sudah ada. Gunakan lokasi baru; backup lama tidak ditimpa.');
         $stageName='tahsin_release_stage_'.date('Ymd_His').'_'.bin2hex(random_bytes(4));
         $pdo->exec('CREATE DATABASE '.attendanceHistoryQuote($stageName).' CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
