@@ -3,13 +3,8 @@
  * Additive migration for safe alumni archiving.
  * No existing row is deleted or rewritten.
  */
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once __DIR__ . '/config/database.php';
-
-if (PHP_SAPI !== 'cli') {
-    require_once __DIR__ . '/includes/auth_helper.php';
-    checkRole(['admin']);
-    header('Content-Type: text/plain; charset=utf-8');
-}
 $table = 'halaqoh_members';
 $columns = [
     'archived_at' => 'ALTER TABLE halaqoh_members ADD COLUMN archived_at DATETIME NULL AFTER wali_santri_id',

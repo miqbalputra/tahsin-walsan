@@ -17,6 +17,10 @@
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
 require_once 'includes/alumni_archive_helper.php';
+require_once 'includes/database_helper.php';
+require_once 'includes/participant_identity_helper.php';
+require_once 'includes/import_storage_helper.php';
+require_once 'includes/legacy_student_import_helper.php';
 
 checkRole(['admin', 'pj_tahfidz']);
 
@@ -44,41 +48,6 @@ function normName(string $n): string
     return strtolower(trim(preg_replace('/\s+/', ' ', $n)));
 }
 
-/** Baca CSV (handle BOM, delimiter ',' atau ';'). Kembalikan array asosiatif baris. */
-function parseCsvFile(string $path): array
-{
-    if (!is_file($path)) {
-        return [];
-    }
-    $contents = file_get_contents($path);
-    // hapus BOM
-    $contents = preg_replace('/^\xEF\xBB\xBF/', '', $contents);
-    // deteksi delimiter
-    $delim = (substr_count($contents, ';') > substr_count($contents, ',')) ? ';' : ',';
-    $rows = [];
-    $tmp = tmpfile();
-    fwrite($tmp, $contents);
-    fseek($tmp, 0);
-    $header = fgetcsv($tmp, 0, $delim, '"', '');
-    if (!$header) {
-        fclose($tmp);
-        return [];
-    }
-    $header = array_map(fn($h) => strtolower(trim($h)), $header);
-    while (($data = fgetcsv($tmp, 0, $delim, '"', '')) !== false) {
-        if (count($data) === 1 && $data[0] === '') {
-            continue;
-        }
-        $assoc = [];
-        foreach ($header as $i => $col) {
-            $assoc[$col] = trim($data[$i] ?? '');
-        }
-        $rows[] = $assoc;
-    }
-    fclose($tmp);
-    return $rows;
-}
-
 /** Sumber file aktif: upload (session) jika ada, kalau tidak pakai data_santri_baru.csv di root. */
 function activeSourceFile(): string
 {
@@ -90,31 +59,6 @@ function activeSourceFile(): string
 }
 
 /**
- * Pilih direktori penyimpanan upload yang writable.
- * Pada deployment Coolify, root aplikasi bisa read-only; karena itu gunakan
- * fallback di direktori temporary container bila temp_excel tidak writable.
- */
-function resolveImportTempDir(): string
-{
-    $candidates = [
-        __DIR__ . '/temp_excel',
-        rtrim(sys_get_temp_dir(), '/\\') . '/tahsin_import',
-        sys_get_temp_dir(),
-    ];
-
-    foreach ($candidates as $candidate) {
-        if (!is_dir($candidate) && !@mkdir($candidate, 0750, true) && !is_dir($candidate)) {
-            continue;
-        }
-        if (is_dir($candidate) && is_writable($candidate)) {
-            return $candidate;
-        }
-    }
-
-    return '';
-}
-
-/**
  * Hitung disposition tiap baris CSV terhadap DB live.
  * Kembalikan: ['rows' => [...], 'counts' => [...], 'new_families' => [...]]
  * Tiap row: [nama_bapak, no_hp, nama_anak, kelas, halaqoh, status, target_wali_id, kakak, catatan]
@@ -122,33 +66,43 @@ function resolveImportTempDir(): string
  */
 function computeDispositions(PDO $pdo, array $csvRows): array
 {
-    // Map wali existing: key = normName(nama_bapak).'|'.normalizeHp(no_hp)
-    $waliAll = $pdo->query("SELECT id, nama_bapak, no_hp, status_aktif FROM wali_santri")->fetchAll(PDO::FETCH_ASSOC);
+    // Keep all matches: an old database may already contain duplicate identities.
+    $waliAll = $pdo->query("SELECT id, nama_bapak, no_hp, status_aktif FROM wali_santri ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
     $waliMap = [];
+    $waliByName = [];
     foreach ($waliAll as $w) {
-        $key = normName((string) $w['nama_bapak']) . '|' . normalizeHp((string) $w['no_hp']);
-        if (!isset($waliMap[$key])) {
-            $waliMap[$key] = $w;
-        }
+        $nameKey = normName((string) $w['nama_bapak']);
+        $phoneKey = normalizeHp((string) $w['no_hp']);
+        $waliByName[$nameKey][] = $w;
+        if ($phoneKey !== '') $waliMap[$nameKey . '|' . $phoneKey][] = $w;
     }
+    $managedWaliIds = participantManagedIds($pdo);
 
     // Anak existing per wali: wali_id => [normName(nama_anak), ...]
-    $children = $pdo->query("SELECT wali_santri_id, nama_anak FROM santri_detail")->fetchAll(PDO::FETCH_ASSOC);
+    $children = $pdo->query("SELECT wali_santri_id, nama_anak FROM santri_detail ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
     $childMap = [];
     foreach ($children as $c) {
-        $childMap[(int) $c['wali_santri_id']][] = normName((string) $c['nama_anak']);
+        $childMap[(int) $c['wali_santri_id']][normName((string) $c['nama_anak'])] = true;
     }
 
     // Halaqoh by nama (case-insensitive)
-    $halaqohRows = $pdo->query("SELECT id, nama_halaqoh FROM halaqoh")->fetchAll(PDO::FETCH_ASSOC);
-    $halaqohMap = [];
+    $halaqohRows = $pdo->query("SELECT id, nama_halaqoh FROM halaqoh ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
+    $halaqohMatches = [];
     foreach ($halaqohRows as $h) {
-        $halaqohMap[normName((string) $h['nama_halaqoh'])] = (int) $h['id'];
+        $halaqohMatches[normName((string) $h['nama_halaqoh'])][] = (int) $h['id'];
     }
+    $halaqohMap = [];
+    foreach ($halaqohMatches as $key => $ids) if (count($ids) === 1) $halaqohMap[$key] = $ids[0];
 
     $result = [];
     $counts = ['attach' => 0, 'new' => 0, 'dup' => 0, 'error' => 0, 'new_families' => 0];
     $newFamilyGroups = []; // key => ['rows' => [idx...], 'halaqoh_id' => int|null]
+    $blankPhoneNameCounts = [];
+    foreach ($csvRows as $row) {
+        $rowPhone = normalizeHp(trim((string) ($row['no_hp'] ?? '')));
+        $rowName = normName(trim((string) ($row['nama_bapak'] ?? '')));
+        if ($rowName !== '' && $rowPhone === '') $blankPhoneNameCounts[$rowName] = ($blankPhoneNameCounts[$rowName] ?? 0) + 1;
+    }
 
     foreach ($csvRows as $idx => $r) {
         $nama_bapak = trim($r['nama_bapak'] ?? '');
@@ -181,18 +135,41 @@ function computeDispositions(PDO $pdo, array $csvRows): array
 
         $hp = normalizeHp($no_hp);
         if ($hp === '') {
-            // no_hp kosong -> tidak bisa deteksi kakak, anggap wali baru (perlu verifikasi manual)
-            $key = normName($nama_bapak) . '|';
+            $nameKey = normName($nama_bapak);
+            if ($no_hp !== '') {
+                $rowOut['catatan'] = 'nomor HP tidak berisi angka yang dapat dibaca; perbaiki CSV sebelum impor';
+                $counts['error']++;
+                $result[] = $rowOut;
+                continue;
+            }
+            if (!empty($waliByName[$nameKey])) {
+                $rowOut['catatan'] = 'nomor HP kosong dan nama wali sudah ada; pemadanan otomatis ditolak agar anak tidak masuk ke wali yang keliru';
+                $counts['error']++;
+                $result[] = $rowOut;
+                continue;
+            }
+            if (($blankPhoneNameCounts[$nameKey] ?? 0) > 1) {
+                $rowOut['catatan'] = 'nama wali tanpa nomor HP muncul beberapa kali; isi nomor HP agar identitas keluarga tidak ditebak';
+                $counts['error']++;
+                $result[] = $rowOut;
+                continue;
+            }
+            $key = $nameKey . '|';
             $rowOut['status'] = 'new';
-            $rowOut['catatan'] = 'no_hp kosong — tidak bisa deteksi kakak, dibuat wali baru (verifikasi manual)';
-            $counts['new']++;
+            $rowOut['catatan'] = 'no_hp kosong — wali baru perlu verifikasi manual';
             if (!isset($newFamilyGroups[$key])) {
                 $newFamilyGroups[$key] = ['rows' => [], 'halaqoh_id' => null];
                 $counts['new_families']++;
             }
-            $newFamilyGroups[$key]['rows'][] = $idx;
-            if ($halaqoh !== '' && isset($halaqohMap[normName($halaqoh)])) {
-                $newFamilyGroups[$key]['halaqoh_id'] = $halaqohMap[normName($halaqoh)];
+            $childKey = normName($nama_anak);
+            if (isset($newFamilyGroups[$key]['children'][$childKey])) {
+                $rowOut['status'] = 'dup';
+                $rowOut['catatan'] = 'anak yang sama muncul lebih dari sekali pada berkas; baris berikutnya dilewati';
+                $counts['dup']++;
+            } else {
+                $newFamilyGroups[$key]['children'][$childKey] = true;
+                $newFamilyGroups[$key]['rows'][] = $idx;
+                $counts['new']++;
             }
             $result[] = $rowOut;
             continue;
@@ -200,13 +177,22 @@ function computeDispositions(PDO $pdo, array $csvRows): array
 
         $key = normName($nama_bapak) . '|' . $hp;
         if (isset($waliMap[$key])) {
-            $wali = $waliMap[$key];
-            $existingChildren = $childMap[(int) $wali['id']] ?? [];
-            if (in_array(normName($nama_anak), $existingChildren, true)) {
+            if (count($waliMap[$key]) !== 1) {
+                $rowOut['catatan'] = 'beberapa wali memiliki nama dan nomor HP yang sama; pemadanan otomatis ditolak';
+                $counts['error']++;
+                $result[] = $rowOut;
+                continue;
+            }
+            $wali = $waliMap[$key][0];
+            $childKey = normName($nama_anak);
+            if (isset($childMap[(int) $wali['id']][$childKey])) {
                 $rowOut['status'] = 'dup';
                 $rowOut['target_wali_id'] = (int) $wali['id'];
                 $rowOut['catatan'] = 'anak sudah ada di wali ini -> skip';
                 $counts['dup']++;
+            } elseif (isset($managedWaliIds[(int) $wali['id']])) {
+                $rowOut['catatan'] = 'wali dikelola master keluarga/Data Induk; gunakan alur impor peserta agar hubungan sumber tidak berubah';
+                $counts['error']++;
             } else {
                 $rowOut['status'] = 'attach';
                 $rowOut['target_wali_id'] = (int) $wali['id'];
@@ -216,6 +202,7 @@ function computeDispositions(PDO $pdo, array $csvRows): array
                 $kakakList = array_map(fn($c) => $c['nama_anak'] . ' (' . $c['kelas'] . ')', $kakakNames->fetchAll(PDO::FETCH_ASSOC));
                 $rowOut['kakak'] = implode(', ', $kakakList);
                 $rowOut['catatan'] = ((int) $wali['status_aktif'] === 0) ? 'wali saat ini terarsip -> akan diaktifkan kembali' : '';
+                $childMap[(int) $wali['id']][$childKey] = true;
                 $counts['attach']++;
             }
             $result[] = $rowOut;
@@ -224,28 +211,58 @@ function computeDispositions(PDO $pdo, array $csvRows): array
 
         // wali baru
         $rowOut['status'] = 'new';
-        $counts['new']++;
         if (!isset($newFamilyGroups[$key])) {
             $newFamilyGroups[$key] = ['rows' => [], 'halaqoh_id' => null];
             $counts['new_families']++;
         }
-        $newFamilyGroups[$key]['rows'][] = $idx;
-        if ($halaqoh !== '' && isset($halaqohMap[normName($halaqoh)])) {
-            $newFamilyGroups[$key]['halaqoh_id'] = $halaqohMap[normName($halaqoh)];
+        $childKey = normName($nama_anak);
+        if (isset($newFamilyGroups[$key]['children'][$childKey])) {
+            $rowOut['status'] = 'dup';
+            $rowOut['catatan'] = 'anak yang sama muncul lebih dari sekali pada berkas; baris berikutnya dilewati';
+            $counts['dup']++;
+        } else {
+            $newFamilyGroups[$key]['children'][$childKey] = true;
+            $newFamilyGroups[$key]['rows'][] = $idx;
+            $counts['new']++;
         }
         $result[] = $rowOut;
     }
 
+    // A family is assigned only when every requested group name resolves to the
+    // same unique halaqoh. Ambiguous or conflicting labels never pick a group.
+    foreach ($newFamilyGroups as &$family) {
+        $requested = [];
+        foreach ($family['rows'] as $rowIndex) {
+            $label = trim((string) ($result[$rowIndex]['halaqoh'] ?? ''));
+            if ($label !== '') $requested[normName($label)] = true;
+        }
+        $resolved = [];
+        foreach (array_keys($requested) as $name) if (isset($halaqohMap[$name])) $resolved[$halaqohMap[$name]] = true;
+        if (!$requested) $family['halaqoh_id'] = null;
+        elseif (count($resolved) === 1 && count($resolved) === count($requested)) $family['halaqoh_id'] = (int) array_key_first($resolved);
+        else {
+            $family['halaqoh_id'] = null;
+            foreach ($family['rows'] as $rowIndex) {
+                $result[$rowIndex]['catatan'] = trim($result[$rowIndex]['catatan'] . ' Nama halaqoh tidak unik, tidak ditemukan, atau berbeda dalam satu keluarga; penempatan tidak dibuat otomatis.');
+            }
+        }
+    }
+    unset($family);
+
     return ['rows' => $result, 'counts' => $counts, 'new_families' => $newFamilyGroups, 'halaqoh_map' => $halaqohMap];
+}
+
+/** Bind the explicit confirmation to both the CSV and its current DB preview. */
+function importSantriPreviewFingerprint(array $csvRows, array $disposition): string
+{
+    return hash('sha256', serialize([$csvRows, $disposition['rows'], $disposition['counts'], $disposition['new_families']]));
 }
 
 // ---------------------------------------------------------------------------
 // POST handler
 // ---------------------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
-    }
+    requireValidCsrfToken($_POST['csrf_token'] ?? '');
     $action = $_POST['action'] ?? '';
 
     if ($action === 'upload' && isset($_FILES['file_csv'])) {
@@ -262,6 +279,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($uploadTmp === '' || !is_uploaded_file($uploadTmp)) {
             error_log('Import santri baru: temporary upload tidak valid.');
             redirectTo('import-santri-baru.php?err=' . rawurlencode('File upload tidak valid atau sudah kedaluwarsa.'));
+        }
+        if ((int) ($_FILES['file_csv']['size'] ?? 0) > IMPORT_BARU_MAX_BYTES) {
+            redirectTo('import-santri-baru.php?err=' . rawurlencode('Ukuran file melebihi 5 MB. Pecah berkas atau gunakan alur Impor Peserta.'));
         }
 
         $tempDir = resolveImportTempDir();
@@ -295,24 +315,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($source === '') {
             redirectTo('import-santri-baru.php?err=' . rawurlencode('Tidak ada file sumber. Upload CSV atau letakkan data_santri_baru.csv.'));
         }
-        $csvRows = parseCsvFile($source);
+        try { $csvRows = parseCsvFile($source); }
+        catch (ImportSantriCsvException $failure) {
+            redirectTo('import-santri-baru.php?err=' . rawurlencode($failure->getMessage()));
+        }
         if (!$csvRows) {
             redirectTo('import-santri-baru.php?err=' . rawurlencode('File CSV kosong atau tidak terbaca.'));
         }
-
-        // hitung ulang disposition dari DB live (jangan percaya input POST)
-        $disp = computeDispositions($pdo, $csvRows);
-        $rows = $disp['rows'];
-        $newFamilies = $disp['new_families'];
-        $halaqohMap = $disp['halaqoh_map'];
+        $previewToken = appRequestString($_POST, 'preview_token');
+        $previews = is_array($_SESSION['import_baru_previews'] ?? null) ? $_SESSION['import_baru_previews'] : [];
+        $confirmedPreview = $previews[$previewToken] ?? null;
+        $sourceHash = hash_file('sha256', $source);
+        if (!preg_match('/^[a-f0-9]{32}$/D', $previewToken) || !is_array($confirmedPreview)
+            || ($confirmedPreview['actor'] ?? null) !== (int) $_SESSION['user_id']
+            || ($confirmedPreview['expires'] ?? 0) <= time()
+            || !hash_equals((string) ($confirmedPreview['source'] ?? ''), $sourceHash)) {
+            redirectTo('import-santri-baru.php?err=' . rawurlencode('Konfirmasi pratinjau berakhir atau sumber berubah. Periksa ulang seluruh baris sebelum menyimpan.'));
+        }
 
         $attached = 0;
         $newWali = 0;
         $newChildren = 0;
         $skipped = 0;
-
+        $archiveResult = ['archived_wali' => 0, 'archived_memberships' => 0];
+        $lockName = participantWriteLockName($pdo);
+        $lockAcquired = false;
+        $originalSqlMode = null;
+        $failure = null;
         try {
+            $lock = $pdo->prepare('SELECT GET_LOCK(?, 5)');
+            $lock->execute([$lockName]);
+            if ((int) $lock->fetchColumn() !== 1) {
+                throw new RuntimeException('Perubahan peserta lain sedang berlangsung. Tunggu sebentar, lalu periksa ulang pratinjau.');
+            }
+            $lockAcquired = true;
+            $originalSqlMode = appUseStrictSqlMode($pdo);
             $pdo->beginTransaction();
+            $transactionalTables = ['wali_santri', 'santri_detail', 'halaqoh', 'halaqoh_members'];
+            $historyEngine = $pdo->prepare("SELECT ENGINE FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='tahsin_roster_history' AND TABLE_TYPE='BASE TABLE'");
+            $historyEngine->execute();
+            if ($historyEngine->fetchColumn() !== false) $transactionalTables[] = 'tahsin_roster_history';
+            appRequireTransactionalTables($pdo, $transactionalTables);
+
+            $actor = $pdo->prepare('SELECT role FROM users WHERE id = ? FOR UPDATE');
+            $actor->execute([(int) $_SESSION['user_id']]);
+            if (!in_array($actor->fetchColumn(), ['admin', 'pj_tahfidz'], true)) {
+                throw new RuntimeException('Hak impor peserta sudah berubah. Masuk kembali sebelum mencoba lagi.');
+            }
+
+            // Use the same mutex as participant forms and CSV imports, then lock
+            // source rows before rebuilding the preview used for this write.
+            $pdo->query('SELECT id FROM wali_santri ORDER BY id FOR UPDATE')->fetchAll(PDO::FETCH_COLUMN);
+            $pdo->query('SELECT id FROM santri_detail ORDER BY id FOR UPDATE')->fetchAll(PDO::FETCH_COLUMN);
+            $pdo->query('SELECT id FROM halaqoh ORDER BY id FOR UPDATE')->fetchAll(PDO::FETCH_COLUMN);
+
+            $disp = computeDispositions($pdo, $csvRows);
+            if (!hash_equals($confirmedPreview['fingerprint'], importSantriPreviewFingerprint($csvRows, $disp))) {
+                throw new RuntimeException('Data wali, anak, atau halaqoh berubah sejak pratinjau.');
+            }
+            $rows = $disp['rows'];
+            $newFamilies = $disp['new_families'];
 
             $stmtInsertChild = $pdo->prepare("INSERT INTO santri_detail (wali_santri_id, nama_anak, kelas) VALUES (?, ?, ?)");
             $affectedWaliIds = [];
@@ -330,12 +392,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // 2. Wali baru (satu wali per keluarga) + anak-anaknya
             $stmtInsertWali = $pdo->prepare("INSERT INTO wali_santri (nama_bapak, no_hp, kategori) VALUES (?, ?, 'reguler')");
-            $stmtInsertHm = $pdo->prepare("INSERT IGNORE INTO halaqoh_members (halaqoh_id, wali_santri_id) VALUES (?, ?)");
+            $stmtInsertHm = $pdo->prepare("INSERT INTO halaqoh_members (halaqoh_id, wali_santri_id) VALUES (?, ?)");
             foreach ($newFamilies as $key => $fam) {
                 // ambil nama_bapak & no_hp dari baris pertama grup
                 $firstRow = $rows[$fam['rows'][0]];
                 $stmtInsertWali->execute([$firstRow['nama_bapak'], $firstRow['no_hp']]);
-                $waliId = (int) $pdo->lastInsertId();
+                $waliId = participantCaptureInsertedId($pdo);
                 $affectedWaliIds[] = $waliId;
                 $newWali++;
                 foreach ($fam['rows'] as $idx) {
@@ -366,24 +428,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'auto_archived_memberships' => $archiveResult['archived_memberships'],
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
             $pdo->commit();
-
-            // bersihkan temp upload
-            if (!empty($_SESSION['import_baru_file']) && is_file($_SESSION['import_baru_file'])) {
-                @unlink($_SESSION['import_baru_file']);
-            }
-            unset($_SESSION['import_baru_file']);
-
-            $msg = "Import selesai. $attached adik ditempel ke wali existing, $newWali wali baru dibuat ($newChildren anak), $skipped baris di-skip (duplikat/error).";
-            if ($archiveResult['archived_wali'] > 0) {
-                $msg .= " {$archiveResult['archived_wali']} wali alumni otomatis diarsipkan.";
-            }
-            redirectTo('import-santri-baru.php?done=' . rawurlencode($msg));
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            redirectTo('import-santri-baru.php?err=' . rawurlencode('Gagal import: ' . $e->getMessage()));
+            reportApplicationError($e, 'import-santri-baru');
+            $failure = $e;
+        } finally {
+            if ($originalSqlMode !== null) {
+                try {
+                    $pdo->prepare('SET SESSION sql_mode = ?')->execute([$originalSqlMode]);
+                } catch (Throwable $restoreError) {
+                    reportApplicationError($restoreError, 'import-santri-baru-sql-mode');
+                }
+            }
+            if ($lockAcquired) {
+                try {
+                    $release = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+                    $release->execute([$lockName]);
+                } catch (Throwable $releaseError) {
+                    reportApplicationError($releaseError, 'import-santri-baru-lock');
+                }
+            }
         }
+
+        if ($failure !== null) {
+            redirectTo('import-santri-baru.php?err=' . rawurlencode('Impor belum selesai. Tidak ada perubahan parsial yang disimpan; periksa pratinjau lalu coba lagi.'));
+        }
+
+        // Only clear an uploaded source after the complete transaction commits.
+        if (!empty($_SESSION['import_baru_file']) && is_file($_SESSION['import_baru_file'])) {
+            @unlink($_SESSION['import_baru_file']);
+        }
+        unset($_SESSION['import_baru_file']);
+        unset($_SESSION['import_baru_previews'][$previewToken]);
+
+        $msg = "Import selesai. $attached adik ditempel ke wali existing, $newWali wali baru dibuat ($newChildren anak), $skipped baris di-skip (duplikat/error).";
+        if ($archiveResult['archived_wali'] > 0) {
+            $msg .= " {$archiveResult['archived_wali']} wali alumni otomatis diarsipkan.";
+        }
+        redirectTo('import-santri-baru.php?done=' . rawurlencode($msg));
     }
 
     redirectTo('import-santri-baru.php');
@@ -396,10 +480,27 @@ $message = $_GET['msg'] ?? '';
 $done = $_GET['done'] ?? '';
 $error = $_GET['err'] ?? '';
 $source = activeSourceFile();
-$csvRows = $source !== '' ? parseCsvFile($source) : [];
+$csvRows = [];
+if ($source !== '') {
+    try { $csvRows = parseCsvFile($source); }
+    catch (ImportSantriCsvException $failure) { $error = $failure->getMessage(); }
+}
 $disp = $csvRows ? computeDispositions($pdo, $csvRows) : ['rows' => [], 'counts' => ['attach' => 0, 'new' => 0, 'dup' => 0, 'error' => 0, 'new_families' => 0], 'new_families' => [], 'halaqoh_map' => []];
 $previewRows = $disp['rows'];
 $counts = $disp['counts'];
+$previewToken = '';
+if ($csvRows && $source !== '') {
+    $previewToken = bin2hex(random_bytes(16));
+    $previews = is_array($_SESSION['import_baru_previews'] ?? null) ? $_SESSION['import_baru_previews'] : [];
+    $previews = array_filter($previews, static fn($item) => is_array($item) && ($item['expires'] ?? 0) > time());
+    $previews[$previewToken] = [
+        'actor' => (int) $_SESSION['user_id'],
+        'source' => hash_file('sha256', $source),
+        'fingerprint' => importSantriPreviewFingerprint($csvRows, $disp),
+        'expires' => time() + 1800,
+    ];
+    $_SESSION['import_baru_previews'] = array_slice($previews, -8, null, true);
+}
 
 require_once 'includes/header.php';
 require_once 'includes/sidebar.php';
@@ -514,6 +615,7 @@ require_once 'includes/sidebar.php';
             <form method="POST" onsubmit="return confirm('Eksekusi import? Adik akan ditempel ke wali existing, wali baru akan dibuat. Proses tidak bisa dibatalkan.')">
                 <?php csrfField(); ?>
                 <input type="hidden" name="action" value="execute">
+                <input type="hidden" name="preview_token" value="<?php echo htmlspecialchars($previewToken, ENT_QUOTES, 'UTF-8'); ?>">
                 <button type="submit"
                     class="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-blue-700 transition shadow-sm flex items-center gap-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -565,7 +667,7 @@ require_once 'includes/sidebar.php';
 
     <div class="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-sm text-amber-800">
         <strong>Sebelum eksekusi:</strong> periksa baris berstatus <strong>Adik</strong> — pastikan kolom "Kakak" benar-benar saudara dari anak baru.
-        Baris <strong>Wali Baru</strong> dengan catatan "no_hp kosong" tidak bisa dideteksi kakaknya — pastikan memang keluarga baru, atau tambahkan no_hp di CSV lalu upload ulang.
+        Baris <strong>Wali Baru</strong> dengan catatan "no_hp kosong" tidak bisa dicocokkan otomatis — pastikan identitasnya sebelum menyimpan, atau tambahkan no_hp di CSV lalu upload ulang.
     </div>
 <?php else: ?>
     <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-8 text-center text-slate-400 italic">

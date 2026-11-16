@@ -1,6 +1,8 @@
+const { requireFullReplacementApproval, createPrivateOutputDirectory, writePrivateArtifact, createTemporaryPassword, destructiveSqlWarning } = require('./destructive-import-safety.cjs');
+requireFullReplacementApproval('generate_final_v3.js');
+
 const XLSX = require('xlsx');
 const path = require('path');
-const fs = require('fs');
 const bcrypt = require('bcryptjs');
 
 const files = ['Mustawa_Ikhwan.xlsx', 'Mustawa_Akhwat.xlsx'];
@@ -102,8 +104,8 @@ files.forEach(fileName => {
                 let uId;
 
                 // Track password based on halaqoh number
-                const rawPassword = `tahsin${hInfo.halaqohNum}`;
-                const hashedPassword = bcrypt.hashSync(rawPassword, 10);
+                const rawPassword = createTemporaryPassword();
+                const hashedPassword = bcrypt.hashSync(rawPassword, 12);
 
                 if (!ustadzMap.has(normUstadz)) {
                     uId = ustadzIdCounter++;
@@ -154,8 +156,10 @@ finalUstadzList.forEach(u => {
 });
 
 // Generate SQL
-let sqlOutput = `-- Final Data Import: Users (Ustadz), Halaqoh, Wali Santri, Santri, and Members\n`;
+let sqlOutput = destructiveSqlWarning(['users (ustadz)', 'halaqoh_members', 'halaqoh', 'santri_detail', 'wali_santri'])
+    + `-- Final Data Import: Users (Ustadz), Halaqoh, Wali Santri, Santri, and Members\n`;
 sqlOutput += `-- Generated on ${new Date().toLocaleString()}\n`;
+sqlOutput += `-- WARNING: presensi, capaian, autosave and other history tables are not cleared; reused IDs may attach old history to different records.\n`;
 sqlOutput += `SET FOREIGN_KEY_CHECKS = 0;\n`;
 sqlOutput += `TRUNCATE TABLE halaqoh_members;\n`;
 sqlOutput += `TRUNCATE TABLE halaqoh;\n`;
@@ -197,22 +201,23 @@ sqlOutput += `INSERT INTO halaqoh_members (halaqoh_id, wali_santri_id) VALUES\n`
 const mValues = memberList.map(m => `(${m.halaqohId}, ${m.waliId})`);
 sqlOutput += mValues.join(',\n') + ';\n';
 
-fs.writeFileSync(path.join(__dirname, '..', 'import_database_final.sql'), sqlOutput);
-
-// Generate Account List MD
-let accountList = `# Daftar Akun Ustadz Tahsin\n\n`;
-accountList += `| No | Nama Ustadz | Username | Password | Halaqoh |\n`;
-accountList += `|---|---|---|---|---|\n`;
-
-// Match back halaqoh name to ustadz
-const hEntries = Array.from(halaqohMap.values());
-finalUstadzList.forEach((u, index) => {
-    const halaqohs = hEntries.filter(h => h.ustadzId === u.id).map(h => h.name).join(', ');
-    accountList += `| ${index + 1} | ${u.fullName} | \`${u.username}\` | \`${u.rawPassword}\` | ${halaqohs} |\n`;
-});
-
-fs.writeFileSync(path.join(__dirname, '..', 'DAFTAR_AKUN_USTADZ.md'), accountList);
+const outputDir = createPrivateOutputDirectory(path.join(__dirname, '..'));
+const outputPath = writePrivateArtifact(outputDir, 'import_database_final.sql', sqlOutput);
+const groupsByTeacher = new Map();
+for (const group of halaqohMap.values()) {
+    if (!groupsByTeacher.has(group.ustadzId)) groupsByTeacher.set(group.ustadzId, []);
+    groupsByTeacher.get(group.ustadzId).push(group.name);
+}
+const credentialsPath = writePrivateArtifact(outputDir, 'teacher-credentials.json', JSON.stringify({
+    warning: 'Kredensial sementara rahasia. Bagikan secara privat dan minta setiap ustadz menggantinya setelah login.',
+    accounts: finalUstadzList.map(u => ({
+        nama: u.fullName,
+        username: u.username,
+        password: u.rawPassword,
+        halaqoh: groupsByTeacher.get(u.id) || []
+    }))
+}, null, 2) + '\n');
 
 console.log('Successfully generated:');
-console.log('- import_database_final.sql');
-console.log('- DAFTAR_AKUN_USTADZ.md');
+console.log('- ' + outputPath);
+console.log('- Temporary teacher credentials: ' + credentialsPath);

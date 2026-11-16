@@ -16,5 +16,5 @@ try {
 }
 $widgetBase = strpos($_SERVER['REQUEST_URI'], '/ustadz/') !== false ? '../' : '';
 ?>
-<link rel="stylesheet" href="<?= $widgetBase ?>assets/css/tahsin-report.css">
+<link rel="stylesheet" href="<?= appEscape(appAssetUrl('assets/css/tahsin-report.css')) ?>">
 <div class="tahsin-widget"><div><strong>Pemantauan Input Guru</strong><p><?= tahsinH($widgetText) ?></p><p>Data belum diinput bukan Alfa. Batas input Senin 10.00 WIB.</p></div><a class="tahsin-button" href="<?= $widgetBase ?>pantau-input.php">Lihat Kekurangan</a></div>

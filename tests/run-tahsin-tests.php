@@ -13,6 +13,12 @@ function expectTahsin($expected, $actual, string $message): void
     $checks++;
     if ($expected !== $actual) throw new RuntimeException($message . ': expected ' . json_encode($expected) . ', got ' . json_encode($actual));
 }
+function expectTahsinInvalid(callable $operation, string $message): void
+{
+    global $checks;
+    try { $operation(); } catch (InvalidArgumentException) { $checks++; return; }
+    throw new RuntimeException($message . ': malformed verification input was accepted');
+}
 function tahsinFixture(): array
 {
     $data = ['wali' => [], 'children' => [], 'halaqoh' => [['id' => 1, 'ustadz_id' => 1, 'nama_halaqoh' => 'Halaqoh Uji', 'nama_ustadz' => 'Guru Uji', 'ustadz_phone' => '081234567890']],
@@ -35,6 +41,15 @@ function fixtureRecord(int $id, int $wali, string $status, string $date = '2026-
 }
 $now = new DateTimeImmutable('2026-10-12 10:00:00', new DateTimeZone('Asia/Jakarta'));
 $filters = tahsinFilters(['start_date' => '2026-10-11', 'end_date' => '2026-10-12'], $now);
+$verificationInput = ['wali_id' => '12', 'session' => '2026-10-11', 'fingerprint' => str_repeat('a', 64), 'selected_id' => '0', 'note' => 'Konfirmasi guru'];
+expectTahsin(['wali_id' => 12, 'session' => '2026-10-11', 'fingerprint' => str_repeat('a', 64), 'selected_id' => null, 'note' => 'Konfirmasi guru'], tahsinVerificationRequestValues($verificationInput), 'Valid verification form produces canonical values');
+foreach (['wali_id', 'session', 'fingerprint', 'selected_id', 'note'] as $field) {
+    $malformedVerification = $verificationInput;
+    $malformedVerification[$field] = ['invalid'];
+    expectTahsinInvalid(static fn() => tahsinVerificationRequestValues($malformedVerification), 'Array verification field ' . $field . ' is rejected');
+}
+$malformedVerification = $verificationInput; $malformedVerification['selected_id'] = '999999999999999999999999999';
+expectTahsinInvalid(static fn() => tahsinVerificationRequestValues($malformedVerification), 'Out-of-range verification ID is rejected');
 $data = tahsinFixture();
 $data['records'] = [fixtureRecord(1, 1, 'H'), fixtureRecord(2, 2, 'A')];
 $report = tahsinAssembleReport($data, $filters, 'admin', 0, $now);
@@ -279,4 +294,49 @@ expectTahsin(401, http_response_code(), 'Wrong reminder secret fails closed with
 expectTahsin(false, isset($guard['data']), 'Wrong secret exposes no participant data');
 if ($originalKey === false) putenv('N8N_API_KEY'); else putenv('N8N_API_KEY=' . $originalKey);
 $_GET = $originalGet; http_response_code(200);
+$crossGroup = tahsinFixture();
+$crossGroup['halaqoh'][] = ['id'=>2,'ustadz_id'=>2,'nama_halaqoh'=>'Kelompok Lain','nama_ustadz'=>'Guru Lain'];
+$foreignRecord = fixtureRecord(900,1,'H');
+$foreignRecord['halaqoh_id'] = 2;
+$foreignRecord['halaman'] = 'PRIVATE_OTHER_TEACHER';
+$crossGroup['records'] = [$foreignRecord];
+$teacherScope = tahsinAssembleReport($crossGroup,tahsinFilters(['start_date'=>'2026-10-11','end_date'=>'2026-10-12'],$now),'ustadz',1,$now);
+$teacherRow = $teacherScope['rows'][0];
+expectTahsin([], $teacherRow['details'][0]['records'], 'Other-group sources are excluded even when this teacher owns the historical roster');
+expectTahsin(null, $teacherRow['details'][0]['record'], 'A selected source cannot bypass the source-list teacher filter');
+expectTahsin('—', $teacherRow['materi_terakhir'], 'Foreign material cannot leak through the latest-progress summary');
+expectTahsin(0, $teacherRow['hadir'], 'Foreign source does not silently count as this teacher attendance');
+expectTahsin(1, $teacherRow['conflicts'], 'Mismatched placement is explicitly marked for verification');
+$adminScope = tahsinAssembleReport($crossGroup,tahsinFilters(['start_date'=>'2026-10-11','end_date'=>'2026-10-12'],$now),'admin',0,$now);
+expectTahsin(1, $adminScope['rows'][0]['hadir'], 'Admin access to cross-group source remains available for review');
+$baselineScope = tahsinFixture();
+$baselineScope['baselines'] = [['wali_santri_id'=>1,'jenis_materi'=>'Iqro','jilid'=>3,'nama_surat'=>null,'halaman'=>'PRIVATE_BASELINE','updated_at'=>'2026-10-10 10:00:00']];
+$scopeFilters = tahsinFilters(['start_date'=>'2026-10-11','end_date'=>'2026-10-12'],$now);
+$baselineOwn = tahsinAssembleReport($baselineScope,$scopeFilters,'ustadz',1,$now);
+expectTahsin('PRIVATE_BASELINE', $baselineOwn['rows'][0]['baseline_record']['halaman'], 'A unique current teacher placement may see the participant initial achievement');
+expectTahsin(false, array_key_exists('latest_hadir_record',$baselineOwn['rows'][0]), 'Ordinary report payloads gain no catalog editor source field');
+$baselineScope['roster'][0]['ustadz_id'] = 2;
+$baselineHistorical = tahsinAssembleReport($baselineScope,$scopeFilters,'ustadz',1,$now);
+expectTahsin(null, $baselineHistorical['rows'][0]['baseline_record'], 'Historical roster ownership does not reveal a current global baseline');
+$baselineScope['roster'][0]['ustadz_id'] = 1;
+$baselineScope['roster'][] = array_replace($baselineScope['roster'][0],['halaqoh_id'=>2,'ustadz_id'=>2]);
+$baselineAmbiguous = tahsinAssembleReport($baselineScope,$scopeFilters,'ustadz',1,$now);
+expectTahsin(null, $baselineAmbiguous['rows'][0]['baseline_record'], 'An ambiguous current placement cannot reveal a global baseline to a teacher');
+$baselineAdmin = tahsinAssembleReport($baselineScope,$scopeFilters,'admin',0,$now);
+expectTahsin('PRIVATE_BASELINE', $baselineAdmin['rows'][0]['baseline_record']['halaman'], 'Admin retains baseline visibility when placements are ambiguous');
+$catalogData = tahsinFixture(); $catalogData['records'] = [fixtureRecord(1,1,'H')];
+$catalogData['records'][0]['hasil_talaqqi'] = null;
+$catalogReport = tahsinAssembleReport($catalogData,$scopeFilters,'admin',0,$now,null,true);
+expectTahsin(1, $catalogReport['rows'][0]['latest_hadir_record']['id'], 'The catalog can offer an incomplete confirmed H for correction');
+expectTahsin(null, $catalogReport['rows'][0]['materi_record'], 'An incomplete H is never presented as confirmed complete material');
+require_once __DIR__ . '/../includes/autosave_helper.php';
+$ebtaPayload=array_replace(autosaveFromRecord(fixtureRecord(1,1,'H')),['halaman_dari'=>'EBTA','halaman_sampai'=>'EBTA']);
+expectTahsin([], autosaveMissing($ebtaPayload), 'Existing Iqro EBTA is valid in the modern autosave flow');
+expectTahsin('EBTA', attendanceNormalizePayload($ebtaPayload)['halaman'], 'Both attendance flows persist the same EBTA meaning');
+expectTahsin(true, autosaveMissing(array_replace($ebtaPayload,['halaman_sampai'=>'2']))!==[], 'EBTA cannot precede an earlier numeric page');
+$zeroSource=[fixtureRecord(0,1,'H')];
+expectTahsin(0, tahsinResolveSession($zeroSource,['fingerprint'=>tahsinFingerprint($zeroSource),'selected_presensi_id'=>0])['record']['id'], 'Verification distinguishes an existing zero attendance ID from a NULL baseline decision');
+$spaced=fixtureRecord(1,1,'H'); $spaced['halaman']=' 1 - 2 '; $spaced['alasan']='Sisa  '; $spaced['nama_surat']='Lama  ';
+expectTahsin([], attendanceRecordChanges($spaced,attendanceNormalizePayload(autosaveFromRecord($spaced))), 'An unchanged legacy range preserves internal spaces and unused old values');
+
 echo "PASS {$checks} Tahsin regression assertions\n";

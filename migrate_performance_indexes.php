@@ -1,11 +1,8 @@
 <?php
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once __DIR__ . '/config/database.php';
-if (PHP_SAPI !== 'cli') {
-    require_once __DIR__ . '/includes/auth_helper.php';
-    checkRole(['admin']);
-}
 
-$apply = (($_GET['apply'] ?? '') === '1') || getenv('APPLY_MIGRATIONS') === '1';
+$apply = getenv('APPLY_MIGRATIONS') === '1';
 
 $indexes = [
     ['presensi', 'idx_presensi_tanggal', 'CREATE INDEX idx_presensi_tanggal ON presensi (tanggal)'],

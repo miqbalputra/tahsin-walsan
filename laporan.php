@@ -2,6 +2,7 @@
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
 require_once 'includes/report_helper.php';
+require_once 'includes/attendance_history_helper.php';
 
 // Must be at the very top
 checkRole(['admin', 'pj_tahfidz', 'kepsek']);
@@ -25,17 +26,18 @@ $totalResults = 0;
 // Handle Delete (Admin Only)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete'
     && in_array($_SESSION['role'] ?? '', ['admin', 'pj_tahfidz'], true)) {
-    if (verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        $presensi_id = filter_var($_POST['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-        if ($presensi_id !== false) {
-            $stmt = $pdo->prepare("DELETE FROM presensi WHERE id = ?");
-            if ($stmt->execute([$presensi_id])) {
-                $message = "Data presensi berhasil dihapus!";
-                addLog($pdo, 'DELETE_PRESENSI', 'id=' . $presensi_id);
-            }
-        }
+    requireValidCsrfToken($_POST['csrf_token'] ?? null);
+    try {
+        $deleted = attendanceHistoryDeleteOne($pdo, (int) $_SESSION['user_id'], appRequestString($_POST, 'id'), appRequestString($_POST, 'record_fingerprint'));
+        $message = $deleted ? 'Presensi dibatalkan. Salinan lengkap tersedia pada Riwayat Pemulihan Presensi.' : 'Catatan sudah tidak ada; tidak ada data lain yang diubah.';
+    } catch (AttendanceHistoryException | InvalidArgumentException $failure) {
+        http_response_code(422); $error = $failure->getMessage();
+    } catch (Throwable $failure) {
+        reportApplicationError($failure, 'attendance-delete');
+        http_response_code(503); $error = 'Penghapusan belum dapat dipastikan. Periksa laporan dan riwayat pemulihan sebelum mencoba lagi.';
     }
 }
+$historyReady = attendanceHistoryReady($pdo);
 
 try {
     $totalResults = countPresensiReport($pdo, $filters, $_SESSION['role'] ?? '', $_SESSION['user_id'] ?? null);
@@ -43,6 +45,7 @@ try {
     $page = min($page, $totalPages);
     $results = fetchPresensiReport($pdo, $filters, $_SESSION['role'] ?? '', $_SESSION['user_id'] ?? null, [
         'include_phone' => true,
+        'include_history_snapshot' => true,
         'paginate' => true,
         'page' => $page,
         'limit' => $perPage,
@@ -84,7 +87,7 @@ require_once 'includes/sidebar.php';
     </div>
 
     <div class="flex gap-2">
-        <a href="print-pdf.php?start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>&halaqoh_id=<?php echo $halaqoh_id; ?>&wali_santri_id=<?php echo $wali_santri_id; ?>&kelas=<?php echo urlencode($kelas_filter); ?>&search=<?php echo urlencode($search); ?>"
+        <a href="<?= appEscape('print-pdf.php?' . http_build_query(['start_date'=>$start_date,'end_date'=>$end_date,'halaqoh_id'=>$halaqoh_id,'wali_santri_id'=>$wali_santri_id,'kelas'=>$kelas_filter,'search'=>$search])) ?>"
             target="_blank"
             class="bg-white text-slate-700 px-4 py-2 rounded-xl font-bold flex items-center shadow-sm border border-slate-200 hover:bg-slate-50 transition text-xs">
             <svg class="w-4 h-4 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -94,7 +97,7 @@ require_once 'includes/sidebar.php';
             </svg>
             Cetak PDF
         </a>
-        <a href="export-excel.php?start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>&halaqoh_id=<?php echo $halaqoh_id; ?>&wali_santri_id=<?php echo $wali_santri_id; ?>&kelas=<?php echo urlencode($kelas_filter); ?>&search=<?php echo urlencode($search); ?>"
+        <a href="<?= appEscape('export-excel.php?' . http_build_query(['start_date'=>$start_date,'end_date'=>$end_date,'halaqoh_id'=>$halaqoh_id,'wali_santri_id'=>$wali_santri_id,'kelas'=>$kelas_filter,'search'=>$search])) ?>"
             class="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold flex items-center shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition text-xs">
             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -104,7 +107,7 @@ require_once 'includes/sidebar.php';
             Excel
         </a>
         <?php if (!empty($wali_santri_id)): ?>
-            <a href="print-rapor.php?wali_santri_id=<?php echo $wali_santri_id; ?>&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>"
+            <a href="<?= appEscape('print-rapor.php?' . http_build_query(['wali_santri_id'=>$wali_santri_id,'start_date'=>$start_date,'end_date'=>$end_date])) ?>"
                 target="_blank"
                 class="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold flex items-center shadow-lg shadow-blue-100 hover:bg-blue-700 transition text-xs">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -117,6 +120,7 @@ require_once 'includes/sidebar.php';
         <?php endif; ?>
     </div>
 </div>
+<?php if (in_array($_SESSION['role'], ['admin','pj_tahfidz'], true)): ?><p class="mb-5"><a class="underline text-blue-700" href="presensi-riwayat.php">Riwayat Pemulihan Presensi</a><?php if (!$historyReady): ?> · Penyimpanan versi lama belum siap; hubungi pengelola sebelum mengubah atau menghapus catatan.<?php endif; ?></p><?php endif; ?>
 
 <!-- Main UI Section -->
 <div class="space-y-6">
@@ -125,12 +129,12 @@ require_once 'includes/sidebar.php';
         <form method="GET" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 items-end">
             <div>
                 <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Dari</label>
-                <input type="date" name="start_date" value="<?php echo $start_date; ?>"
+                <input type="date" name="start_date" value="<?= appEscape($start_date) ?>"
                     class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition text-sm">
             </div>
             <div>
                 <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Sampai</label>
-                <input type="date" name="end_date" value="<?php echo $end_date; ?>"
+                <input type="date" name="end_date" value="<?= appEscape($end_date) ?>"
                     class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition text-sm">
             </div>
             <div>
@@ -139,8 +143,8 @@ require_once 'includes/sidebar.php';
                     class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition text-sm">
                     <option value="">Semua</option>
                     <?php foreach ($halaqohs as $h): ?>
-                        <option value="<?php echo $h['id']; ?>" <?php echo $halaqoh_id == $h['id'] ? 'selected' : ''; ?>>
-                            <?php echo htmlspecialchars($h['nama_halaqoh']); ?>
+                        <option value="<?= (int) $h['id'] ?>" <?php echo $halaqoh_id == $h['id'] ? 'selected' : ''; ?>>
+                            <?= appEscape($h['nama_halaqoh']) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
@@ -151,15 +155,15 @@ require_once 'includes/sidebar.php';
                     class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition text-sm">
                     <option value="">Semua</option>
                     <?php foreach ($daftar_kelas as $k): ?>
-                        <option value="<?php echo htmlspecialchars($k); ?>" <?php echo $kelas_filter === $k ? 'selected' : ''; ?>>
-                            <?php echo htmlspecialchars($k); ?>
+                        <option value="<?= appEscape($k) ?>" <?php echo $kelas_filter === $k ? 'selected' : ''; ?>>
+                            <?= appEscape($k) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
             </div>
             <div>
                 <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Cari Nama</label>
-                <input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>"
+                <input type="text" name="search" value="<?= appEscape($search) ?>"
                     placeholder="Bapak/Anak..."
                     class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition text-sm font-bold placeholder:font-normal">
             </div>
@@ -169,8 +173,8 @@ require_once 'includes/sidebar.php';
                     class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition text-sm">
                     <option value="">Semua</option>
                     <?php foreach ($all_wali as $w): ?>
-                        <option value="<?php echo $w['id']; ?>" <?php echo $wali_santri_id == $w['id'] ? 'selected' : ''; ?>>
-                            <?php echo htmlspecialchars($w['nama_bapak']); ?>
+                        <option value="<?= (int) $w['id'] ?>" <?php echo $wali_santri_id == $w['id'] ? 'selected' : ''; ?>>
+                            <?= appEscape($w['nama_bapak']) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
@@ -186,11 +190,11 @@ require_once 'includes/sidebar.php';
     <!-- Feedback Section -->
     <?php if ($message): ?>
         <div class="bg-emerald-50 text-emerald-600 p-4 rounded-xl border border-emerald-100 italic text-sm">
-            <?php echo $message; ?>
+            <?php echo appEscape($message); ?>
         </div>
     <?php endif; ?>
     <?php if ($error): ?>
-        <div class="bg-red-50 text-red-600 p-4 rounded-xl border border-red-100 font-medium text-sm"> <?php echo $error; ?>
+        <div class="bg-red-50 text-red-600 p-4 rounded-xl border border-red-100 font-medium text-sm"> <?php echo appEscape($error); ?>
         </div>
     <?php endif; ?>
 
@@ -222,20 +226,20 @@ require_once 'includes/sidebar.php';
                                 <?php echo date('d/m/Y', strtotime($row['tanggal'])); ?>
                             </td>
                             <td class="px-6 py-4 font-semibold text-slate-700 text-xs text-nowrap">
-                                <?php echo htmlspecialchars($row['nama_halaqoh']); ?>
+                                <?= appEscape($row['nama_halaqoh']) ?>
                             </td>
                             <td class="px-6 py-4 align-middle">
                                 <div class="flex items-center gap-2">
-                                    <span><?php echo htmlspecialchars($row['nama_bapak']); ?></span>
+                                    <span><?= appEscape($row['nama_bapak']) ?></span>
                                     <?php if (!empty($row['no_hp'])):
-                                        $wa_no = preg_replace('/[^0-9]/', '', $row['no_hp']);
+                                        $wa_no = preg_replace('/[^0-9]/', '', (string) $row['no_hp']);
                                         if (str_starts_with($wa_no, '0')) {
                                             $wa_no = '62' . substr($wa_no, 1);
                                         }
                                         $share_msg = urlencode("Assalamualaikum Pak " . $row['nama_bapak'] . ",\n\nSyukran Jazakumullah Khairan.");
                                         ?>
-                                        <a href="https://wa.me/<?php echo $wa_no; ?>?text=<?php echo $share_msg; ?>"
-                                            target="_blank"
+                                        <a href="<?= appEscape('https://wa.me/' . $wa_no . '?text=' . $share_msg) ?>"
+                                            target="_blank" rel="noopener noreferrer"
                                             class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all shadow-sm border border-emerald-100"
                                             title="Kirim Pesan via WA">
                                             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 448 512">
@@ -248,24 +252,24 @@ require_once 'includes/sidebar.php';
                             </td>
                             <td class="px-6 py-4 text-center">
                                 <span
-                                    class="inline-block px-2 py-1 rounded-lg text-[10px] font-bold <?php echo match ($row['status']) { 'H' => 'bg-emerald-100 text-emerald-700', 'S' => 'bg-blue-100 text-blue-700', 'I' => 'bg-amber-100 text-amber-700', 'A' => 'bg-red-100 text-red-700'}; ?>"><?php echo $row['status']; ?></span>
+                                    class="inline-block px-2 py-1 rounded-lg text-[10px] font-bold <?php echo match ($row['status']) { 'H' => 'bg-emerald-100 text-emerald-700', 'S' => 'bg-blue-100 text-blue-700', 'I' => 'bg-amber-100 text-amber-700', 'A' => 'bg-red-100 text-red-700'}; ?>"><?= appEscape($row['status']) ?></span>
                             </td>
                             <td class="px-6 py-4 text-slate-600">
                                 <?php if ($row['status'] === 'H'): ?>
-                                    <span class="font-bold text-blue-600 text-xs"><?php echo $row['jenis_materi']; ?></span>
+                                    <span class="font-bold text-blue-600 text-xs"><?= appEscape($row['jenis_materi']) ?></span>
                                     <span
-                                        class="text-xs"><?php echo $row['jenis_materi'] === 'Iqro' ? 'Jilid ' . $row['jilid'] : htmlspecialchars($row['nama_surat']); ?></span>
+                                        class="text-xs"><?= $row['jenis_materi'] === 'Iqro' ? 'Jilid ' . (int) $row['jilid'] : appEscape($row['nama_surat']) ?></span>
                                     <span
-                                        class="text-[9px] bg-slate-100 px-1 rounded italic text-nowrap"><?php echo ($row['jenis_materi'] === 'Al Quran' ? 'Ayat ' : 'Hal ') . $row['halaman']; ?></span>
+                                        class="text-[9px] bg-slate-100 px-1 rounded italic text-nowrap"><?= ($row['jenis_materi'] === 'Al Quran' ? 'Ayat ' : 'Hal ') . appEscape($row['halaman']) ?></span>
                                 <?php else: ?>
                                     <span
-                                        class="text-xs italic text-slate-400"><?php echo htmlspecialchars($row['alasan'] ?: '-'); ?></span>
+                                        class="text-xs italic text-slate-400"><?= appEscape($row['alasan'] ?: '-') ?></span>
                                 <?php endif; ?>
                             </td>
                             <td class="px-6 py-4 text-center">
                                 <?php if ($row['hasil_talaqqi']): ?>
                                     <span
-                                        class="px-2 py-1 rounded-lg text-[10px] font-black uppercase <?php echo $row['hasil_talaqqi'] === 'Lulus' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'; ?>"><?php echo $row['hasil_talaqqi']; ?></span>
+                                        class="px-2 py-1 rounded-lg text-[10px] font-black uppercase <?php echo $row['hasil_talaqqi'] === 'Lulus' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'; ?>"><?= appEscape($row['hasil_talaqqi']) ?></span>
                                 <?php endif; ?>
                             </td>
                             <td class="px-6 py-4 text-right">
@@ -273,8 +277,9 @@ require_once 'includes/sidebar.php';
                                     <form method="POST" onsubmit="return confirm('Hapus data ini?')" class="inline">
                                         <?php csrfField(); ?>
                                         <input type="hidden" name="action" value="delete">
-                                        <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
-                                        <button type="submit" class="text-red-400 hover:text-red-600 transition">Hapus</button>
+                                        <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
+                                        <input type="hidden" name="record_fingerprint" value="<?= appEscape(attendanceHistoryHash(attendanceHistoryDecode($row['saved_snapshot']))) ?>">
+                                        <button type="submit" <?= !$historyReady ? 'disabled' : '' ?> class="text-red-400 hover:text-red-600 transition">Hapus</button>
                                     </form>
                                 <?php endif; ?>
                             </td>
@@ -292,11 +297,11 @@ require_once 'includes/sidebar.php';
                 <?php if ($totalPages > 1): ?>
                     <div class="flex items-center gap-2">
                         <?php if ($page > 1): ?>
-                            <a href="?<?php echo htmlspecialchars($paginationQuery . '&page=' . ($page - 1)); ?>" class="px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50">Sebelumnya</a>
+                            <a href="?<?= appEscape($paginationQuery . '&page=' . ($page - 1)) ?>" class="px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50">Sebelumnya</a>
                         <?php endif; ?>
-                        <span class="text-xs font-bold text-slate-500">Halaman <?php echo $page; ?> / <?php echo $totalPages; ?></span>
+                        <span class="text-xs font-bold text-slate-500">Halaman <?= (int) $page ?> / <?= (int) $totalPages ?></span>
                         <?php if ($page < $totalPages): ?>
-                            <a href="?<?php echo htmlspecialchars($paginationQuery . '&page=' . ($page + 1)); ?>" class="px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50">Berikutnya</a>
+                            <a href="?<?= appEscape($paginationQuery . '&page=' . ($page + 1)) ?>" class="px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50">Berikutnya</a>
                         <?php endif; ?>
                     </div>
                 <?php endif; ?>

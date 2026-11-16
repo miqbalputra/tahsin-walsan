@@ -43,7 +43,7 @@ $logs = $pdo->query("SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT 
                         </td>
                         <td class="px-8 py-4">
                             <span class="px-3 py-1 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-black uppercase">
-                                <?php echo htmlspecialchars($l['username']); ?>
+                                <?php echo appEscape($l['username']); ?>
                             </span>
                         </td>
                         <td class="px-8 py-4 text-xs font-black">
@@ -54,14 +54,14 @@ $logs = $pdo->query("SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT 
                                 'GENERATE_PIN' => 'text-amber-600',
                                 default => 'text-slate-600'
                             }; ?>">
-                                <?php echo $l['action']; ?>
+                                <?php echo appEscape($l['action']); ?>
                             </span>
                         </td>
                         <td class="px-8 py-4 text-sm text-slate-500">
-                            <?php echo htmlspecialchars($l['description']); ?>
+                            <?php echo appEscape($l['description']); ?>
                         </td>
                         <td class="px-8 py-4 text-[10px] text-slate-300 font-mono">
-                            <?php echo $l['ip_address']; ?>
+                            <?php echo appEscape($l['ip_address']); ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>

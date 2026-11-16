@@ -13,33 +13,48 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS pengumuman (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB");
 
-$message = '';
+$message = isset($_GET['msg']) && is_string($_GET['msg']) ? $_GET['msg'] : '';
 $error = '';
 
 // Handle POST actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
-    }
+    requireValidCsrfToken($_POST['csrf_token'] ?? '');
 
-    $action = $_POST['action'] ?? '';
-    if ($action === 'save') {
-        $judul = $_POST['judul'] ?? '';
-        $isi = $_POST['isi'] ?? '';
-        $stmt = $pdo->prepare("INSERT INTO pengumuman (judul, isi) VALUES (?, ?)");
-        if ($stmt->execute([$judul, $isi])) {
-            $message = "Pengumuman berhasil disebarkan!";
+    try {
+        $action = appRequestString($_POST, 'action');
+        if ($action === 'save') {
+            $judul = appRequestString($_POST, 'judul');
+            $isi = appRequestString($_POST, 'isi', '', false);
+            if ($judul === '' || appTextLength($judul) > 200) throw new InvalidArgumentException('Judul wajib diisi, maksimal 200 karakter.');
+            if (trim($isi) === '' || appTextLength($isi) > 20000 || strlen($isi) > 60000) throw new InvalidArgumentException('Isi pengumuman wajib diisi, maksimal 20.000 karakter dan 60 KB.');
+            $stmt = $pdo->prepare("INSERT INTO pengumuman (judul, isi) VALUES (?, ?)");
+            $stmt->execute([$judul, $isi]);
+            addLog($pdo, 'CREATE_ANNOUNCEMENT', 'Pengumuman baru: ' . $judul);
+            redirectTo('pengumuman.php?msg=' . rawurlencode('Pengumuman berhasil disebarkan.'));
         }
-    } elseif ($action === 'toggle') {
-        $id = $_POST['id'] ?? 0;
-        $status = $_POST['status'] ?? 0;
-        $stmt = $pdo->prepare("UPDATE pengumuman SET is_aktif = ? WHERE id = ?");
-        $stmt->execute([$status, $id]);
-    } elseif ($action === 'delete') {
-        $id = $_POST['id'] ?? 0;
-        $stmt = $pdo->prepare("DELETE FROM pengumuman WHERE id = ?");
-        $stmt->execute([$id]);
-        $message = "Pengumuman berhasil dihapus.";
+        if ($action === 'toggle') {
+            $id = filter_var(appRequestString($_POST, 'id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            $rawStatus = appRequestString($_POST, 'status');
+            if ($id === false || !in_array($rawStatus, ['0', '1'], true)) throw new InvalidArgumentException('Pilihan pengumuman tidak valid. Muat ulang halaman lalu coba lagi.');
+            $stmt = $pdo->prepare("UPDATE pengumuman SET is_aktif = ? WHERE id = ?");
+            $stmt->execute([(int) $rawStatus, $id]);
+            addLog($pdo, 'TOGGLE_ANNOUNCEMENT', "Status pengumuman $id diubah menjadi $rawStatus");
+            redirectTo('pengumuman.php?msg=' . rawurlencode($rawStatus === '1' ? 'Pengumuman diaktifkan kembali.' : 'Pengumuman diarsipkan; isi lama tetap tersimpan.'));
+        }
+        if ($action === 'archive' || $action === 'delete') {
+            $id = filter_var(appRequestString($_POST, 'id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($id === false) throw new InvalidArgumentException('ID pengumuman tidak valid.');
+            $stmt = $pdo->prepare('UPDATE pengumuman SET is_aktif = 0 WHERE id = ?');
+            $stmt->execute([$id]);
+            addLog($pdo, 'ARCHIVE_ANNOUNCEMENT', "Pengumuman $id diarsipkan; isi dipertahankan");
+            redirectTo('pengumuman.php?msg=' . rawurlencode('Pengumuman diarsipkan; isi lama tetap tersimpan.'));
+        }
+        throw new InvalidArgumentException('Aksi pengumuman tidak dikenal. Muat ulang halaman lalu coba lagi.');
+    } catch (InvalidArgumentException $failure) {
+        appRequestError(422, 'Pengumuman belum diubah', $failure->getMessage());
+    } catch (Throwable $failure) {
+        reportApplicationError($failure, 'announcement-write');
+        appRequestError(503, 'Pengumuman belum tersimpan', 'Perubahan belum dapat dipastikan. Muat ulang halaman untuk memeriksa status terbaru.');
     }
 }
 
@@ -58,7 +73,7 @@ require_once 'includes/sidebar.php';
 
     <?php if ($message): ?>
         <div class="bg-emerald-50 text-emerald-600 p-4 rounded-2xl border border-emerald-100 mb-6 italic text-sm">
-            <?php echo $message; ?>
+            <?php echo appEscape($message); ?>
         </div>
     <?php endif; ?>
 
@@ -72,11 +87,11 @@ require_once 'includes/sidebar.php';
                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2 tracking-widest">Judul /
                     Subjek</label>
                 <input type="text" name="judul" placeholder="Contoh: Libur Syawal / Info Rapat" required
-                    class="w-full px-5 py-3 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition font-medium">
+                    maxlength="200" class="w-full px-5 py-3 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition font-medium">
             </div>
             <div>
                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2 tracking-widest">Isi Pesan</label>
-                <textarea name="isi" rows="4" placeholder="Tuliskan detail pengumuman di sini..." required
+                <textarea name="isi" rows="4" maxlength="20000" placeholder="Tuliskan detail pengumuman di sini..." required
                     class="w-full px-5 py-3 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition font-medium"></textarea>
             </div>
             <button type="submit"
@@ -123,13 +138,6 @@ require_once 'includes/sidebar.php';
                             class="px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition <?php echo $p['is_aktif'] ? 'bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-600 hover:text-white' : 'bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-600 hover:text-white'; ?>">
                             <?php echo $p['is_aktif'] ? 'Arsipkan' : 'Aktifkan'; ?>
                         </button>
-                    </form>
-                    <form method="POST" onsubmit="return confirm('Hapus permanen?')" class="inline">
-                        <?php csrfField(); ?>
-                        <input type="hidden" name="action" value="delete">
-                        <input type="hidden" name="id" value="<?php echo $p['id']; ?>">
-                        <button type="submit"
-                            class="px-4 py-2 rounded-xl text-[10px] font-bold uppercase bg-red-50 text-red-600 border border-red-100 hover:bg-red-600 hover:text-white transition">Hapus</button>
                     </form>
                 </div>
             </div>

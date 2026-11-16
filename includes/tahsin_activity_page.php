@@ -48,8 +48,8 @@ $pageTitle = $activitySummary ? 'Ringkasan Total Periode' : 'Persentase & Keakti
 require __DIR__ . '/header.php';
 require __DIR__ . '/sidebar.php';
 ?>
-<link rel="stylesheet" href="assets/css/tahsin-report.css">
-<link rel="stylesheet" href="assets/css/tahsin-activity.css?v=2">
+<link rel="stylesheet" href="<?= appEscape(appAssetUrl('assets/css/tahsin-report.css')) ?>">
+<link rel="stylesheet" href="<?= appEscape(appAssetUrl('assets/css/tahsin-activity.css')) ?>">
 <?php if ($meeting): ?><script>document.body.classList.add('tahsin-meeting');</script><?php endif; ?>
 <div class="tahsin-report tahsin-activity-page <?= $activitySummary ? 'tahsin-period-page' : '' ?>">
 <div class="tahsin-heading"><div><p class="tahsin-activity-eyebrow">TAHSIN WALI SANTRI</p><h2><?= $activitySummary ? 'Ringkasan Total Periode' : 'Persentase Kehadiran &amp; Keaktifan' ?></h2><p class="tahsin-note">Periode sesi <strong><?= tahsinH($periodLabel) ?></strong><br><?= tahsinH($scopeLabel) ?> · Dibuat <?= tahsinNow()->format('d/m/Y H:i') ?> WIB</p></div>
@@ -91,5 +91,5 @@ require __DIR__ . '/sidebar.php';
 <?php endif; ?>
 <p class="tahsin-note no-print" data-activity-fullscreen-status role="status"></p>
 </div>
-<script src="assets/js/tahsin-activity.js"></script>
+<script src="<?= appEscape(appAssetUrl('assets/js/tahsin-activity.js')) ?>"></script>
 <?php require __DIR__ . '/footer.php'; ?>

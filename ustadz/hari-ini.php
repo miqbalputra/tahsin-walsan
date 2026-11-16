@@ -25,7 +25,7 @@ if (count($groups) === 1 && $session === $today && autosaveEnabled($pdo, (int) $
 require __DIR__ . '/../includes/header.php';
 require __DIR__ . '/../includes/sidebar.php';
 ?>
-<link rel="stylesheet" href="../assets/css/tahsin-autosave.css?v=1">
+<link rel="stylesheet" href="<?= appEscape(appAssetUrl('assets/css/tahsin-autosave.css')) ?>">
 <section class="tas-app"><header class="tas-heading"><p class="tas-eyebrow">Tahsin Bapak &amp; Ibu</p><h1>Hari Ini</h1><p><?= date('d/m/Y', strtotime($today)) ?> · Pilih kelompok untuk mulai atau melanjutkan pendataan.</p></header>
 <?php if ($session !== $today): ?><p class="tas-alert">Tidak ada sesi Ahad aktif hari ini. Sesi terakhir: <?= $session ? date('d/m/Y', strtotime($session)) : 'belum tersedia' ?>. Tanggal pertemuan dapat dipilih di dalam kelompok.</p><?php endif; ?>
 <div class="tas-list"><?php foreach ($groups as $group): ?>

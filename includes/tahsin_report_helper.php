@@ -1,5 +1,7 @@
 <?php
+require_once __DIR__.'/session_scope_helper.php';
 require_once __DIR__ . '/family_helper.php';
+require_once __DIR__ . '/security_helper.php';
 /**
  * Weekly attendance is calculated here, never by treating an absent row as A.
  * The pure assembler is shared by HTML, exports, dashboards and integrations.
@@ -13,7 +15,12 @@ function tahsinDate(string $value): ?string
 
 function tahsinNow(): DateTimeImmutable
 {
-    return new DateTimeImmutable('now', new DateTimeZone('Asia/Jakarta'));
+    $timezone = new DateTimeZone('Asia/Jakarta');
+    // Only the dedicated PHP development-server fixture can supply a test clock.
+    if (PHP_SAPI === 'cli-server' && defined('TAHSIN_TEST_NOW')) {
+        return new DateTimeImmutable((string) constant('TAHSIN_TEST_NOW'), $timezone);
+    }
+    return new DateTimeImmutable('now', $timezone);
 }
 
 // Production's PHP 8.2 image does not require mbstring.
@@ -246,6 +253,7 @@ function tahsinFingerprint(array $records): string
 
 function tahsinResolveSession(array $records, ?array $verification = null, array $suspectIds = [], array $holidays = []): array
 {
+    if (($verification['decision_action']??'')==='reset') $verification=null;
     $fingerprint = tahsinFingerprint($records);
     $result = ['records' => $records, 'fingerprint' => $fingerprint, 'record' => null,
         'state' => 'missing', 'complete' => false, 'missing_fields' => ['presensi dan capaian'], 'verification_stale' => false];
@@ -254,7 +262,7 @@ function tahsinResolveSession(array $records, ?array $verification = null, array
     }
     $eligible = array_values(array_filter($records, static fn($r) => !array_key_exists($r['tanggal'], $holidays)));
     if ($verification && hash_equals($fingerprint, (string) $verification['fingerprint'])) {
-        if (empty($verification['selected_presensi_id'])) {
+        if (($verification['selected_presensi_id'] ?? null) === null) {
             return array_replace($result, ['state' => 'baseline', 'missing_fields' => ['catatan ini hanya capaian awal']]);
         }
         foreach ($records as $record) {
@@ -363,7 +371,7 @@ function tahsinQuality(array $row): array
 }
 
 /** No database writes. Future obligations are never generated. */
-function tahsinAssembleReport(array $data, array $filters, string $role = 'admin', int $userId = 0, ?DateTimeImmutable $now = null, ?string $liveSession = null): array
+function tahsinAssembleReport(array $data, array $filters, string $role = 'admin', int $userId = 0, ?DateTimeImmutable $now = null, ?string $liveSession = null, bool $achievementCatalog = false): array
 {
     $now = $now ?? tahsinNow();
     $end = min($filters['end_date'], $now->format('Y-m-d'));
@@ -373,6 +381,7 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
         $group['halaqoh_id'] = (int) $group['id'];
         $groups[(int) $group['id']] = $group;
     }
+    $programMap=[]; foreach ($groups as $groupId=>$group) $programMap[$groupId]=$group['program_code']??'bapak';
     $children = $current = $history = $records = $decisions = $baselines = [];
     foreach ($data['children'] as $child) $children[(int) $child['wali_santri_id']][] = $child;
     foreach ($data['roster'] as $member) $current[(int) $member['wali_santri_id']][] = $member;
@@ -381,7 +390,7 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
         $key = tahsinSessionDate($record['tanggal']);
         if ($key <= $end && $record['tanggal'] <= $now->format('Y-m-d')) $records[(int) $record['wali_santri_id']][$key][] = $record;
     }
-    foreach ($data['verifications'] as $v) $decisions[(int) $v['wali_santri_id']][$v['session_date']] = $v;
+    foreach ($data['verifications'] as $v) $decisions[(int) $v['wali_santri_id']][$v['session_date']][] = $v;
     foreach ($data['baselines'] as $b) $baselines[(int) $b['wali_santri_id']] = $b;
     $rows = [];
     foreach ($data['wali'] as $wali) {
@@ -401,6 +410,7 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
             'nama_halaqoh' => $currentOwner['nama_halaqoh'] ?? '—', 'nama_ustadz' => $currentOwner['nama_ustadz'] ?? '—',
             'current_halaqoh_id' => $currentOwner['halaqoh_id'] ?? null,
             'details' => [], 'terakhir_hadir' => null, 'materi_terakhir' => '—', 'materi_record' => null, 'baseline_record' => null]);
+        if ($achievementCatalog) $row['latest_hadir_record'] = null;
         $relevant = tahsinOwnerMatches($currentOwner, $filters, $role, $userId);
         $allKeys = array_unique(array_merge($sessions, array_keys($records[$id] ?? [])));
         sort($allKeys);
@@ -419,9 +429,17 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
             } elseif ($session === $liveSession) {
                 foreach ($current[$id] ?? [] as $member) $owners[$member['halaqoh_id'] . ':' . $member['ustadz_id']] = $member;
             }
-            $raw = $records[$id][$session] ?? [];
-            if (!$owners && !$raw) continue;
-            $cell = tahsinResolveSession($raw, $decisions[$id][$session] ?? null, $data['suspect_ids'], $data['holidays']);
+            $allRaw = $records[$id][$session] ?? [];
+            if (!$owners && !$allRaw) continue;
+            $allOwners=$owners; $programKeys=[];
+            foreach ($allOwners as $o) $programKeys[$programMap[(int)$o['halaqoh_id']]??'unknown']=true;
+            foreach ($allRaw as $r) $programKeys[$programMap[(int)($r['halaqoh_id']??0)]??'unknown']=true;
+            foreach (array_keys($programKeys) as $program) {
+            $owners=array_filter($allOwners,static fn($o)=>($programMap[(int)$o['halaqoh_id']]??'unknown')===$program);
+            $raw=tahsinRecordsForProgram($allRaw,$programMap,$program);
+            $verification=tahsinDecisionForProgram($decisions[$id][$session]??[],$allRaw,$programMap,$program);
+            $cell = tahsinResolveSession($raw, $verification, $data['suspect_ids'], $data['holidays']);
+            $cell['program_code']=$program;
             foreach ($cell['records'] as &$sourceRow) $sourceRow['on_holiday'] = array_key_exists($sourceRow['tanggal'], $data['holidays']);
             unset($sourceRow);
             $owner = $owners ? array_values($owners)[0] : [];
@@ -429,7 +447,7 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
                 $matchingOwners = array_values(array_filter($owners, static fn($o) => tahsinOwnerMatches($o, $filters, $role, $userId)));
                 if ($matchingOwners) $owner = $matchingOwners[0];
             }
-            if (count($owners) > 1 && $cell['record'] && isset($decisions[$id][$session]) && !$cell['verification_stale']) {
+            if (count($owners) > 1 && $cell['record'] && $verification && ($verification['decision_action']??'select')!=='reset' && !$cell['verification_stale']) {
                 $selectedOwners = array_filter($owners, static fn($o) => (int) $o['halaqoh_id'] === (int) $cell['record']['halaqoh_id']);
                 if (count($selectedOwners) === 1) { $owners = $selectedOwners; $owner = array_values($owners)[0]; }
             }
@@ -451,6 +469,16 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
                     foreach ($owners as $o) if ((int) $o['ustadz_id'] === $userId && (int) $o['halaqoh_id'] === (int) $r['halaqoh_id']) return true;
                     return false;
                 }));
+                // Resolving the complete dataset may select a source from a
+                // different group, even when this session's roster belongs to
+                // the teacher. Do not expose that source through `record` or
+                // the latest-material summary after filtering `records`.
+                if ($cell['record'] && !in_array((int) $cell['record']['id'], array_map(static fn($r) => (int) $r['id'], $cell['records']), true)) {
+                    $cell['record'] = null;
+                    $cell['complete'] = false;
+                    $cell['state'] = 'conflict';
+                    $cell['missing_fields'] = ['verifikasi penempatan catatan di luar kelompok'];
+                }
             }
             if ($inPeriod && $ownerMatches && ($owners || $raw)) $relevant = true;
             if (!$ownerMatches) continue;
@@ -461,6 +489,7 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
                 'in_schedule' => $inSchedule, 'verified_roster' => (bool) $known, 'deadline_at' => tahsinDeadline($session),
                 'roster_source' => $known ? 'Histori roster pada sesi' : ($session === $liveSession ? 'Roster aktif saat ini; histori sesi belum terverifikasi' : 'Histori belum tersedia')];
             if ($inSchedule && $cell['record'] && $cell['record']['status'] === 'H') {
+                if ($achievementCatalog) $row['latest_hadir_record'] = $cell['record'];
                 if (!$row['terakhir_hadir'] || $cell['record']['tanggal'] > $row['terakhir_hadir']) $row['terakhir_hadir'] = $cell['record']['tanggal'];
                 if ($cell['complete']) {
                     $row['materi_terakhir'] = tahsinMaterial($cell['record']);
@@ -474,6 +503,7 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
                 tahsinAddCell($row, $cell);
                 $row['details'][] = $cell;
             }
+            }
         }
         // Never invent historical missing attendance from today's roster.
         foreach ($sessions as $session) {
@@ -484,7 +514,9 @@ function tahsinAssembleReport(array $data, array $filters, string $role = 'admin
             }
         }
         if (!$relevant) continue;
-        if ($row['materi_record'] === null && isset($baselines[$id]) && substr($baselines[$id]['updated_at'], 0, 10) <= $end) {
+        $currentPlacements = array_unique(array_map(static fn($owner) => $owner['halaqoh_id'] . ':' . $owner['ustadz_id'], $current[$id] ?? []));
+        $baselineVisible = $role !== 'ustadz' || (count($currentPlacements) === 1 && count($matchingCurrent) >= 1);
+        if ($baselineVisible && $row['materi_record'] === null && isset($baselines[$id]) && substr($baselines[$id]['updated_at'], 0, 10) <= $end) {
             $row['materi_terakhir'] = 'Capaian awal: ' . tahsinMaterial($baselines[$id]);
             $row['baseline_record'] = $baselines[$id];
         }
@@ -780,10 +812,23 @@ function tahsinFetchPending(PDO $pdo, string $role = 'admin', int $userId = 0, a
     return tahsinFetchPendingOverview($pdo, $role, $userId, $query, $now)['groups'];
 }
 
-function tahsinSaveVerification(PDO $pdo, int $waliId, string $session, string $fingerprint, ?int $selectedId, int $userId, string $note): void
+function tahsinSaveVerification(PDO $pdo, int $waliId, string $session, string $fingerprint, ?int $selectedId, int $userId, string $note, ?string $program=null, ?string $operation=null): void
 {
     if (!tahsinSchemaReady($pdo)) throw new RuntimeException('Migrasi pemantauan Tahsin belum diterapkan.');
     if (!tahsinDate($session) || tahsinSessionDate($session) !== $session || $waliId < 1 || $userId < 1 || trim($note) === '') throw new InvalidArgumentException('Data verifikasi dan alasan wajib diisi.');
+    require_once __DIR__.'/data_quality_migration_helper.php';
+    if ($program!==null || dataQualitySchemaReady($pdo)) {
+        require_once __DIR__.'/session_decision_helper.php';
+        if ($program===null) {
+            $q=$pdo->prepare('SELECT * FROM presensi WHERE wali_santri_id=? AND tanggal BETWEEN ? AND ? ORDER BY id'); $q->execute([$waliId,$session,(new DateTimeImmutable($session))->modify('+6 days')->format('Y-m-d')]);
+            $programs=tahsinGroupPrograms($pdo); $choices=[];
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $choices[$programs[(int)($r['halaqoh_id']??0)]??'unknown']=true;
+            if (count($choices)!==1) throw new InvalidArgumentException('Pilih program pada pemeriksaan sebelum memverifikasi catatan.');
+            $program=array_key_first($choices);
+        }
+        dataQualityChooseRecord($pdo,$userId,$waliId,$session,$program,$fingerprint,$selectedId,$note,$operation??bin2hex(random_bytes(16)));
+        return;
+    }
     $pdo->beginTransaction();
     try {
         $lock = $pdo->prepare('SELECT id FROM wali_santri WHERE id = ? FOR UPDATE');
@@ -801,6 +846,33 @@ function tahsinSaveVerification(PDO $pdo, int $waliId, string $session, string $
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $e;
     }
+}
+
+/** Parse the report verification form without coercing arrays or malformed IDs. */
+function tahsinVerificationRequestValues(array $input): array
+{
+    $waliId = filter_var(appRequestString($input, 'wali_id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    if ($waliId === false) throw new InvalidArgumentException('ID wali tidak valid. Muat ulang rekap dan pilih catatan kembali.');
+
+    $session = appRequestString($input, 'session');
+    if (!tahsinDate($session) || tahsinSessionDate($session) !== $session) throw new InvalidArgumentException('Tanggal sesi tidak valid. Muat ulang rekap dan pilih catatan kembali.');
+
+    $fingerprint = appRequestString($input, 'fingerprint');
+    if (!preg_match('/^[a-f0-9]{64}$/D', $fingerprint)) throw new InvalidArgumentException('Versi data sumber tidak valid. Muat ulang rekap sebelum memverifikasi.');
+
+    $selectedId = filter_var(appRequestString($input, 'selected_id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+    if ($selectedId === false) throw new InvalidArgumentException('Pilih catatan yang sah setelah memeriksa data sumber.');
+
+    $note = appRequestString($input, 'note');
+    if ($note === '') throw new InvalidArgumentException('Isi alasan verifikasi.');
+
+    return [
+        'wali_id' => $waliId,
+        'session' => $session,
+        'fingerprint' => $fingerprint,
+        'selected_id' => $selectedId ?: null,
+        'note' => $note,
+    ];
 }
 
 function tahsinPercent($value): string

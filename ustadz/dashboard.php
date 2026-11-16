@@ -18,15 +18,16 @@ $stmtHCount = $pdo->prepare("SELECT COUNT(*) FROM halaqoh WHERE ustadz_id = ?");
 $stmtHCount->execute([$ustadz_id]);
 $myHalaqohCount = $stmtHCount->fetchColumn();
 
+$activeMembershipCondition = attendanceActiveMembershipCondition($pdo, 'hm');
 $stmtMCount = $pdo->prepare("SELECT COUNT(hm.id) FROM halaqoh_members hm 
                            JOIN halaqoh h ON hm.halaqoh_id = h.id
                            JOIN wali_santri w ON w.id = hm.wali_santri_id
-                           WHERE h.ustadz_id = ? AND hm.archived_at IS NULL AND w.status_aktif = 1");
+                           WHERE h.ustadz_id = ?{$activeMembershipCondition} AND w.status_aktif = 1");
 $stmtMCount->execute([$ustadz_id]);
 $myMembersCount = $stmtMCount->fetchColumn();
 
 // 2. My Halaqoh Detailed List
-        $stmtHList = $pdo->prepare("SELECT h.*, (SELECT COUNT(*) FROM halaqoh_members WHERE halaqoh_id = h.id AND archived_at IS NULL) as total_member
+        $stmtHList = $pdo->prepare("SELECT h.*, (SELECT COUNT(*) FROM halaqoh_members hm WHERE hm.halaqoh_id = h.id{$activeMembershipCondition}) as total_member
                            FROM halaqoh h WHERE h.ustadz_id = ? ORDER BY h.nama_halaqoh");
 $stmtHList->execute([$ustadz_id]);
 $myHalaqohList = $stmtHList->fetchAll();
@@ -79,7 +80,7 @@ $latestAnnounce = $stmtAnnounce->fetch();
     <div class="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
         <div class="text-center md:text-left">
             <h3 class="text-2xl font-black mb-2 tracking-tight">Ahlan wa Sahlan, Ustadz
-                <?php echo explode(' ', $_SESSION['nama_lengkap'])[0]; ?>! 👋</h3>
+                <?php echo appEscape(explode(' ', (string) ($_SESSION['nama_lengkap'] ?? ''))[0] ?? ''); ?>! 👋</h3>
             <p class="text-blue-100 text-sm opacity-90 leading-relaxed max-w-lg">
                 Semoga Allah memberkahi waktu pengajaran Anda. Pantau perkembangan halaqoh dan pastikan presensi terisi
                 tepat waktu.
@@ -208,7 +209,7 @@ $latestAnnounce = $stmtAnnounce->fetch();
                         class="flex items-center gap-4 p-4 rounded-2xl border border-slate-50 hover:bg-slate-50 transition group">
                         <div
                             class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm group-hover:bg-blue-600 group-hover:text-white transition-all">
-                            <?php echo $act['status']; ?>
+                            <?php echo appEscape($act['status']); ?>
                         </div>
                         <div class="flex-1">
                             <div class="flex justify-between items-center mb-0.5">
@@ -239,9 +240,9 @@ $latestAnnounce = $stmtAnnounce->fetch();
                         <h4 class="font-bold text-slate-800 mb-1"><?php echo htmlspecialchars($h['nama_halaqoh']); ?></h4>
                         <div class="flex justify-between items-center">
                             <span
-                                class="text-[10px] font-bold text-slate-400 uppercase tracking-widest"><?php echo $h['total_member']; ?>
+                                class="text-[10px] font-bold text-slate-400 uppercase tracking-widest"><?php echo (int) $h['total_member']; ?>
                                 Wali Santri</span>
-                            <a href="input-presensi.php?id=<?php echo $h['id']; ?>"
+                            <a href="input-presensi.php?id=<?php echo (int) $h['id']; ?>"
                                 class="text-[10px] font-black text-blue-600 uppercase hover:underline">Isi Presensi</a>
                         </div>
                     </div>

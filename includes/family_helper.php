@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/participant_identity_helper.php';
 /** Stable family identities, separate from attendance and future Data Induk UUIDs. */
 function familySchemaReady(PDO $pdo): bool
 {
@@ -8,6 +9,21 @@ function familySchemaReady(PDO $pdo): bool
     } catch (PDOException $e) {
         if (in_array($e->getCode(), ['42S02', '42S22'], true)) return false;
         throw $e;
+    }
+}
+
+/** Data Induk roster fields are optional on databases that have not applied its additive migration. */
+function familyDataIndukRosterColumnsReady(PDO $pdo): bool
+{
+    static $readyByConnection = [];
+    $key = spl_object_id($pdo);
+    if (array_key_exists($key, $readyByConnection)) return $readyByConnection[$key];
+    try {
+        $pdo->query('SELECT data_induk_student_id,status_roster FROM santri_detail LIMIT 0');
+        return $readyByConnection[$key] = true;
+    } catch (PDOException $error) {
+        if (in_array($error->getCode(), ['42S02', '42S22'], true)) return $readyByConnection[$key] = false;
+        throw $error;
     }
 }
 
@@ -246,7 +262,7 @@ function familyImportApply(PDO $pdo, array $data, array $choices = []): array
             $waliId = $plan['guardians'][$id]['target_id'];
             if (!$waliId) {
                 $insertWali->execute([$g['name'], $g['phone'], $g['address'], 'reguler', $g['active'] && $g['account_active'] && isset($activeChildren[$id]) ? 1 : 0]);
-                $waliId = (int) $pdo->lastInsertId();
+                $waliId = participantCaptureInsertedId($pdo);
             }
             $upsertGuardian->execute([$source, (string) $id, $waliId, $g['type'], $g['name'], $g['phone'], $g['address'], (int) $g['active'], (int) $g['account_active'], $date]);
             $getGuardian->execute([$source, (string) $id]); $guardianIds[$id] = $getGuardian->fetch(PDO::FETCH_ASSOC);

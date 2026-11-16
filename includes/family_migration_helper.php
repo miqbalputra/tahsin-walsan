@@ -1,6 +1,16 @@
 <?php
 function familyApplyMigration(PDO $pdo): void
 {
+    $dataIndukRoster = false;
+    try {
+        $pdo->query('SELECT data_induk_student_id,status_roster FROM santri_detail LIMIT 0');
+        $dataIndukRoster = true;
+    } catch (PDOException $error) {
+        if (!in_array($error->getCode(), ['42S02', '42S22'], true)) throw $error;
+    }
+    $legacyArchived = $dataIndukRoster
+        ? "WHEN sd.data_induk_student_id IS NOT NULL AND sd.status_roster='archived' THEN 'archived' "
+        : '';
     $pdo->exec("CREATE TABLE IF NOT EXISTS family_guardians (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         source_namespace VARCHAR(64) COLLATE utf8mb4_bin NOT NULL,
@@ -49,8 +59,8 @@ function familyApplyMigration(PDO $pdo): void
         UNION ALL
         SELECT sd.wali_santri_id,CONVERT(sd.nama_anak USING utf8mb4) COLLATE utf8mb4_unicode_ci,
             CONVERT(COALESCE(sd.kelas,'') USING utf8mb4) COLLATE utf8mb4_unicode_ci,
-            (CASE WHEN LOWER(TRIM(COALESCE(sd.kelas,'')))='lulus' THEN 'graduated' ELSE 'active' END) COLLATE utf8mb4_unicode_ci,
-            (CASE WHEN LOWER(TRIM(COALESCE(sd.kelas,'')))='lulus' THEN 'archived' ELSE 'active' END) COLLATE utf8mb4_unicode_ci,
+            (CASE {$legacyArchived}WHEN LOWER(TRIM(COALESCE(sd.kelas,'')))='lulus' THEN 'graduated' ELSE 'active' END) COLLATE utf8mb4_unicode_ci,
+            (CASE {$legacyArchived}WHEN LOWER(TRIM(COALESCE(sd.kelas,'')))='lulus' THEN 'archived' ELSE 'active' END) COLLATE utf8mb4_unicode_ci,
             NULL,NULL
         FROM santri_detail sd
         WHERE NOT EXISTS (SELECT 1 FROM family_legacy_children lc

@@ -73,7 +73,9 @@ CREATE TABLE presensi (
     FOREIGN KEY (wali_santri_id) REFERENCES wali_santri(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
--- Seed initial admin user (password: admin123)
--- Pastikan untuk mengganti password di produksi
-INSERT INTO users (username, password, nama_lengkap, role) 
-VALUES ('admin', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrator Utama', 'admin');
+-- Seed admin awal TANPA kata sandi (kolom password kosong = tidak bisa login).
+-- Buat akun admin pertama lewat CLI setelah instalasi, contoh:
+--   php -r "require 'config/database.php'; \$pdo->prepare('INSERT INTO users (username,password,nama_lengkap,role) VALUES (?,?,?,?)')->execute(['admin', password_hash(getenv('ADMIN_PASSWORD')), 'Administrator Utama', 'admin']);"
+-- (set ADMIN_PASSWORD di environment sebelum menjalankan perintah di atas).
+INSERT INTO users (username, password, nama_lengkap, role)
+VALUES ('admin', '', 'Administrator Utama', 'admin');

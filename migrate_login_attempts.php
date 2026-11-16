@@ -2,10 +2,11 @@
 /**
  * Migration: Create login_attempts table for brute-force protection
  * 
- * Jalankan file ini SEKALI di browser untuk membuat tabel.
- * Setelah berhasil, file ini bisa dihapus.
+ * Jalankan melalui CLI setelah backup: php migrate_login_attempts.php.
+ * Skrip tidak boleh dijalankan melalui HTTP.
  */
-require_once 'config/database.php';
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
+require_once __DIR__ . '/config/database.php';
 
 try {
     $pdo->exec("
@@ -18,8 +19,9 @@ try {
             INDEX idx_attempted_at (attempted_at)
         ) ENGINE=InnoDB
     ");
-    echo "<h2 style='color:green'>✅ Tabel login_attempts berhasil dibuat!</h2>";
-    echo "<p>Silakan hapus file <code>migrate_login_attempts.php</code> setelah migrasi selesai.</p>";
-} catch (PDOException $e) {
-    echo "<h2 style='color:red'>❌ Gagal: " . $e->getMessage() . "</h2>";
+    echo "Tabel login_attempts siap. Skrip migrasi tetap tersimpan untuk audit.\n";
+} catch (Throwable $error) {
+    error_log('Login attempts migration failed: ' . $error->getMessage());
+    fwrite(STDERR, "Migrasi login_attempts gagal. " . $error->getMessage() . "\n");
+    exit(1);
 }

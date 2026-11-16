@@ -109,13 +109,13 @@ $base_url = $is_ustadz_path ? '../' : '';
     <nav class="mt-10 px-4">
         <?php foreach ($menus as $menu): ?>
             <a class="flex items-center px-4 py-3 mt-2 text-sm font-medium transition-all duration-200 rounded-xl <?php echo $current_page == $menu['url'] ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'; ?>"
-                href="<?php echo $menu['final_url']; ?>">
+                href="<?php echo appEscape($menu['final_url']); ?>">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="<?php echo $menu['icon']; ?>">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="<?php echo appEscape($menu['icon']); ?>">
                     </path>
                 </svg>
                 <span class="mx-4">
-                    <?php echo $menu['label']; ?>
+                    <?php echo appEscape($menu['label']); ?>
                 </span>
             </a>
         <?php endforeach; ?>
@@ -135,7 +135,7 @@ $base_url = $is_ustadz_path ? '../' : '';
         <div class="border-t border-slate-50 my-6"></div>
 
         <a class="flex items-center px-4 py-3 mt-2 text-sm font-medium text-red-500 transition-all duration-200 rounded-xl hover:bg-red-50"
-            href="<?php echo $base_url; ?>logout.php">
+            href="<?php echo appEscape($base_url); ?>logout.php">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
@@ -214,17 +214,17 @@ $base_url = $is_ustadz_path ? '../' : '';
                 </svg>
             </button>
             <h2 class="text-lg font-semibold text-slate-800 ml-4 lg:ml-0">
-                <?php echo $pageTitle ?? 'Dashboard'; ?>
+                <?php echo appEscape($pageTitle ?? 'Dashboard'); ?>
             </h2>
         </div>
 
         <div class="flex items-center">
             <div class="text-right mr-4 hidden sm:block">
                 <p class="text-sm font-semibold text-slate-800">
-                    <?php echo $_SESSION['nama_lengkap']; ?>
+                    <?php echo appEscape($_SESSION['nama_lengkap'] ?? ''); ?>
                 </p>
                 <p class="text-xs text-slate-500 capitalize">
-                    <?php echo $_SESSION['role']; ?>
+                    <?php echo appEscape($_SESSION['role'] ?? ''); ?>
                 </p>
             </div>
             <div class="bg-blue-100 p-2 rounded-full text-blue-600">

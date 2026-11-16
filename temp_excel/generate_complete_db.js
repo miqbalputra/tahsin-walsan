@@ -1,6 +1,9 @@
+const { requireFullReplacementApproval, createPrivateOutputDirectory, writePrivateArtifact, createTemporaryPassword, destructiveSqlWarning } = require('./destructive-import-safety.cjs');
+requireFullReplacementApproval('generate_complete_db.js');
+
 const XLSX = require('xlsx');
 const path = require('path');
-const fs = require('fs');
+const bcrypt = require('bcryptjs');
 
 const files = ['Mustawa_Ikhwan.xlsx', 'Mustawa_Akhwat.xlsx'];
 const fatherMap = new Map(); // normalizedKey -> { id, originalName, phone, address, halaqohRaw }
@@ -127,8 +130,10 @@ files.forEach(fileName => {
 });
 
 // Generate SQL Content
-let sqlOutput = `-- Complete Data Import: Users (Ustadz), Halaqoh, Wali Santri, Santri, and Members\n`;
+let sqlOutput = destructiveSqlWarning(['users (ustadz)', 'halaqoh_members', 'halaqoh', 'santri_detail', 'wali_santri'])
+    + `-- Complete Data Import: Users (Ustadz), Halaqoh, Wali Santri, Santri, and Members\n`;
 sqlOutput += `-- Generated on ${new Date().toLocaleString()}\n`;
+sqlOutput += `-- WARNING: presensi and other history tables are not cleared; reused IDs can attach old history to different records.\n`;
 sqlOutput += `SET FOREIGN_KEY_CHECKS = 0;\n`;
 sqlOutput += `TRUNCATE TABLE halaqoh_members;\n`;
 sqlOutput += `TRUNCATE TABLE halaqoh;\n`;
@@ -138,13 +143,15 @@ sqlOutput += `DELETE FROM users WHERE role = 'ustadz';\n`;
 sqlOutput += `SET FOREIGN_KEY_CHECKS = 1;\n\n`;
 
 // 1. Insert Ustadz (Users)
-// Password hash for 'ustadz123'
-const defaultPass = '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi';
+const teacherCredentials = [];
 if (ustadzMap.size > 0) {
     sqlOutput += `-- Create Ustadz Accounts\n`;
     sqlOutput += `INSERT INTO users (id, username, password, nama_lengkap, role) VALUES\n`;
     const ustadzValues = Array.from(ustadzMap.values()).map(u => {
-        return `(${u.id}, '${u.username}', '${defaultPass}', '${u.fullName.replace(/'/g, "''")}', 'ustadz')`;
+        const password = createTemporaryPassword();
+        teacherCredentials.push({ id: u.id, nama: u.fullName, username: u.username, password });
+        const passwordHash = bcrypt.hashSync(password, 12);
+        return `(${u.id}, '${u.username}', '${passwordHash}', '${u.fullName.replace(/'/g, "''")}', 'ustadz')`;
     });
     sqlOutput += ustadzValues.join(',\n') + ';\n\n';
 }
@@ -187,12 +194,24 @@ if (memberList.length > 0) {
     sqlOutput += mValues.join(',\n') + ';\n';
 }
 
-const outputPath = path.join(__dirname, '..', 'import_database_lengkap_v2.sql');
-fs.writeFileSync(outputPath, sqlOutput);
+const outputDir = createPrivateOutputDirectory(path.join(__dirname, '..'));
+const outputPath = writePrivateArtifact(outputDir, 'import_database_lengkap_v2.sql', sqlOutput);
+const groupsByTeacher = new Map();
+for (const group of halaqohMap.values()) {
+    if (!groupsByTeacher.has(group.ustadzId)) groupsByTeacher.set(group.ustadzId, []);
+    groupsByTeacher.get(group.ustadzId).push(group.name);
+}
+const credentialsPath = writePrivateArtifact(outputDir, 'teacher-credentials.json', JSON.stringify({
+    warning: 'Kredensial sementara rahasia. Bagikan secara privat dan minta setiap ustadz menggantinya setelah login.',
+    accounts: teacherCredentials.map(({ id, ...account }) => ({
+        ...account,
+        halaqoh: groupsByTeacher.get(id) || []
+    }))
+}, null, 2) + '\n');
 
 console.log(`Successfully generated SQL file: ${outputPath}`);
 console.log(`- Total Unique Fathers: ${fatherMap.size}`);
 console.log(`- Total Children: ${santriList.length}`);
 console.log(`- Total Ustadz Created: ${ustadzMap.size}`);
 console.log(`- Total Halaqoh Created: ${halaqohMap.size}`);
-console.log(`- Default Password for Ustadz: admin123 (Please change after import)`);
+console.log(`- Temporary teacher credentials: ${credentialsPath}`);

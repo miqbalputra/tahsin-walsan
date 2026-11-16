@@ -181,6 +181,7 @@ Dockerfile project ini sudah menyiapkan:
 Di menu **Environment Variables** aplikasi Coolify, isi:
 
 ```env
+APP_ENV=production
 APP_TIMEZONE=Asia/Jakarta
 
 DB_HOST=host_internal_database_coolify

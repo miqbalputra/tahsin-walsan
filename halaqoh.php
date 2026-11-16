@@ -1,88 +1,53 @@
 <?php
-$pageTitle = 'Manajemen Halaqoh';
-require_once 'includes/header.php';
-require_once 'includes/sidebar.php';
+$pageTitle = 'Pengelolaan Halaqoh';
 require_once 'config/database.php';
 require_once 'includes/auth_helper.php';
-require_once 'includes/autosave_helper.php';
-
+require_once 'includes/halaqoh_helper.php';
 checkRole(['admin', 'pj_tahfidz']);
 
-$message = '';
+$message = is_string($_SESSION['flash_halaqoh'] ?? null) ? $_SESSION['flash_halaqoh'] : '';
+unset($_SESSION['flash_halaqoh']);
 $error = '';
-$programSchema = autosaveSchemaReady($pdo);
-
-// Handle Create/Update/Delete
+$showHalaqohModal = false;
+$halaqohForm = ['id' => '', 'nama_halaqoh' => '', 'ustadz_id' => '', 'program_code' => 'bapak'];
+$programSchema = halaqohProgramColumnReady($pdo);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // CSRF Validation
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Invalid CSRF token.");
+    requireValidCsrfToken($_POST['csrf_token'] ?? '');
+    foreach ($halaqohForm as $key => $default) {
+        if (is_string($_POST[$key] ?? null)) $halaqohForm[$key] = $_POST[$key];
     }
-
-    $action = $_POST['action'] ?? '';
-    $id = $_POST['id'] ?? null;
-    $nama_halaqoh = $_POST['nama_halaqoh'] ?? '';
-    $ustadz_id = $_POST['ustadz_id'] ?? '';
-    $program_code = in_array($_POST['program_code'] ?? '', ['bapak', 'ibu'], true) ? $_POST['program_code'] : 'bapak';
-
-    if ($action === 'save') {
-        if ($programSchema && $id) {
-            $existingProgram = $pdo->prepare('SELECT program_code FROM halaqoh WHERE id=?');
-            $existingProgram->execute([$id]);
-            if ($existingProgram->fetchColumn() !== $program_code) {
-                $history = $pdo->prepare('SELECT COUNT(*) FROM presensi WHERE halaqoh_id=?');
-                $history->execute([$id]);
-                $drafts = $pdo->prepare('SELECT COUNT(*) FROM tahsin_autosave_drafts WHERE halaqoh_id=?');
-                $drafts->execute([$id]);
-                if ($history->fetchColumn() || $drafts->fetchColumn()) $error = 'Program kelompok dengan riwayat pencatatan tidak dapat diganti. Buat kelompok baru agar riwayat Bapak dan Ibu tetap benar.';
-            }
-        }
-        if ($error !== '') {
-            // Keep the form and its error visible; no identity/history is rewritten.
-        } elseif ($id) {
-            $stmt = $pdo->prepare($programSchema ? "UPDATE halaqoh SET nama_halaqoh=?, ustadz_id=?, program_code=? WHERE id=?" : "UPDATE halaqoh SET nama_halaqoh=?, ustadz_id=? WHERE id=?");
-            $stmt->execute($programSchema ? [$nama_halaqoh, $ustadz_id, $program_code, $id] : [$nama_halaqoh, $ustadz_id, $id]);
-            $message = "Halaqoh diperbarui!";
+    try {
+        $action = appRequestString($_POST, 'action');
+        if ($action === 'save') {
+            $id = saveManagedHalaqoh($pdo, $_POST);
+            addLog($pdo, 'SAVE_HALAQOH', 'id=' . $id);
+            $message = 'Halaqoh berhasil disimpan.';
+        } elseif ($action === 'delete') {
+            $id = halaqohRequestId($_POST, true);
+            deleteEmptyHalaqoh($pdo, $id);
+            addLog($pdo, 'DELETE_HALAQOH', 'id=' . $id . '; empty group only');
+            $message = 'Halaqoh kosong berhasil dihapus.';
         } else {
-            $stmt = $pdo->prepare($programSchema ? "INSERT INTO halaqoh (nama_halaqoh, ustadz_id, program_code) VALUES (?, ?, ?)" : "INSERT INTO halaqoh (nama_halaqoh, ustadz_id) VALUES (?, ?)");
-            $stmt->execute($programSchema ? [$nama_halaqoh, $ustadz_id, $program_code] : [$nama_halaqoh, $ustadz_id]);
-            $message = "Halaqoh baru dibuat!";
+            throw new HalaqohManagementException('Tindakan tidak dikenali. Buka kembali daftar halaqoh.');
         }
-    } elseif ($action === 'delete' && $id) {
-        $pdo->beginTransaction();
-        try {
-            // Temporarily disable FK checks for safe deletion
-            $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
-
-            // 1. Set halaqoh_id to NULL in presensi (preserve capaian data)
-            $stmt = $pdo->prepare("UPDATE presensi SET halaqoh_id = NULL WHERE halaqoh_id = ?");
-            $stmt->execute([$id]);
-
-            // 2. Delete halaqoh members mapping
-            $stmt = $pdo->prepare("DELETE FROM halaqoh_members WHERE halaqoh_id = ?");
-            $stmt->execute([$id]);
-
-            // 3. Delete the halaqoh itself
-            $stmt = $pdo->prepare("DELETE FROM halaqoh WHERE id = ?");
-            $stmt->execute([$id]);
-
-            // Re-enable FK checks
-            $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
-
-            $pdo->commit();
-            addLog($pdo, 'DELETE_HALAQOH', "Menghapus halaqoh ID: $id (data capaian tetap tersimpan)");
-            $message = "Halaqoh berhasil dihapus! Data capaian peserta tetap tersimpan.";
-        } catch (Exception $e) {
-            $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
-            $pdo->rollBack();
-            $error = "Gagal menghapus halaqoh: " . $e->getMessage();
-        }
+        $_SESSION['flash_halaqoh'] = $message;
+        redirectTo('halaqoh.php');
+    } catch (HalaqohManagementException | InvalidArgumentException $failure) {
+        $error = $failure->getMessage();
+        $showHalaqohModal = ($_POST['action'] ?? '') === 'save';
+    } catch (Throwable $failure) {
+        reportApplicationError($failure, 'manage-halaqoh');
+        $error = 'Perubahan belum tersimpan. Periksa pengajar dan isian halaqoh, lalu coba lagi.';
+        $showHalaqohModal = ($_POST['action'] ?? '') === 'save';
     }
 }
+require_once 'includes/header.php';
+require_once 'includes/sidebar.php';
 
 // Fetch all Halaqoh with Ustadz names and member counts
+$memberArchiveCondition = attendanceSupportsMemberArchiving($pdo) ? ' AND hm.archived_at IS NULL' : '';
 $query = "SELECT h.*, u.nama_lengkap as nama_ustadz, 
-          (SELECT COUNT(*) FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id AND hm.archived_at IS NULL AND w.status_aktif = 1) as total_member
+          (SELECT COUNT(*) FROM halaqoh_members hm JOIN wali_santri w ON w.id = hm.wali_santri_id WHERE hm.halaqoh_id = h.id {$memberArchiveCondition} AND w.status_aktif = 1) as total_member
           FROM halaqoh h 
           JOIN users u ON h.ustadz_id = u.id 
           ORDER BY h.nama_halaqoh";
@@ -93,12 +58,12 @@ $ustadz_list = $pdo->query("SELECT id, nama_lengkap FROM users WHERE role = 'ust
 ?>
 
 <div x-data="{ 
-    showModal: false, 
+    showModal: <?= $showHalaqohModal ? 'true' : 'false' ?>,
     showDeleteConfirm: false,
     deleteId: null,
     deleteName: '',
-    editMode: false,
-    formData: { id: '', nama_halaqoh: '', ustadz_id: '', program_code: 'bapak' },
+    editMode: <?= $halaqohForm['id'] !== '' ? 'true' : 'false' ?>,
+    formData: <?= appJsonAttribute($halaqohForm) ?>,
     openAdd() {
         this.editMode = false;
         this.formData = { id: '', nama_halaqoh: '', ustadz_id: '', program_code: 'bapak' };
@@ -128,14 +93,14 @@ $ustadz_list = $pdo->query("SELECT id, nama_lengkap FROM users WHERE role = 'ust
     </div>
 
     <?php if ($message): ?>
-        <div class="bg-emerald-50 text-emerald-600 p-4 rounded-xl mb-6 border border-emerald-100 italic">
-            <?php echo $message; ?>
+        <div role="status" class="bg-emerald-50 text-emerald-600 p-4 rounded-xl mb-6 border border-emerald-100 italic">
+            <?= appEscape($message) ?>
         </div>
     <?php endif; ?>
 
-    <?php if ($error): ?>
-        <div class="bg-red-50 text-red-600 p-4 rounded-xl mb-6 border border-red-100 italic">
-            <?php echo $error; ?>
+    <?php if ($error && !$showHalaqohModal): ?>
+        <div role="alert" class="bg-red-50 text-red-800 p-4 rounded-xl mb-6 border border-red-100">
+            <?= appEscape($error) ?>
         </div>
     <?php endif; ?>
 
@@ -150,8 +115,8 @@ $ustadz_list = $pdo->query("SELECT id, nama_lengkap FROM users WHERE role = 'ust
                             </path>
                         </svg>
                     </div>
-                    <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                        <button @click="openEdit(<?php echo htmlspecialchars(json_encode($h)); ?>)"
+                    <div class="flex gap-1">
+                        <button @click="openEdit(<?= appJsonAttribute($h) ?>)" aria-label="Edit halaqoh <?= appEscape($h['nama_halaqoh']) ?>"
                             class="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg" title="Edit Halaqoh">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -160,7 +125,7 @@ $ustadz_list = $pdo->query("SELECT id, nama_lengkap FROM users WHERE role = 'ust
                             </svg>
                         </button>
                         <button
-                            @click="confirmDelete(<?php echo $h['id']; ?>, '<?php echo htmlspecialchars($h['nama_halaqoh'], ENT_QUOTES); ?>')"
+                            @click="confirmDelete(<?= (int) $h['id'] ?>, <?= appJsonAttribute($h['nama_halaqoh']) ?>)" aria-label="Hapus halaqoh <?= appEscape($h['nama_halaqoh']) ?>"
                             class="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg" title="Hapus Halaqoh">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -180,9 +145,9 @@ $ustadz_list = $pdo->query("SELECT id, nama_lengkap FROM users WHERE role = 'ust
 
                 <div class="flex items-center justify-between mt-6 pt-4 border-t border-slate-50">
                     <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                        <?php echo $h['total_member']; ?> Wali Santri
+                        <?php echo (int) $h['total_member']; ?> Wali Santri
                     </span>
-                    <a href="halaqoh-members.php?id=<?php echo $h['id']; ?>"
+                    <a href="halaqoh-members.php?id=<?php echo (int) $h['id']; ?>"
                         class="text-sm text-blue-600 font-bold hover:underline">Kelola Anggota &rarr;</a>
                 </div>
             </div>
@@ -190,11 +155,12 @@ $ustadz_list = $pdo->query("SELECT id, nama_lengkap FROM users WHERE role = 'ust
     </div>
 
     <!-- Modal Form -->
-    <div x-show="showModal"
+    <div x-show="showModal" role="dialog" aria-modal="true" aria-labelledby="halaqoh-dialog-title" @keydown.escape.window="showModal = false"
         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" x-cloak>
-        <div class="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl" @click.away="showModal = false">
-            <h3 class="text-xl font-bold text-slate-800 mb-6" x-text="editMode ? 'Edit Halaqoh' : 'Buat Halaqoh Baru'">
+        <div class="bg-white rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6 sm:p-8 shadow-2xl" @click.away="showModal = false">
+            <h3 id="halaqoh-dialog-title" class="text-xl font-bold text-slate-800 mb-6" x-text="editMode ? 'Edit Halaqoh' : 'Buat Halaqoh Baru'">
             </h3>
+            <?php if ($error && $showHalaqohModal): ?><p role="alert" class="bg-red-50 text-red-800 p-4 rounded-xl mb-4"><?= appEscape($error) ?></p><?php endif; ?>
             <form method="POST">
                 <?php csrfField(); ?>
                 <input type="hidden" name="action" value="save">
@@ -202,18 +168,18 @@ $ustadz_list = $pdo->query("SELECT id, nama_lengkap FROM users WHERE role = 'ust
                 <div class="space-y-4">
                     <?php if ($programSchema): ?><div><label class="block text-sm font-semibold text-slate-700 mb-1">Program Tahsin</label><select name="program_code" x-model="formData.program_code" class="w-full px-4 py-2 rounded-xl border border-slate-200"><option value="bapak">Bapak</option><option value="ibu">Ibu</option></select></div><?php endif; ?>
                     <div>
-                        <label class="block text-sm font-semibold text-slate-700 mb-1">Nama Halaqoh</label>
-                        <input type="text" name="nama_halaqoh" x-model="formData.nama_halaqoh" required
+                        <label for="halaqoh-name" class="block text-sm font-semibold text-slate-700 mb-1">Nama Halaqoh</label>
+                        <input id="halaqoh-name" type="text" name="nama_halaqoh" maxlength="100" x-model="formData.nama_halaqoh" required
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition"
                             placeholder="Contoh: Abu Bakar Ash-Shiddiq">
                     </div>
                     <div>
-                        <label class="block text-sm font-semibold text-slate-700 mb-1">Pilih Pengajar</label>
-                        <select name="ustadz_id" x-model="formData.ustadz_id" required
+                        <label for="halaqoh-teacher" class="block text-sm font-semibold text-slate-700 mb-1">Pilih Pengajar</label>
+                        <select id="halaqoh-teacher" name="ustadz_id" x-model="formData.ustadz_id" required
                             class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition">
                             <option value="">-- Pilih Pengajar --</option>
                             <?php foreach ($ustadz_list as $u): ?>
-                                <option value="<?php echo $u['id']; ?>">
+                                <option value="<?php echo (int) $u['id']; ?>">
                                     <?php echo htmlspecialchars($u['nama_lengkap']); ?>
                                 </option>
                             <?php endforeach; ?>
@@ -246,8 +212,7 @@ $ustadz_list = $pdo->query("SELECT id, nama_lengkap FROM users WHERE role = 'ust
                 <p class="text-slate-500 text-sm mb-2">Anda akan menghapus halaqoh <strong x-text="deleteName"
                         class="text-slate-800"></strong>.</p>
                 <div class="bg-amber-50 border border-amber-100 rounded-xl p-3 mb-6">
-                    <p class="text-amber-700 text-xs font-semibold">⚠️ Data peserta dan capaian di dalam halaqoh ini
-                        <u>tidak akan terhapus</u>. Hanya data halaqoh saja yang dihapus.
+                    <p class="text-amber-800 text-sm">Hanya halaqoh kosong yang belum memiliki anggota atau riwayat yang dapat dihapus. Halaqoh dengan data akan tetap disimpan agar seluruh riwayat terhubung.
                     </p>
                 </div>
             </div>

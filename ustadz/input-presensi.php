@@ -35,7 +35,7 @@ $halaqohs = $stmt->fetchAll();
     <?php endif; ?>
 
     <?php foreach ($halaqohs as $h): ?>
-        <a href="form-presensi.php?id=<?php echo $h['id']; ?>"
+        <a href="form-presensi.php?id=<?php echo (int) $h['id']; ?>"
             class="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
             <div class="flex justify-between items-start mb-4">
                 <div class="bg-blue-600 text-white p-4 rounded-2xl shadow-lg shadow-blue-100">
@@ -46,7 +46,7 @@ $halaqohs = $stmt->fetchAll();
                     </svg>
                 </div>
                 <div class="bg-slate-50 text-slate-400 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
-                    <?php echo $h['total_member']; ?> Anggota
+                    <?php echo (int) $h['total_member']; ?> Anggota
                 </div>
             </div>
             <h3 class="text-xl font-bold text-slate-800 mb-1 group-hover:text-blue-600 transition-colors">

@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/csv_helper.php';
+
 function tahsinH($value): string { return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 function tahsinQuery(array $filters, array $extra = []): string { return http_build_query(array_merge($filters, $extra)); }
 function tahsinStatusLabel($status): string { return ['H' => 'Hadir', 'S' => 'Sakit', 'I' => 'Izin', 'A' => 'Alfa'][$status] ?? 'Belum Diinput'; }
@@ -36,7 +38,7 @@ function tahsinRenderWaliTable(array $rows, array $filters, bool $excel = false)
     foreach ($rows as $r) {
         $text = static function ($value) use ($excel) {
             $value = (string) $value;
-            if ($excel && preg_match('/^[=+@\-\t\r]/', $value)) $value = "'" . $value;
+            if ($excel) $value = appSpreadsheetSafeText($value);
             return tahsinH($value);
         };
         echo '<tr><td><strong>';
@@ -70,7 +72,7 @@ function tahsinRenderDetails(array $rows, bool $canVerify, bool $print = false):
             if (!$cell['records']) echo '<tr><td colspan="5">Guru belum menyimpan presensi dan capaian. Status wali belum diketahui.</td></tr>';
             echo '</tbody></table></div>';
             if ($canVerify && $cell['state'] === 'conflict' && $cell['records']) {
-                echo '<form method="post" class="tahsin-verify no-print">' . csrfFieldReturn() . '<input type="hidden" name="action" value="verify"><input type="hidden" name="wali_id" value="' . $row['id'] . '"><input type="hidden" name="session" value="' . $cell['session_date'] . '"><input type="hidden" name="fingerprint" value="' . $cell['fingerprint'] . '"><label>Catatan yang sah <select name="selected_id" required><option value="">Pilih setelah memeriksa sumber</option>';
+                echo '<form method="post" class="tahsin-verify no-print">' . csrfFieldReturn() . '<input type="hidden" name="action" value="verify"><input type="hidden" name="program" value="'.tahsinH($cell['program_code']??'bapak').'"><input type="hidden" name="operation" value="'.bin2hex(random_bytes(16)).'"><input type="hidden" name="wali_id" value="' . $row['id'] . '"><input type="hidden" name="session" value="' . $cell['session_date'] . '"><input type="hidden" name="fingerprint" value="' . $cell['fingerprint'] . '"><label>Catatan yang sah <select name="selected_id" required><option value="">Pilih setelah memeriksa sumber</option>';
                 foreach ($cell['records'] as $record) echo '<option value="' . (int) $record['id'] . '">#' . (int) $record['id'] . ' · ' . tahsinH($record['tanggal']) . ' · ' . tahsinStatusLabel($record['status']) . ' · ' . tahsinH(tahsinMaterial($record)) . '</option>';
                 echo '<option value="0">Semua hanya capaian awal; bukan kehadiran</option></select></label><label>Alasan verifikasi <input name="note" required maxlength="2000" placeholder="Sumber konfirmasi guru / koreksi data"></label><button class="tahsin-button" type="submit">Simpan Verifikasi</button><p class="tahsin-note">Catatan asli tetap tersimpan. Jika sumber berubah, verifikasi harus diulang.</p></form>';
             }
@@ -85,7 +87,7 @@ function tahsinRenderDetails(array $rows, bool $canVerify, bool $print = false):
 function tahsinMeetingText($value, bool $excel = false): string
 {
     $value = (string) $value;
-    if ($excel && preg_match('/^[=+@\-\t\r]/', $value)) $value = "'" . $value;
+    if ($excel) $value = appSpreadsheetSafeText($value);
     return tahsinH($value);
 }
 

@@ -18,7 +18,11 @@ Ikuti langkah-langkah berikut untuk memasang aplikasi ini di cPanel Hosting:
 5.  Gulir ke bawah dan klik **Go** atau **Import**.
 
 ## 3. Upload File ke hosting
-1.  Compress seluruh file di folder ini (kecuali folder `.git`, `.vscode`, atau file `.env` jika ada) menjadi format `.zip`.
+1.  Compress file aplikasi dari folder ini menjadi format `.zip` dengan **mengecualikan** semua berikut:
+    - `.git`, `.vscode`, `.env`, `.sessions`, `node_modules`, `vendor`, `next`, `.codex-build`
+    - Folder data internal: `backup/`, `outputs/`, `temp_excel/`, `docs/`, `tests/`, `scripts/`, `docker/`, `migrations/`
+    - File data/dump lokal: `*.sql` selain `database.sql`, `*.xlsx`, `*.zip`, `*.csv` selain `template_*.csv`, `*.json` selain `manifest.json`, `*.pdf`, `*.md`
+    - File `migrate*.php` dan `dev-router.php`
 2.  Di cPanel, buka **File Manager**.
 3.  Masuk ke direktori domain Anda (biasanya `public_html/tahsin` atau sesuai setting subdomain).
 4.  Klik **Upload** dan pilih file `.zip` tadi.
@@ -38,10 +42,11 @@ Ikuti langkah-langkah berikut untuk memasang aplikasi ini di cPanel Hosting:
 
 ## 5. Verifikasi
 1.  Buka browser dan akses `https://tahsin.griyaquran.web.id`.
-2.  Login menggunakan akun default:
-    - **Username**: `admin`
-    - **Password**: `admin123`
-3.  Pastikan untuk segera mengubah password admin setelah login pertama kali di menu Data User.
+2.  Buat akun admin pertama lewat CLI hosting (seed SQL tidak memuat kata sandi):
+    set `ADMIN_PASSWORD` di environment lalu jalankan perintah INSERT yang tercantum
+    pada komentar `database.sql`, atau tambahkan akun via phpMyAdmin dengan
+    `password_hash()` (bcrypt).
+3.  Login menggunakan akun admin yang baru dibuat tersebut.
 
 ---
 **Catatan Tambahan:**
