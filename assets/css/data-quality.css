@@ -44,7 +44,7 @@ body:has(.dq-page) [data-main-layout]>main{padding:28px;scroll-behavior:auto}
 .dq-category-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:10px;background:var(--dq-soft);color:var(--dq-color)}
 .dq-category-top strong{font-size:30px;line-height:1;font-weight:750;color:var(--dq-color);font-variant-numeric:tabular-nums}
 .dq-category-name{font-weight:700;font-size:14px;line-height:1.45}
-.dq-category-help{font-size:12px;color:#64748b;margin-top:4px;flex:1}
+.dq-category-help{font-size:12px;color:#475569;margin-top:4px;flex:1}
 .dq-category-link{display:flex;gap:8px;align-items:center;color:var(--dq-color);font-size:12px;font-weight:650;margin-top:14px}
 .dq-category-link .dq-icon{width:16px;height:16px}
 .dq-filters{border:1px solid #e2e8f0;border-radius:14px;padding:22px;background:#fff;margin-bottom:26px}
