@@ -91,8 +91,14 @@ $base_url = $is_ustadz_path ? '../' : '';
     @click="sidebarOpen = false" x-cloak></div>
 
 <!-- Sidebar -->
-<div data-sidebar x-cloak :class="sidebarOpen ? 'translate-x-0 ease-out' : '-translate-x-full ease-in'"
+<div data-sidebar id="app-sidebar" x-cloak x-data="{ desktopMenu: window.innerWidth >= 1024 }"
+    @resize.window.debounce.100ms="desktopMenu = window.innerWidth >= 1024"
+    :inert="!sidebarOpen && !desktopMenu" :aria-hidden="!sidebarOpen && !desktopMenu"
+    @keydown.escape.window="if (sidebarOpen) { sidebarOpen = false; $nextTick(() => document.getElementById('app-menu-toggle').focus()) }"
+    :class="sidebarOpen ? 'translate-x-0 ease-out' : '-translate-x-full ease-in'"
     class="fixed inset-y-0 left-0 z-30 w-64 overflow-y-auto transition duration-300 transform bg-white lg:translate-x-0 lg:static lg:inset-0 border-r border-slate-100">
+    <button id="app-menu-close" type="button" aria-label="Tutup menu navigasi" @click="sidebarOpen = false; $nextTick(() => document.getElementById('app-menu-toggle').focus())"
+        class="lg:hidden absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-slate-600 focus:ring-2 focus:ring-blue-500"><svg aria-hidden="true" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
     <div class="flex items-center justify-center mt-8">
         <div class="flex items-center">
             <div class="bg-blue-600 p-2 rounded-lg text-white">
@@ -106,7 +112,7 @@ $base_url = $is_ustadz_path ? '../' : '';
         </div>
     </div>
 
-    <nav class="mt-10 px-4">
+    <nav class="mt-10 px-4" aria-label="Navigasi utama">
         <?php foreach ($menus as $menu): ?>
             <a class="flex items-center px-4 py-3 mt-2 text-sm font-medium transition-all duration-200 rounded-xl <?php echo $current_page == $menu['url'] ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'; ?>"
                 href="<?php echo appEscape($menu['final_url']); ?>">
@@ -203,11 +209,14 @@ $base_url = $is_ustadz_path ? '../' : '';
 </div>
 
 <!-- Main Content Area Wrapper -->
-<div data-main-layout class="flex flex-col flex-1 overflow-hidden">
+<div data-main-layout x-data="{ desktopLayout: window.innerWidth >= 1024 }"
+    @resize.window.debounce.100ms="desktopLayout = window.innerWidth >= 1024"
+    :inert="sidebarOpen && !desktopLayout" :aria-hidden="sidebarOpen && !desktopLayout"
+    class="flex flex-col flex-1 overflow-hidden">
     <!-- Top Navbar -->
     <header class="flex items-center justify-between px-6 py-4 bg-white border-b border-slate-100">
         <div class="flex items-center">
-            <button @click="sidebarOpen = true" class="text-slate-500 focus:outline-none lg:hidden">
+            <button id="app-menu-toggle" type="button" aria-label="Buka menu navigasi" aria-controls="app-sidebar" :aria-expanded="sidebarOpen" @click="sidebarOpen = true; $nextTick(() => document.getElementById('app-menu-close').focus())" class="text-slate-500 focus:ring-2 focus:ring-blue-500 lg:hidden">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16">
                     </path>

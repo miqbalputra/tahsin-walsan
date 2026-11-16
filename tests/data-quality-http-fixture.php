@@ -13,7 +13,9 @@ $pdo->exec("SET time_zone='+07:00'");
 if (isset($argv[1])) {
     $pdo->exec("USE `$database`");
     if (($argv[2]??'')==='later') $pdo->exec("UPDATE santri_detail SET kelas='3A' WHERE id=21; INSERT INTO presensi(id,halaqoh_id,wali_santri_id,tanggal,status) VALUES(30,1,20,'2026-11-15','A')");
-    echo json_encode(['participants'=>$pdo->query('SELECT id,nama_bapak FROM wali_santri ORDER BY id')->fetchAll(),'children'=>$pdo->query('SELECT * FROM santri_detail ORDER BY id')->fetchAll(),'attendance'=>$pdo->query('SELECT * FROM presensi ORDER BY id')->fetchAll(),'undo_receipts'=>(int)$pdo->query('SELECT COUNT(*) FROM participant_merge_undo')->fetchColumn()]); exit;
+    if (($argv[2]??'')==='layout') $pdo->exec("UPDATE presensi SET jenis_materi='Al Quran',nama_surat='At Tin s/d An Nas',halaman='1-8',hasil_talaqqi='Lulus' WHERE id=1;
+        INSERT INTO tahsin_autosave_drafts(user_id,halaqoh_id,session_date,wali_id,payload_json,official_revision,context_revision,state) VALUES(3,1,'2026-11-15',72,'{\"status\":\"I\"}','outdated','outdated','conflict')");
+    echo json_encode(['participants'=>$pdo->query('SELECT id,nama_bapak FROM wali_santri ORDER BY id')->fetchAll(),'children'=>$pdo->query('SELECT * FROM santri_detail ORDER BY id')->fetchAll(),'attendance'=>$pdo->query('SELECT * FROM presensi ORDER BY id')->fetchAll(),'drafts'=>$pdo->query('SELECT * FROM tahsin_autosave_drafts ORDER BY user_id,halaqoh_id,session_date,wali_id')->fetchAll(),'undo_receipts'=>(int)$pdo->query('SELECT COUNT(*) FROM participant_merge_undo')->fetchColumn()]); exit;
 }
 $pdo->exec("CREATE DATABASE `$database` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; USE `$database`");
 $pdo->exec(file_get_contents(__DIR__.'/fixtures/tahsin-schema.sql'));

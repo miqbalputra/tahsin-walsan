@@ -24,16 +24,66 @@ let browser;
     return {context,page};
   }
   const {context,page}=await login('quality_admin');
+  fixture(setup.database,'layout');
+  const beforeReadOnly=fixture(setup.database);
+  for (const width of [320,360,390,768,1024,1440,1920]) {
+    await page.setViewportSize({width,height:900});
+    await page.goto(base+'/periksa-data.php?search=72&status=all');
+    check(await page.locator('.dq-category').count()===4,`All four categories visible at ${width}px`);
+    await page.locator('.dq-comparison > summary').click();
+    const bounds=await page.locator('.dq-page').evaluate(root=>{
+      const outer=root.getBoundingClientRect();
+      const visible=[...root.querySelectorAll('a,button,input,select,textarea,summary,.dq-record')].filter(e=>e.getClientRects().length);
+      return {fits:outer.left>=0 && outer.right<=innerWidth+1 && visible.every(e=>{const b=e.getBoundingClientRect();return b.left>=outer.left-1 && b.right<=outer.right+1;}),
+        touch:[...root.querySelectorAll('.dq-button,summary')].filter(e=>e.getClientRects().length).every(e=>e.getBoundingClientRect().height>=44),
+        labels:[...root.querySelectorAll('input:not([type=hidden]),select,textarea')].every(e=>e.labels.length>0)};
+    });
+    check(bounds.fits,`Expanded cards and controls stay within the screen at ${width}px`);
+    check(bounds.touch && bounds.labels,`44px actions and named form controls at ${width}px`);
+    check(await page.locator('.dq-field--different').count()>0,`Differences have explicit text as well as color at ${width}px`);
+    const records=await page.locator('.dq-record').all(); const first=await records[0].boundingBox(),second=await records[1].boundingBox();
+    check(width<700?second.y>first.y+first.height-1:second.x>first.x+first.width-1,`Source cards ${width<700?'stack':'compare side by side'} at ${width}px`);
+    if ([360,1440].includes(width)) {
+      await page.locator('[data-main-layout] > main').evaluate(e=>{e.scrollTop=0;});
+      await page.screenshot({path:path.join(directory,`overview-${width}.png`)});
+      await page.locator('.dq-comparison > summary').scrollIntoViewIfNeeded();
+      await page.screenshot({path:path.join(directory,`comparison-${width}.png`)});
+    }
+  }
+  await page.setViewportSize({width:640,height:450});
+  await page.goto(base+'/periksa-data.php?kind=attendance&status=all');
+  await page.locator('[data-sidebar][inert]').waitFor({state:'attached'});
+  check(await page.locator('[data-sidebar]').getAttribute('aria-hidden')==='true','Closed mobile menu is absent from keyboard and assistive navigation');
+  await page.getByRole('button',{name:'Buka menu navigasi',exact:true}).click();
+  check(await page.getByRole('navigation',{name:'Navigasi utama'}).isVisible(),'Mobile menu opens');
+  check(await page.getByRole('button',{name:'Tutup menu navigasi',exact:true}).evaluate(e=>e===document.activeElement) && await page.locator('[data-main-layout]').getAttribute('inert')!==null,'Open mobile menu receives focus and blocks background controls');
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(()=>document.getElementById('app-menu-toggle')===document.activeElement);
+  check(await page.getByRole('button',{name:'Buka menu navigasi',exact:true}).evaluate(e=>e===document.activeElement),'Escape closes menu and restores keyboard focus');
+  check(await page.locator('.dq-finding').count()===1,'Category filter limits the list');
+  await page.locator('.dq-comparison > summary').focus(); await page.keyboard.press('Enter');
+  check(await page.locator('.dq-comparison').getAttribute('open')!==null,'Keyboard opens source comparison');
+  const exportResponse=await context.request.get(base+'/periksa-data.php?kind=attendance&status=all&download=json');
+  check(exportResponse.ok() && (await exportResponse.json()).findings.length===1,'Filtered export remains available');
+  await page.goto(base+'/periksa-data.php?search=tidak-ada-peserta');
+  check(await page.locator('.dq-empty').isVisible() && await page.getByRole('link',{name:'Reset filter',exact:true}).count()>0,'Empty results offer an explicit reset');
+  await page.goto(base+'/periksa-data.php?from=invalid');
+  check(await page.getByRole('alert').isVisible(),'Invalid date has a readable error state');
+  assert.deepEqual(fixture(setup.database),beforeReadOnly,'Filtering, expanding, resizing and exporting never mutate source records'); checks++;
+  await page.setViewportSize({width:360,height:800});
   await page.goto(base+'/periksa-data.php?search=72&status=all');
   check(await page.getByRole('heading',{name:'Keanggotaan aktif ganda',exact:true}).count()===1,'Admin sees Purwanto placement conflict');
   check(await page.getByText('H-9 (#1)',{exact:false}).count()>0,'Both placement names are visible');
   check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Audit fits a 360px mobile viewport');
   await page.screenshot({path:path.join(directory,'audit-mobile.png'),fullPage:true});
   const attendance=page.locator('section').filter({has:page.getByRole('heading',{name:'Presensi berulang / berbeda',exact:true})});
+  await attendance.locator('.dq-comparison > summary').click();
   await attendance.locator('[name=selected_id]').selectOption('1'); await attendance.locator('[name=note]').fill('Konfirmasi pengajar H9');
   await Promise.all([page.waitForURL(/msg=saved/),attendance.getByRole('button',{name:'Simpan pilihan catatan resmi'}).click()]);
   check(await page.getByText('Catatan resmi dipilih',{exact:false}).count()>0,'Official record selection succeeds in browser');
   const selectedCard=page.locator('section').filter({has:page.getByRole('heading',{name:'Presensi berulang / berbeda',exact:true})});
+  await selectedCard.locator('.dq-comparison > summary').click();
+  check(await selectedCard.locator('.dq-record--official').count()===1,'Selected source is visibly marked as official');
   await selectedCard.locator('[name=note]').fill('Batalkan pilihan uji');
   await Promise.all([page.waitForURL(/msg=saved/),selectedCard.getByRole('button',{name:'Batalkan keputusan terakhir'}).click()]);
   const stats=fixture(setup.database); check(stats.attendance.length===2,'Decision and undo preserve both original attendance records');
